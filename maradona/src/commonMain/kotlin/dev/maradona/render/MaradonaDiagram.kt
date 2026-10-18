@@ -81,6 +81,10 @@ fun MaradonaDiagram(
     zoomEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
     initialZoom: DiagramZoom = DiagramZoom.Fit,
+    /** Fraction of the scrollable range to start at, per axis (0.5 = centered). Only meaningful when the zoomed diagram overflows the viewport. */
+    initialPan: Offset? = null,
+    /** Reports the diagram's natural (unzoomed) layout size once measured. */
+    onNaturalSize: (IntSize) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { FlowchartParser.parse(source) } }
     var lastGood by remember { mutableStateOf<Flowchart?>(null) }
@@ -100,7 +104,7 @@ fun MaradonaDiagram(
     }
     var pan by remember { mutableStateOf(Offset.Zero) }
     // Natural needs the measured size to back out the fit scale; apply once known.
-    var initialZoomApplied by remember { mutableStateOf(initialZoom != DiagramZoom.Natural) }
+    var initialViewApplied by remember { mutableStateOf(false) }
     // Transient state: applied as a layer transform during a gesture.
     var gestureZoom by remember { mutableFloatStateOf(1f) }
     var gesturePan by remember { mutableStateOf(Offset.Zero) }
@@ -214,10 +218,20 @@ fun MaradonaDiagram(
         }
 
         LaunchedEffect(naturalSize) {
-            if (!initialZoomApplied && naturalSize.width > 0 && naturalSize.height > 0) {
+            if (initialViewApplied || naturalSize.width <= 0 || naturalSize.height <= 0) return@LaunchedEffect
+            if (initialZoom == DiagramZoom.Natural) {
                 userZoom = (1f / fitScale()).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                initialZoomApplied = true
             }
+            initialPan?.let { f ->
+                val scale = fitScale() * userZoom
+                val rangeX = naturalSize.width * scale - viewportSize.width
+                val rangeY = naturalSize.height * scale - viewportSize.height
+                pan = Offset(
+                    if (rangeX > 0) rangeX / 2f - f.x * rangeX else 0f,
+                    if (rangeY > 0) rangeY / 2f - f.y * rangeY else 0f,
+                )
+            }
+            initialViewApplied = true
         }
 
         val availW = constraints.maxWidth.toFloat()
@@ -250,6 +264,7 @@ fun MaradonaDiagram(
                                 (it.width / scale).roundToInt(),
                                 (it.height / scale).roundToInt(),
                             )
+                            onNaturalSize(naturalSize)
                         }
                         .alpha(if (error != null) 0.45f else 1f)
                         .graphicsLayer {

@@ -14,5 +14,10 @@ private fun launchArg(name: String): String? {
 }
 
 fun mainViewController(): UIViewController = ComposeUIViewController {
-    MaradonaSampleApp(oracleChart = launchArg("-oracleChart"), oracleZoom = launchArg("-oracleZoom"))
+    MaradonaSampleApp(
+        oracleChart = launchArg("-oracleChart"),
+        oracleZoom = launchArg("-oracleZoom"),
+        oraclePanX = launchArg("-oraclePanX")?.toFloatOrNull(),
+        oraclePanY = launchArg("-oraclePanY")?.toFloatOrNull(),
+    )
 }

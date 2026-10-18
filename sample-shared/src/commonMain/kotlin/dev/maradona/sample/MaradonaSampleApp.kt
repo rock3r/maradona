@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -89,9 +90,9 @@ private class SampleState(
 
 /** Live Mermaid editor + diagram, shared by the desktop, Android, and iOS samples. */
 @Composable
-fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null) {
+fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null, oraclePanX: Float? = null, oraclePanY: Float? = null) {
     if (oracleChart != null) {
-        OracleMode(oracleChart, oracleZoom)
+        OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY)
         return
     }
     var dark by remember { mutableStateOf(false) }
@@ -121,7 +122,7 @@ fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null) {
 }
 
 @Composable
-private fun OracleMode(chart: String, zoom: String?) {
+private fun OracleMode(chart: String, zoom: String?, panX: Float? = null, panY: Float? = null) {
     val source = OracleCharts.all[chart]
     if (source == null) {
         Text("Unknown oracle chart '$chart'", modifier = Modifier.padding(24.dp))
@@ -138,6 +139,7 @@ private fun OracleMode(chart: String, zoom: String?) {
             "max" -> DiagramZoom.Max
             else -> DiagramZoom.Fit
         },
+        initialPan = if (panX != null && panY != null) Offset(panX, panY) else null,
     )
 }
 

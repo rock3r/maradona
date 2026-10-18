@@ -14,7 +14,9 @@ styling or geometry regressions.
 - `out/report-<platform>.json` — last comparison report
 - `tools/` — all scripts below
 
-Zoom levels: `fit`, `100` (natural size), `min` (0.1×), `max` (5×).
+Zoom levels: `fit`, `100` (natural size), `min` (0.1×), `max` (5×). Max is
+captured as a 3×3 pan tile grid (`<id>-max-<i><j>.png`) so the whole zoomed
+diagram is covered, not just the centred fragment.
 
 ## Running
 
@@ -48,17 +50,35 @@ report show per-chart mismatch fractions.
 
 ## How comparison works
 
-1. Crop each image to its content bbox (background = dominant corner colour).
-2. Flatten near-background pixels to white (our bg is cream, mermaid's white).
-3. Letterbox both onto a shared canvas, never upscaling the smaller side.
-4. Gaussian-blur to absorb AA/font differences.
-5. Count pixels whose per-channel delta exceeds `PIXEL_TOLERANCE` (48);
-   pass when the mismatching fraction is ≤ `MAX_MISMATCH` (15%).
+Desktop is the strict, scale-matched oracle. `OracleGoldenTest` renders each
+chart on a fixed canvas sized to the chart's 100% layout (all zoom levels
+share the canvas) and writes `out/desktop/manifest.json` with the canvas,
+layout and content sizes; `compare.py` uses it to align everything exactly:
 
-On phones the screen is the viewport, so `100` and `max` can show clipped
-fragments; those levels get a smoke check (rendered, non-blank, sane ink
-coverage) instead of a pixel comparison. Desktop compares all four levels:
-its renderer sizes the viewport so the whole diagram fits at every zoom.
+1. Crop the golden to its content bbox, resize to our measured 100% content
+   size, paste centred on the manifest canvas → the gold views for `100` and
+   `min` (the latter scaled by `MIN_ZOOM`).
+2. Flatten near-background pixels to white, gaussian-blur both sides, count
+   pixels whose per-channel delta exceeds `PIXEL_TOLERANCE` (48); pass when
+   the mismatching fraction is ≤ `MAX_MISMATCH` (15%).
+3. `fit` is not rendered on desktop (with a 100%-sized canvas it would equal
+   `100`); devices capture it as their only full-diagram view.
+
+Max-zoom tiles can't be compared against mermaid: structural layout
+differences (node spacing, label placement) amplify 5× and swamp any pixel
+diff. Instead they verify *zoom self-consistency*: our own 100% canvas is
+upscaled 5× and cropped with the same pan-window math the renderer uses
+(window origin `2.5·(canvas − layout) + f·(5·layout − canvas)` per axis).
+That checks that vectors, strokes, arrowheads and text scale correctly at
+zoom — the layout fidelity side is covered by `100` and `min`. Zoom tiles
+get more blur (`ZOOM_BLUR_RADIUS`) and a looser budget (`ZOOM_MAX_MISMATCH`,
+25%) because text re-laid out at 5× differs subtly from 5× the hinted 100%
+text; they still catch exploded, clipped or misplaced content.
+
+On phones the screen is the viewport, so `100` and the max tiles can show
+clipped fragments; those get a smoke check (rendered, non-blank, sane ink
+coverage) while `fit` and `min` get the full comparison with letterbox
+normalisation.
 
 Thresholds live at the top of `tools/compare.py` — tune them there.
 
