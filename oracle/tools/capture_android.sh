@@ -18,6 +18,23 @@ shot() { # chart zoom panX panY outfile
   adb -s "$SERIAL" shell am start -W -n dev.maradona.sample.android/.MainActivity \
     --es oracleChart "$1" --es oracleZoom "$2" \
     --ef oraclePanX "$3" --ef oraclePanY "$4" >/dev/null
+  # The app MUST hold window focus before we capture; anything else (ANR
+  # dialog, lockscreen, launcher) means the capture would be garbage.
+  local focus="" i
+  for i in $(seq 1 20); do
+    focus=$(adb -s "$SERIAL" shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus || true)
+    case "$focus" in
+      *dev.maradona.sample.android*) break ;;
+      *) sleep 0.5 ;;
+    esac
+  done
+  case "$focus" in
+    *dev.maradona.sample.android*) : ;;
+    *) echo "ERROR: app not in foreground for $(basename "$5")" >&2
+       echo "  focused window: $focus" >&2
+       echo "  (ANR dialog / lockscreen / wedged emulator? fix it and re-run)" >&2
+       exit 1 ;;
+  esac
   sleep 2.5
   adb -s "$SERIAL" exec-out screencap -p > "$5"
   echo "captured: android/$(basename "$5" .png)"

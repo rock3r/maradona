@@ -76,9 +76,12 @@ get more blur (`ZOOM_BLUR_RADIUS`) and a looser budget (`ZOOM_MAX_MISMATCH`,
 text; they still catch exploded, clipped or misplaced content.
 
 On phones the screen is the viewport, so `100` and the max tiles can show
-clipped fragments; those get a smoke check (rendered, non-blank, sane ink
-coverage) while `fit` and `min` get the full comparison with letterbox
-normalisation.
+clipped fragments; those get a smoke check (bright diagram background — a
+dimmed screen means a system dialog/ANR stole the foreground — plus sane
+ink coverage: not blank, not a wall of non-diagram pixels) while `fit` and
+`min` get the full comparison with letterbox normalisation. The capture
+script also verifies our app holds window focus before every screenshot and
+aborts loudly otherwise (wedged emulator, lockscreen, ANR dialog).
 
 Thresholds live at the top of `tools/compare.py` — tune them there.
 

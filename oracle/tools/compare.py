@@ -42,6 +42,8 @@ ZOOM_BLUR_RADIUS = 4.0
 ZOOM_MAX_MISMATCH = 0.25
 SIZE_TOLERANCE = None      # disabled: legit layout differences shift the bbox; pixel diff is the judge
 SMOKE_MIN_INK = 0.003
+SMOKE_MAX_INK = 0.6        # an ANR dialog over a dimmed screen is mostly "ink"
+SMOKE_MIN_BG_BRIGHTNESS = 180   # dimmed screenshots are dark grey
 MAX_ZOOM = 5.0
 MIN_ZOOM = 0.1
 
@@ -213,8 +215,14 @@ def normalise(path: pathlib.Path) -> Image.Image:
 
 
 def loose_compare(gold: pathlib.Path, ours: pathlib.Path, web_img: pathlib.Path, name: str) -> dict:
+    ours_img = Image.open(ours).convert("RGB")
+    ours_bg = bg_color(ours_img)
+    if sum(ours_bg) / 3 < SMOKE_MIN_BG_BRIGHTNESS:
+        return {"mode": "compare", "pass": False,
+                "error": f"ours background too dark {ours_bg} (system UI on top?)"}
     g = normalise(gold)
-    o = normalise(ours)
+    o = letterbox(flatten_bg(crop_to_content(ours_img, ours_bg), ours_bg), CANVAS).filter(
+        ImageFilter.GaussianBlur(BLUR_RADIUS))
     frac, diff_img = diff_fraction(g, o)
     web_img.mkdir(parents=True, exist_ok=True)
     g.save(web_img / f"{name}-gold.png")
@@ -227,11 +235,27 @@ def loose_compare(gold: pathlib.Path, ours: pathlib.Path, web_img: pathlib.Path,
 
 
 def smoke(ours: pathlib.Path) -> dict:
+    """Viewport-clipped views can't be pixel-compared, so check the capture
+    is a plausible diagram render: reasonably big, with a BRIGHT diagram
+    background (a dimmed screen means a system dialog/ANR stole the
+    foreground) and sane ink coverage (not blank, but not a wall of
+    non-diagram pixels either)."""
     img = Image.open(ours).convert("RGB")
-    cropped = crop_to_content(img, bg_color(img))
     w, h = img.size
-    ink = 1.0 - (w * h - (cropped.size[0] * cropped.size[1])) / (w * h)
-    return {"mode": "smoke", "ink": round(ink, 4), "pass": ink > SMOKE_MIN_INK,
+    fail = None
+    bg = bg_color(img)
+    if w * h < 40_000:
+        fail = f"suspicious size {w}x{h}"
+    elif sum(bg) / 3 < SMOKE_MIN_BG_BRIGHTNESS:
+        fail = f"background too dark {bg} (system UI on top?)"
+    cropped = crop_to_content(img, bg)
+    bg_img = Image.new("RGB", img.size, bg)
+    mask = ImageChops.difference(img, bg_img).convert("L").point(lambda v: 255 if v > 60 else 0)
+    ink = sum(mask.histogram()[1:]) / (w * h)
+    if fail is None and not (SMOKE_MIN_INK < ink <= SMOKE_MAX_INK):
+        fail = f"ink coverage {ink:.3f} out of range"
+    return {"mode": "smoke", "ink": round(ink, 4), "pass": fail is None,
+            **({"error": fail} if fail else {}),
             "images": {"raw": f"../{ours.parent.name}/{ours.name}"}}
 
 
@@ -274,8 +298,9 @@ def main() -> int:
     for stem in sorted(report):
         r = report[stem]
         status = "PASS" if r["pass"] else "FAIL"
-        detail = (f"mismatch={r['mismatch']}" if "mismatch" in r
-                  else f"ink={r['ink']}" if "ink" in r else r.get("error", ""))
+        detail = (r["error"] if "error" in r
+                  else f"mismatch={r['mismatch']}" if "mismatch" in r
+                  else f"ink={r['ink']}")
         print(f"{status}  {platform}/{stem:28s} {r.get('mode', '?'):7s} {detail}")
     out = ROOT / "out" / f"report-{platform}.json"
     out.write_text(json.dumps(report, indent=2))
