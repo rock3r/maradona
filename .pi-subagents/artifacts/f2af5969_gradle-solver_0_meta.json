@@ -1,0 +1,140 @@
+{
+  "runId": "f2af5969",
+  "agent": "gradle-solver",
+  "task": "Zoom reworked to hybrid transient-layer + committed-density model in MaradonaDiagram.kt (fixes gesture flicker). Verify compile + tests in /Users/rock3r/src/maradona. Workflow id: a6cecafdde96d4758e04c182f9fc0b86. Wrapper only; NO edits.\n\npython3 /Users/rock3r/.agents/skills/gradle-run/scripts/gradle_run.py run --workflow a6cecafdde96d4758e04c182f9fc0b86 --scope targeted --question \"Does the hybrid zoom compile everywhere and pass tests?\" -- ./gradlew :maradona:assembleAndroidMain :maradona:compileKotlinIosSimulatorArm64 :maradona:desktopTest :sample-shared:compileKotlinIosSimulatorArm64 :sample-android:assembleDebug :sample-desktop:desktopTest\n\nReport pass/fail concisely with any file:line evidence. Do not edit anything.",
+  "exitCode": 0,
+  "usage": {
+    "input": 2202,
+    "output": 1207,
+    "cacheRead": 4096,
+    "cacheWrite": 0,
+    "cost": 0,
+    "turns": 2
+  },
+  "model": "kimi-code/k3-256k",
+  "attemptedModels": [
+    "kimi-code/k3-256k"
+  ],
+  "modelAttempts": [
+    {
+      "model": "kimi-code/k3-256k",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 2202,
+        "output": 1207,
+        "cacheRead": 4096,
+        "cacheWrite": 0,
+        "cost": 0,
+        "turns": 2
+      }
+    }
+  ],
+  "durationMs": 39673,
+  "toolCount": 1,
+  "launchContractDigest": "5493071886da678bd43b5e3e6bb77b921bf8931cdfa5a2757b2aad2b95925685",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:04157e82a8d32970"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:04157e82a8d32970"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Gradle run a6cecafdde96d4758e04c182f9fc0b86 (log /private/var/folders/mw/bycfzdjn599dxyrvqp7nxkdh0000gn/T/gradle-run/a6cecafdde96d4758e04c182f9fc0b86/0006.log) exited 0 with zero failed tasks and zero failure fingerprints across all six requested targets; no concrete findings to report, warnings itemized with severity."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "python3 /Users/rock3r/.agents/skills/gradle-run/scripts/gradle_run.py run --workflow a6cecafdde96d4758e04c182f9fc0b86 --scope targeted --question \"Does the hybrid zoom compile everywhere and pass tests?\" -- ./gradlew :maradona:assembleAndroidMain :maradona:compileKotlinIosSimulatorArm64 :maradona:desktopTest :sample-shared:compileKotlinIosSimulatorArm64 :sample-android:assembleDebug :sample-desktop:desktopTest",
+          "result": "passed",
+          "summary": "exit_status=0 in 7s; all 6 compile/test tasks succeeded; failed_tasks=[]; failure_fingerprints=[]"
+        }
+      ],
+      "validationOutput": [
+        "exit_status=0, elapsed 6.997s, failed_tasks: [], failure_fingerprints: [] — MaradonaDiagram.kt hybrid transient-layer + committed-density zoom compiles on Android, iOS (simulatorArm64) and desktop, and all desktopTest suites pass; sample-shared/sample-android/sample-desktop unaffected."
+      ],
+      "residualRisks": [
+        "Only desktopTest and iOS-simulator compile were exercised for the library; other targets (e.g. js/wasm, iOS device arm64) were not run in this invocation — recommend a broad :maradona:allTests run if full-target assurance is needed.",
+        "Pre-existing warning: 'commonTest' source directory exists but android host tests are not enabled (withHostTest {} not configured) — android-side unit tests are not running.",
+        "Gradle 10 deprecation warnings exist in the build scripts (unrelated to this change)."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "No edits performed — read-only Gradle diagnostic; verified existing hybrid zoom rework compiles and passes tests.",
+      "reviewFindings": [
+        "no blockers",
+        "info: build config - android host tests not enabled for commonTest sources (add withHostTest {} if android host tests are desired)"
+      ],
+      "manualNotes": "Run was flagged repeated_command=true by the wrapper, indicating the same invocation previously succeeded; results are consistent. No follow-up gradle command required."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": false
+    }
+  },
+  "transcriptPath": "/Users/rock3r/src/maradona/.pi-subagents/artifacts/f2af5969_gradle-solver_0_transcript.jsonl",
+  "timestamp": 1792271868733
+}

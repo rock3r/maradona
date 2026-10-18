@@ -1,0 +1,148 @@
+{
+  "runId": "3de4d719",
+  "agent": "gradle-solver",
+  "task": "Applied: manifest theme fixed to Theme.Material.Light.NoActionBar, and kotlin { androidLibrary {} } replaced with kotlin { android {} } in maradona and sample-shared to clear the deprecation. Verify /Users/rock3r/src/maradona. Workflow id: 5974526cbfa4616650c4ef643fb4144a. Wrapper runs only; NO edits.\n\nStep 1 (targeted, question \"Does assembleDebug pass after the manifest theme fix?\"):\npython3 /Users/rock3r/.agents/skills/gradle-run/scripts/gradle_run.py run --workflow 5974526cbfa4616650c4ef643fb4144a --scope targeted --question \"Does assembleDebug pass after the manifest theme fix?\" -- ./gradlew :sample-android:assembleDebug\n\nStep 2 (targeted, question \"Do all modules compile and tests pass with the android {} DSL?\", broad-ish set):\npython3 /Users/rock3r/.agents/skills/gradle-run/scripts/gradle_run.py run --workflow 5974526cbfa4616650c4ef643fb4144a --scope targeted --question \"Do all modules compile and tests pass with the android {} DSL?\" -- ./gradlew :maradona:assembleAndroidMain :sample-shared:assembleAndroidMain :sample-shared:linkDebugFrameworkIosSimulatorArm64 :sample-desktop:desktopTest :maradona:desktopTest\n\nReport per-step: pass/fail, failure fingerprints with file:line evidence, minimal fix recommendations. Flag if the android {} rename itself broke anything. Do not edit anything.",
+  "exitCode": 0,
+  "usage": {
+    "input": 2910,
+    "output": 1497,
+    "cacheRead": 7680,
+    "cacheWrite": 0,
+    "cost": 0,
+    "turns": 3
+  },
+  "model": "kimi-code/k3-256k",
+  "attemptedModels": [
+    "kimi-code/k3-256k"
+  ],
+  "modelAttempts": [
+    {
+      "model": "kimi-code/k3-256k",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 2910,
+        "output": 1497,
+        "cacheRead": 7680,
+        "cacheWrite": 0,
+        "cost": 0,
+        "turns": 3
+      }
+    }
+  ],
+  "durationMs": 69438,
+  "toolCount": 2,
+  "launchContractDigest": "0854cba5bf0840f028c152065e2ded3560bbbac12e49ad4bdea8f917bea90c98",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:04157e82a8d32970"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:04157e82a8d32970"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "attested",
+    "evidenceStatus": "attested",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Both wrapper runs returned exit_status 0 with zero failed tasks and zero failure fingerprints; concrete findings reported per module with warning fingerprints and log paths."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "python3 gradle_run.py run --workflow 5974526cbfa4616650c4ef643fb4144a --scope targeted --question \"Does assembleDebug pass after the manifest theme fix?\" -- ./gradlew :sample-android:assembleDebug",
+          "result": "passed",
+          "summary": "exit 0 in 5.1s; sample-android APK assembles with Theme.Material.Light.NoActionBar"
+        },
+        {
+          "command": "python3 gradle_run.py run --workflow 5974526cbfa4616650c4ef643fb4144a --scope targeted --question \"Do all modules compile and tests pass with the android {} DSL?\" -- ./gradlew :maradona:assembleAndroidMain :sample-shared:assembleAndroidMain :sample-shared:linkDebugFrameworkIosSimulatorArm64 :sample-desktop:desktopTest :maradona:desktopTest",
+          "result": "passed",
+          "summary": "exit 0 in 5.5s; all 5 tasks succeeded including iOS framework link and both desktopTest suites"
+        }
+      ],
+      "validationOutput": [
+        "Step 1: exit_status=0, failed_tasks=[], failure_fingerprints=[] (log 0014.log)",
+        "Step 2: exit_status=0, failed_tasks=[], failure_fingerprints=[] (log 0015.log)",
+        "Only warnings: commonTest host-test notice, Skiko native-access notice, generic Gradle deprecation banner"
+      ],
+      "residualRisks": [
+        "Android unit tests (testDebugUnitTest) were not run; only assembleDebug for sample-android was verified",
+        "Unresolved 'commonTest source dir without withHostTest {}' warning remains; harmless now but may matter when host tests are added",
+        "Generic Gradle 10 deprecation warning source not identified (would need --warning-mode all)"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "No diff; read-only verification of previously applied manifest theme and kotlin { android {} } fixes",
+      "reviewFindings": [
+        "no blockers",
+        "info: commonTest source directory exists but android host tests not enabled (withHostTest {} suggested) - non-blocking warning in both runs",
+        "info: Skiko restricted native access warning during desktopTest runtime - pre-existing, unrelated to this change"
+      ],
+      "manualNotes": "Both fixes verified: manifest theme (Theme.Material.Light.NoActionBar) clears the sample-android assembleDebug failure, and the kotlin { android {} } rename compiles, links iOS, and passes desktop tests with no regressions. Build is green; no further fixes required."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": false
+    }
+  },
+  "transcriptPath": "/Users/rock3r/src/maradona/.pi-subagents/artifacts/3de4d719_gradle-solver_0_transcript.jsonl",
+  "timestamp": 1792268172919
+}

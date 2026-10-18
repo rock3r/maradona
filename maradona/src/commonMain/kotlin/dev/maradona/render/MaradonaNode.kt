@@ -1,0 +1,158 @@
+package dev.maradona.render
+
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import dev.maradona.model.FlowNode
+import dev.maradona.model.NodeShape
+
+/**
+ * One flowchart node as a real composable: shaped box plus text.
+ * Being composables (not pixels on a shared Canvas) gives each node
+ * semantics, focus traversal, and platform text rendering.
+ */
+@Composable
+fun MaradonaNode(
+    node: FlowNode,
+    theme: MaradonaTheme,
+    modifier: Modifier = Modifier,
+    /** Plain-language summary of this node's connections, for accessibility. */
+    connectionsDescription: String? = null,
+) {
+    val shape = nodeShape(node.shape)
+    val fill = parseCssColor(node.style?.fill) ?: theme.nodeFill
+    val borderColor = parseCssColor(node.style?.stroke) ?: theme.nodeBorder
+    val textColor = parseCssColor(node.style?.textColor) ?: theme.nodeText
+    val (padH, padV) = nodeContentPadding(node.shape)
+    val plainLabel = node.label.replace("**", "").replace("*", "")
+    val description = if (connectionsDescription.isNullOrBlank()) {
+        plainLabel
+    } else {
+        "$plainLabel. $connectionsDescription"
+    }
+
+    Box(
+        modifier = modifier
+            // Draw fill + border as plain vectors. Modifier.background/border
+            // rasterize generic (non-rect) outlines into an offscreen texture
+            // for their BlendMode.Clear cutout, which then gets bilinearly
+            // sampled at fractional positions -> blurry borders when zoomed.
+            .drawBehind {
+                val outline = shape.createOutline(size, layoutDirection, this)
+                val strokeWidth = 1.dp.toPx()
+                val stroke = Stroke(width = strokeWidth)
+                when (outline) {
+                    is Outline.Rectangle -> {
+                        drawRect(fill, topLeft = outline.rect.topLeft, size = outline.rect.size)
+                        drawRect(borderColor, topLeft = outline.rect.topLeft, size = outline.rect.size, style = stroke)
+                    }
+                    is Outline.Rounded -> {
+                        val r = outline.roundRect
+                        val topLeft = Offset(r.left, r.top)
+                        val outlineSize = Size(r.width, r.height)
+                        drawRoundRect(fill, topLeft = topLeft, size = outlineSize, cornerRadius = r.topLeftCornerRadius)
+                        drawRoundRect(borderColor, topLeft = topLeft, size = outlineSize, cornerRadius = r.topLeftCornerRadius, style = stroke)
+                    }
+                    is Outline.Generic -> {
+                        drawPath(outline.path, fill)
+                        drawPath(outline.path, borderColor, style = stroke)
+                    }
+                }
+                // Details a Shape outline cannot express.
+                when (node.shape) {
+                    NodeShape.DoubleCircle -> {
+                        val inset = 4.dp.toPx()
+                        drawOval(
+                            color = borderColor,
+                            topLeft = Offset(inset, inset),
+                            size = Size(size.width - inset * 2, size.height - inset * 2),
+                            style = Stroke(width = 1.dp.toPx()),
+                        )
+                    }
+                    NodeShape.Subroutine -> {
+                        val inset = 6.dp.toPx()
+                        val stroke = 1.dp.toPx()
+                        drawLine(borderColor, Offset(inset, 0f), Offset(inset, size.height), stroke)
+                        drawLine(borderColor, Offset(size.width - inset, 0f), Offset(size.width - inset, size.height), stroke)
+                    }
+                    NodeShape.Cylinder -> {
+                        val ry = minOf(size.height * 0.22f, 14.dp.toPx())
+                        drawArc(
+                            color = borderColor,
+                            startAngle = 0f,
+                            sweepAngle = 180f,
+                            useCenter = false,
+                            topLeft = Offset(0f, 0f),
+                            size = Size(size.width, ry * 2),
+                            style = Stroke(width = 1.dp.toPx()),
+                        )
+                    }
+                    else -> Unit
+                }
+            }
+            .focusable()
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .padding(horizontal = padH, vertical = padV),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(
+            text = annotatedLabel(node.label),
+            style = TextStyle(
+                color = textColor,
+                fontSize = theme.nodeFontSize,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+}
+
+/**
+ * Turns the parser's `**bold**` / `*italic*` markers (normalised from
+ * `<b>`/`<i>` in the source) into [AnnotatedString] spans.
+ * This is the extent of rich text in v1 — no HTML layout.
+ */
+fun annotatedLabel(label: String): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    var bold = false
+    var italic = false
+    val plain = StringBuilder()
+    fun flush() {
+        if (plain.isEmpty()) return
+        val text = plain.toString()
+        plain.clear()
+        when {
+            bold && italic -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) { append(text) }
+            bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text) }
+            italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(text) }
+            else -> append(text)
+        }
+    }
+    while (i < label.length) {
+        when {
+            label.startsWith("**", i) -> { flush(); bold = !bold; i += 2 }
+            label[i] == '*' -> { flush(); italic = !italic; i += 1 }
+            else -> { plain.append(label[i]); i += 1 }
+        }
+    }
+    flush()
+}

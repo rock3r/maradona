@@ -1,0 +1,247 @@
+package dev.maradona.render
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.maradona.layout.LayoutOptions
+import dev.maradona.model.Flowchart
+import dev.maradona.parse.FlowchartParser
+import kotlin.math.pow
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+
+private const val MIN_ZOOM = 0.1f
+private const val MAX_ZOOM = 5f
+
+/**
+ * Renders Mermaid flowchart source as native composables.
+ *
+ * The diagram is shrunk to fit the available space, then can be zoomed
+ * (pinch on touch, Cmd/Ctrl + mouse wheel with a mouse) and panned.
+ * Zoom is anchored at the pinch centroid / cursor position. Double-tap
+ * resets.
+ *
+ * Zoom is hybrid: while a gesture runs, a cheap layer transform moves the
+ * already-rendered diagram (no re-layout per frame, so no flicker); when the
+ * gesture settles, the zoom is committed by scaling the density so all dp/sp
+ * re-render at the final size and strokes and text stay crisp.
+ *
+ * On a parse error the last good diagram stays visible, dimmed, with the
+ * error shown at the bottom — matching Pele's behaviour.
+ */
+@Composable
+fun MaradonaDiagram(
+    source: String,
+    modifier: Modifier = Modifier,
+    theme: MaradonaTheme = MaradonaTheme.light(),
+    autoDirection: Boolean = true,
+    zoomEnabled: Boolean = true,
+    layoutOptions: LayoutOptions = LayoutOptions(),
+) {
+    val parsed = remember(source) { runCatching { FlowchartParser.parse(source) } }
+    var lastGood by remember { mutableStateOf<Flowchart?>(null) }
+    parsed.getOrNull()?.let { lastGood = it }
+    val chart = parsed.getOrNull() ?: lastGood
+    val error = parsed.exceptionOrNull()
+
+    // Committed state: rendered crisply via density scaling.
+    var userZoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    // Transient state: applied as a layer transform during a gesture.
+    var gestureZoom by remember { mutableFloatStateOf(1f) }
+    var gesturePan by remember { mutableStateOf(Offset.Zero) }
+    var wheelNonce by remember { mutableIntStateOf(0) }
+
+    var naturalSize by remember { mutableStateOf(IntSize.Zero) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+
+    fun fitScale(): Float {
+        val availW = viewportSize.width.toFloat()
+        val availH = viewportSize.height.toFloat()
+        if (naturalSize.width <= 0 || naturalSize.height <= 0 || availW <= 0 || availH <= 0) return 1f
+        return minOf(availW / naturalSize.width, availH / naturalSize.height).coerceAtMost(1f)
+    }
+
+    fun centerOffset(scale: Float): Offset = Offset(
+        (viewportSize.width - naturalSize.width * scale) / 2f,
+        (viewportSize.height - naturalSize.height * scale) / 2f,
+    )
+
+    /** Transiently scales around [focal] (viewport position) so the point under the fingers/cursor stays put. */
+    fun gestureZoomBy(factor: Float, focal: Offset) {
+        if (naturalSize.width <= 0 || viewportSize.width <= 0) return
+        // Clamp so the committed-equivalent zoom stays within [MIN_ZOOM, MAX_ZOOM];
+        // live clamping means commit() can apply gestureZoom exactly, with no jump.
+        val newGestureZoom = (gestureZoom * factor).coerceIn(MIN_ZOOM / userZoom, MAX_ZOOM / userZoom)
+        if (newGestureZoom == gestureZoom) return
+        val ratio = newGestureZoom / gestureZoom
+        val center = centerOffset(fitScale() * userZoom)
+        gesturePan = Offset(
+            focal.x - center.x - pan.x - ratio * (focal.x - center.x - pan.x - gesturePan.x),
+            focal.y - center.y - pan.y - ratio * (focal.y - center.y - pan.y - gesturePan.y),
+        )
+        gestureZoom = newGestureZoom
+    }
+
+    /** Bakes the transient layer transform into the density-scaled render, preserving on-screen geometry. */
+    fun commitGesture() {
+        if (gestureZoom == 1f && gesturePan == Offset.Zero) return
+        val fit = fitScale()
+        val oldScale = fit * userZoom
+        val newZoom = (userZoom * gestureZoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        val newScale = fit * newZoom
+        // Screen pos was: oldCenter + pan + gesturePan + gestureZoom*oldScale*p.
+        // It becomes:   newCenter + pan' + newScale*p. These match for all p because
+        // gestureZoom was clamped live, so gestureZoom*oldScale == newScale.
+        val oldCenter = centerOffset(oldScale)
+        val newCenter = centerOffset(newScale)
+        pan = Offset(
+            oldCenter.x - newCenter.x + pan.x + gesturePan.x,
+            oldCenter.y - newCenter.y + pan.y + gesturePan.y,
+        )
+        userZoom = newZoom
+        gestureZoom = 1f
+        gesturePan = Offset.Zero
+    }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .background(theme.background)
+            .clipToBounds()
+            .onSizeChanged { viewportSize = it }
+            .pointerInput(zoomEnabled) {
+                if (!zoomEnabled) return@pointerInput
+                while (true) {
+                    detectTransformGestures { centroid, gPan, gZoom, _ ->
+                        if (gZoom != 1f) gestureZoomBy(gZoom, centroid)
+                        gesturePan += gPan
+                    }
+                    commitGesture()
+                }
+            }
+            .pointerInput(zoomEnabled) {
+                if (!zoomEnabled) return@pointerInput
+                // Mouse-wheel zoom (Cmd/Ctrl held): desktop affordance; touch platforms
+                // essentially never emit Scroll events, and unmodified scrolls pass through.
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type != PointerEventType.Scroll) continue
+                        val change = event.changes.firstOrNull() ?: continue
+                        val modifiers = event.keyboardModifiers
+                        if (!modifiers.isCtrlPressed && !modifiers.isMetaPressed) continue
+                        val dy = change.scrollDelta.y
+                        if (dy == 0f) continue
+                        // Trackpads emit many small deltas; wheel notches arrive as ~40px jumps.
+                        val factor = 1.15.pow(-dy.toDouble() / 10).toFloat().coerceIn(0.5f, 2f)
+                        gestureZoomBy(factor, change.position)
+                        change.consume()
+                        wheelNonce++
+                    }
+                }
+            }
+            .pointerInput(zoomEnabled) {
+                if (!zoomEnabled) return@pointerInput
+                detectTapGestures(onDoubleTap = {
+                    userZoom = 1f
+                    pan = Offset.Zero
+                    gestureZoom = 1f
+                    gesturePan = Offset.Zero
+                })
+            },
+    ) {
+        // Wheel events are discrete; commit once the wheel goes quiet. Keep the
+        // window short: until commit, the transient layer transform looks soft.
+        LaunchedEffect(wheelNonce) {
+            if (wheelNonce > 0) {
+                delay(90)
+                commitGesture()
+            }
+        }
+
+        val availW = constraints.maxWidth.toFloat()
+        val availH = constraints.maxHeight.toFloat()
+        val fit = if (naturalSize.width > 0 && naturalSize.height > 0 && availW > 0 && availH > 0) {
+            minOf(availW / naturalSize.width, availH / naturalSize.height).coerceAtMost(1f)
+        } else 1f
+        val scale = (fit * userZoom).coerceAtLeast(0.01f)
+        val centerX = (availW - naturalSize.width * scale) / 2f
+        val centerY = (availH - naturalSize.height * scale) / 2f
+
+        if (chart != null) {
+            val density = LocalDensity.current
+            // sp -> px is sp * fontScale * density, so fontScale must NOT be
+            // scaled: doing so would zoom text quadratically while dp-sized
+            // shapes zoom linearly, and text bursts out of its nodes.
+            val zoomedDensity = Density(density.density * scale, density.fontScale)
+            CompositionLocalProvider(LocalDensity provides zoomedDensity) {
+                MaradonaLayout(
+                    chart = chart,
+                    theme = theme,
+                    autoDirection = autoDirection,
+                    layoutOptions = layoutOptions,
+                    // Inner px are zoom-scaled; hand over the width in natural units.
+                    availableWidthPx = (constraints.maxWidth / scale).roundToInt(),
+                    modifier = Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .onSizeChanged {
+                            naturalSize = IntSize(
+                                (it.width / scale).roundToInt(),
+                                (it.height / scale).roundToInt(),
+                            )
+                        }
+                        .alpha(if (error != null) 0.45f else 1f)
+                        .graphicsLayer {
+                            scaleX = gestureZoom
+                            scaleY = gestureZoom
+                            transformOrigin = TransformOrigin(0f, 0f)
+                            translationX = centerX + pan.x + gesturePan.x
+                            translationY = centerY + pan.y + gesturePan.y
+                        },
+                )
+            }
+        }
+
+        if (error != null) {
+            BasicText(
+                text = error.message ?: "Could not parse diagram",
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .background(theme.background)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                style = TextStyle(color = theme.error, fontSize = 12.sp),
+            )
+        }
+    }
+}
