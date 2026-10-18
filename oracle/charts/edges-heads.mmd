@@ -1,0 +1,11 @@
+flowchart TD
+  A[Start] --> B[Arrow]
+  B --- C[No head]
+  C --o D[Circle head]
+  D --x E[Cross head]
+  E ==> F[Thick]
+  F -. dotted .-> G{Dotted}
+  G -->|pipe label| H[Pipe label]
+  H -- inline label --> I[Inline label]
+  I <--> J[Double arrow]
+  J --> A

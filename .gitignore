@@ -8,3 +8,6 @@ local.properties
 iosApp/build/
 xcuserdata/
 *.xcuserstate
+oracle/out/
+oracle/tools/node_modules/
+oracle/tools/.venv/

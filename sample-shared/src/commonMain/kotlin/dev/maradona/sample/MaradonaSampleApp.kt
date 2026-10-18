@@ -30,6 +30,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.maradona.render.DiagramZoom
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 
@@ -88,7 +89,11 @@ private class SampleState(
 
 /** Live Mermaid editor + diagram, shared by the desktop, Android, and iOS samples. */
 @Composable
-fun MaradonaSampleApp() {
+fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null) {
+    if (oracleChart != null) {
+        OracleMode(oracleChart, oracleZoom)
+        return
+    }
     var dark by remember { mutableStateOf(false) }
     var source by remember { mutableStateOf(examples.getValue("Basic")) }
     val state = SampleState(
@@ -113,6 +118,27 @@ fun MaradonaSampleApp() {
             }
         }
     }
+}
+
+@Composable
+private fun OracleMode(chart: String, zoom: String?) {
+    val source = OracleCharts.all[chart]
+    if (source == null) {
+        Text("Unknown oracle chart '$chart'", modifier = Modifier.padding(24.dp))
+        return
+    }
+    MaradonaDiagram(
+        source = source,
+        theme = MaradonaTheme.light(),
+        modifier = Modifier.fillMaxSize(),
+        zoomEnabled = false,
+        initialZoom = when (zoom) {
+            "100" -> DiagramZoom.Natural
+            "min" -> DiagramZoom.Min
+            "max" -> DiagramZoom.Max
+            else -> DiagramZoom.Fit
+        },
+    )
 }
 
 @Composable

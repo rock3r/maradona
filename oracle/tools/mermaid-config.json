@@ -1,0 +1,15 @@
+{
+  "theme": "base",
+  "themeVariables": {
+    "background": "#FFFCF0",
+    "primaryColor": "#F2F0E5",
+    "primaryBorderColor": "#8A8878",
+    "primaryTextColor": "#100F0F",
+    "lineColor": "#100F0F",
+    "clusterBkg": "#EAE6D8",
+    "clusterBorder": "#CECDC3",
+    "edgeLabelBackground": "#FFFCF0",
+    "fontSize": "14px"
+  },
+  "flowchart": { "htmlLabels": false, "useMaxWidth": false }
+}

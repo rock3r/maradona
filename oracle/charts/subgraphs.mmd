@@ -1,0 +1,11 @@
+flowchart TD
+  subgraph client[Client]
+    UI[Compose UI] --> VM[ViewModel]
+  end
+  subgraph engine[Maradona]
+    P[Parser] --> L[Sugiyama layout]
+    L --> R[MaradonaLayout]
+  end
+  VM --> P
+  R --> UI
+  style R fill:#d3e5f5,stroke:#205ea6

@@ -44,6 +44,18 @@ import kotlinx.coroutines.delay
 private const val MIN_ZOOM = 0.1f
 private const val MAX_ZOOM = 5f
 
+/** Starting zoom level for [MaradonaDiagram]. */
+enum class DiagramZoom {
+    /** Shrink (never enlarge) so the whole diagram fits the viewport. Default. */
+    Fit,
+    /** Natural size: diagram dp == screen dp, even if it overflows the viewport. */
+    Natural,
+    /** Smallest zoom: 10% of fit. */
+    Min,
+    /** Largest zoom: 500% of fit. */
+    Max,
+}
+
 /**
  * Renders Mermaid flowchart source as native composables.
  *
@@ -68,6 +80,7 @@ fun MaradonaDiagram(
     autoDirection: Boolean = true,
     zoomEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    initialZoom: DiagramZoom = DiagramZoom.Fit,
 ) {
     val parsed = remember(source) { runCatching { FlowchartParser.parse(source) } }
     var lastGood by remember { mutableStateOf<Flowchart?>(null) }
@@ -76,8 +89,18 @@ fun MaradonaDiagram(
     val error = parsed.exceptionOrNull()
 
     // Committed state: rendered crisply via density scaling.
-    var userZoom by remember { mutableFloatStateOf(1f) }
+    var userZoom by remember {
+        mutableFloatStateOf(
+            when (initialZoom) {
+                DiagramZoom.Min -> MIN_ZOOM
+                DiagramZoom.Max -> MAX_ZOOM
+                else -> 1f
+            },
+        )
+    }
     var pan by remember { mutableStateOf(Offset.Zero) }
+    // Natural needs the measured size to back out the fit scale; apply once known.
+    var initialZoomApplied by remember { mutableStateOf(initialZoom != DiagramZoom.Natural) }
     // Transient state: applied as a layer transform during a gesture.
     var gestureZoom by remember { mutableFloatStateOf(1f) }
     var gesturePan by remember { mutableStateOf(Offset.Zero) }
@@ -187,6 +210,13 @@ fun MaradonaDiagram(
             if (wheelNonce > 0) {
                 delay(90)
                 commitGesture()
+            }
+        }
+
+        LaunchedEffect(naturalSize) {
+            if (!initialZoomApplied && naturalSize.width > 0 && naturalSize.height > 0) {
+                userZoom = (1f / fitScale()).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                initialZoomApplied = true
             }
         }
 
