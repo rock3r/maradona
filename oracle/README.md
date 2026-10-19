@@ -203,6 +203,18 @@ deterministic:
   re-renders and re-logs, even when a tile is captured twice with identical
   parameters.
 
+## Looking at the differences
+
+`tools/side_by_side.py` crops the same region of the golden and of our render and
+puts them next to each other. Use it before believing a comparison result: a
+defect that is glaring in a pair (a reversed polyline, a hollow arrowhead where
+the reference has a solid dot, an edge routed through the nodes) reads as fine
+when the two images are viewed separately.
+
+```sh
+oracle/tools/.venv/bin/python oracle/tools/side_by_side.py edges-heads --from 0.30 --to 0.62
+```
+
 ## Adding a chart
 
 Drop `my-chart.mmd` into `charts/`, run `render_goldens.sh` and `sync_charts.py`

@@ -191,7 +191,10 @@ internal object Dagre {
             // back to the original (in the original direction) before dropping
             // the reversed copy, or that edge renders with no path at all.
             val reversedEdge = g.edge(e.w, e.v, name)
-            if (reversedEdge != null) e.points = reversedEdge.points
+            // The route was built in the reversed direction, so flip it back:
+            // handing it over as-is leaves the polyline running backwards (the
+            // "start" of the edge at its target and vice versa).
+            if (reversedEdge != null) e.points = reversedEdge.points.reversed().toMutableList()
             g.removeEdge(e.w, e.v, name)
             e.reversed = true
             g.setEdge(e.v, e.w, e, e.forwardName)

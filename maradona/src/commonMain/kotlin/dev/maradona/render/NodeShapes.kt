@@ -74,19 +74,22 @@ private object CylinderShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
-        // mermaid: rx = w/2, ry = rx / (2.5 + w/50)
+        // mermaid's cylinder: a full ellipse as the cap (two arcs), straight
+        // sides down the body, and an arc bulging below the bottom edge. The
+        // drawn height is 2*ry + body, which is why the node box adds 3*ry.
         val ry = (w / 2f) / (2.5f + w / 50f)
-        // mermaid's path: a cap above the body (from -ry to ry), the body, then
-        // a bulge below it, so the outline spans the full height.
-        val body = h - ry * 2f
+        val body = maxOf(0f, h - ry * 2f)
         val path = Path().apply {
+            // Compose angles: 0 = right, 90 = down, 180 = left, 270 = up.
             moveTo(0f, ry)
-            arcTo(Rect(0f, 0f, w, ry * 2), 180f, -180f, false)
-            arcTo(Rect(0f, 0f, w, ry * 2), 180f, -180f, false)
-            lineTo(w, body + ry)
-            arcTo(Rect(0f, body, w, ry * 2), 0f, 180f, false)
+            arcTo(Rect(0f, 0f, w, ry * 2f), 180f, 180f, false)   // left → over the top → right
+            arcTo(Rect(0f, 0f, w, ry * 2f), 0f, 180f, false)     // right → under → left (cap closed)
+            lineTo(0f, ry + body)                                // left side
+            arcTo(Rect(0f, body, w, ry * 2f), 180f, 180f, false) // bulge under the bottom
+            lineTo(w, ry)                                        // right side
             close()
         }
         return Outline.Generic(path)
     }
 }
+
