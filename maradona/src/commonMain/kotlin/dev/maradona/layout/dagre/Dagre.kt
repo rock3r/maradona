@@ -115,6 +115,7 @@ internal object Dagre {
         fixupEdgeLabelCoords(g)
         undoCoordinateSystem(g)
         val bounds = translateGraph(g)
+        assignNodeIntersects(g)
         reversePointsForReversedEdges(g)
         undoAcyclic(g, reversedEdges)
 
@@ -287,6 +288,10 @@ internal object Dagre {
             var name = start
             var node = g.node(name)
             val original = node.edgeLabel ?: continue
+            val edgeObj = node.edgeObj ?: continue
+            // normalize removed the edge and replaced it with its segments; the
+            // original has to be put back, or the edge simply disappears.
+            g.setEdge(edgeObj.v, edgeObj.w, original, edgeObj.name)
             original.points = mutableListOf()
             while (node.isDummy) {
                 val next = g.successors(name).firstOrNull() ?: break
@@ -348,6 +353,49 @@ internal object Dagre {
             }
         }
         return (maxX - minX + g.marginx) to (maxY - minY + g.marginy)
+    }
+
+    /**
+     * `assignNodeIntersects`: the polyline runs between node borders, so the
+     * chain dagre routed (node centres and dummy nodes) is extended with the
+     * two points where it leaves and enters a node.
+     */
+    private fun assignNodeIntersects(g: DagreGraph) {
+        for (e in g.edges.values) {
+            val from = g.node(e.v)
+            val to = g.node(e.w)
+            if (e.points.isEmpty()) {
+                e.points = mutableListOf(
+                    intersectRect(from, to.x, to.y),
+                    intersectRect(to, from.x, from.y),
+                )
+            } else {
+                val first = e.points.first()
+                val last = e.points.last()
+                e.points.add(0, intersectRect(from, first.first, first.second))
+                e.points.add(intersectRect(to, last.first, last.second))
+            }
+        }
+    }
+
+    /** dagre's util.intersectRect: where the line to `point` leaves the node box. */
+    private fun intersectRect(node: DagreNode, px: Float, py: Float): Pair<Float, Float> {
+        val dx = px - node.x
+        val dy = py - node.y
+        var w = node.width / 2f
+        var h = node.height / 2f
+        val sx: Float
+        val sy: Float
+        if (kotlin.math.abs(dy) * w > kotlin.math.abs(dx) * h) {
+            if (dy < 0) h = -h
+            sx = if (dy == 0f) 0f else h * dx / dy
+            sy = h
+        } else {
+            if (dx < 0) w = -w
+            sx = w
+            sy = if (dx == 0f) 0f else w * dy / dx
+        }
+        return (node.x + sx) to (node.y + sy)
     }
 
     private fun reversePointsForReversedEdges(g: DagreGraph) {
