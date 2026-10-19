@@ -47,9 +47,14 @@ data class LayoutOptions(
     val nodeGap: Float = 40f,
     val layerGap: Float = 40f,
     val padding: Float = 8f,
-    /** Extra rank a labelled edge gets: dagre's label dummy, whose height is the
-     * label height plus twice its edgesep (20). Measured: 61.5 units. */
-    val edgeLabelRankGap: Float = 61.5f,
+    /**
+     * Padding mermaid's edge-label box carries around the text on each side.
+     * Measured from the goldens: a one-line label whose drawn background is 20
+     * units tall occupies a 60-unit rank, which is exactly what dagre produces
+     * when the label is passed as 60 tall. Density-dependent, like every other
+     * value here.
+     */
+    val edgeLabelPadding: Float = 20f,
     // Measured from mermaid's clusters: 24 units of padding all round, plus a
     // 24-unit band at the top for the cluster label.
     val subgraphPadding: Float = 24f,

@@ -53,52 +53,54 @@ object FlowchartLayout {
         /** Edge in effective (cycle-broken) direction. */
         private data class EffEdge(val from: String, val to: String, val index: Int, val reversed: Boolean)
 
-        /** A real node or a dummy routing node within one layer. */
-        private sealed interface Item {
-            data class Real(val id: String) : Item
-            data class Dummy(val edgeIndex: Int, val layer: Int) : Item
-        }
 
         fun compute(): DiagramLayout {
-            val graphEdges = chart.edges.filter { it.from != it.to }
-            val effective = breakCycles(graphEdges)
-            val layerOf = assignLayers(effective)
-
-            // Build layered items with dummies for edges spanning > 1 layer.
-            val layers = mutableMapOf<Int, MutableList<Item>>()
-            for (id in nodeIds) layers.getOrPut(layerOf.getValue(id)) { mutableListOf() } += Item.Real(id)
-            // Chains per original graph edge: item keys from source to target.
-            val chains = HashMap<Int, List<Item>>()
-            for (eff in effective) {
-                val fromLayer = layerOf.getValue(eff.from)
-                val toLayer = layerOf.getValue(eff.to)
-                val chain = mutableListOf<Item>(Item.Real(eff.from))
-                for (layer in fromLayer + 1 until toLayer) {
-                    val dummy = Item.Dummy(eff.index, layer)
-                    layers.getOrPut(layer) { mutableListOf() } += dummy
-                    chain += dummy
+            val sizesById = chart.nodes.associate { it.id to sizes.getValue(it.id) }
+            val dagreNodes = chart.nodes.map { it.id to (sizesById.getValue(it.id).width to sizesById.getValue(it.id).height) }
+            val dagreEdges = chart.edges
+                .withIndex()
+                .filter { it.value.from != it.value.to }
+                .map { (index, edge) ->
+                    val label = edgeLabelSize(edge)
+                    dev.maradona.layout.dagre.Dagre.EdgeSpec(
+                        from = edge.from,
+                        to = edge.to,
+                        name = "e$index",
+                        labelWidth = label?.width ?: 0f,
+                        labelHeight = label?.let { it.height + options.edgeLabelPadding * 2 } ?: 0f,
+                    )
                 }
-                chain += Item.Real(eff.to)
-                chains[eff.index] = chain
-            }
-            val orderedLayers: List<MutableList<Item>> = layers.keys.sorted().map { layers.getValue(it) }
 
-            reduceCrossings(orderedLayers, chains)
-            val centers = assignCoordinates(orderedLayers, layerOf, chains)
+            val result = dev.maradona.layout.dagre.Dagre.layout(
+                nodes = dagreNodes,
+                edges = dagreEdges,
+                nodesep = options.nodeGap,
+                ranksep = options.layerGap,
+            )
 
-            // Node rects.
             val nodeRects = HashMap<String, DiagramRect>()
-            for ((layerIdx, items) in orderedLayers.withIndex()) {
-                for (item in items) {
-                    if (item is Item.Real) {
-                        val size = sizes.getValue(item.id)
-                        val c = centers.getValue(item)
-                        nodeRects[item.id] = DiagramRect(c.x - size.width / 2f, c.y - size.height / 2f, size.width, size.height)
+            for ((id, box) in result.nodes) {
+                nodeRects[id] = DiagramRect(box.left, box.top, box.width, box.height)
+            }
+
+            val positionedEdges = chart.edges.mapIndexed { index, edge ->
+                if (edge.from == edge.to) {
+                    return@mapIndexed selfLoop(edge, nodeRects.getValue(edge.from))
+                }
+                val path = result.paths["e$index"]
+                val waypoints = path?.points?.map { DiagramPoint(it.first, it.second) }.orEmpty()
+                var points = orthogonalize(waypoints)
+                val labelSize = edgeLabelSize(edge)
+                val labelRect = labelSize?.let { size ->
+                    val centre = path?.labelCentre
+                        ?: waypoints.getOrNull(waypoints.size / 2)?.let { it.x to it.y }
+                    centre?.let {
+                        DiagramRect(it.first - size.width / 2f, it.second - size.height / 2f, size.width, size.height)
                     }
                 }
+                dev.maradona.layout.PositionedEdge(edge, points, labelRect)
             }
 
-            val positionedEdges = buildEdges(effective, chains, centers, nodeRects, orderedLayers)
             val subgraphRects = buildSubgraphs(nodeRects)
 
             // Normalise so the minimum coordinate sits at [options.padding].
@@ -140,219 +142,6 @@ object FlowchartLayout {
                 },
                 subgraphs = subgraphRects.map { it.copy(rect = it.rect.shifted()) },
             )
-        }
-
-        private fun breakCycles(edges: List<dev.maradona.model.FlowEdge>): List<EffEdge> {
-            val adjacency = HashMap<String, MutableList<Pair<String, Int>>>()
-            // Use indices into chart.edges so chains map back to the right edge.
-            val chartIndices = chart.edges.withIndex().filter { it.value.from != it.value.to }.map { it.index }
-            for (idx in chartIndices) {
-                val e = chart.edges[idx]
-                adjacency.getOrPut(e.from) { mutableListOf() } += e.to to idx
-            }
-            val reversed = HashSet<Int>()
-            val state = HashMap<String, Int>() // 0=unseen 1=in-stack 2=done
-            fun dfs(node: String) {
-                state[node] = 1
-                for ((next, idx) in adjacency[node].orEmpty()) {
-                    when (state[next] ?: 0) {
-                        1 -> reversed += idx
-                        0 -> dfs(next)
-                    }
-                }
-                state[node] = 2
-            }
-            for (id in nodeIds) if ((state[id] ?: 0) == 0) dfs(id)
-            return chartIndices.map { idx ->
-                val e = chart.edges[idx]
-                if (idx in reversed) EffEdge(e.to, e.from, idx, reversed = true)
-                else EffEdge(e.from, e.to, idx, reversed = false)
-            }
-        }
-
-        private fun assignLayers(effective: List<EffEdge>): Map<String, Int> {
-            val layer = HashMap<String, Int>()
-            nodeIds.forEach { layer[it] = 0 }
-            val incoming = HashMap<String, MutableList<String>>()
-            val indegree = HashMap<String, Int>()
-            nodeIds.forEach { indegree[it] = 0 }
-            for (e in effective) {
-                incoming.getOrPut(e.to) { mutableListOf() } += e.from
-                indegree[e.to] = (indegree[e.to] ?: 0) + 1
-            }
-            val outgoing = HashMap<String, MutableList<String>>()
-            for (e in effective) outgoing.getOrPut(e.from) { mutableListOf() } += e.to
-            val queue = ArrayDeque(nodeIds.filter { (indegree[it] ?: 0) == 0 })
-            val pending = indegree.toMutableMap()
-            while (queue.isNotEmpty()) {
-                val node = queue.removeFirst()
-                val preds = incoming[node].orEmpty()
-                if (preds.isNotEmpty()) layer[node] = preds.maxOf { layer.getValue(it) } + 1
-                for (next in outgoing[node].orEmpty()) {
-                    pending[next] = (pending[next] ?: 0) - 1
-                    if (pending[next] == 0) queue.addLast(next)
-                }
-            }
-            return layer
-        }
-
-        private fun neighboursOf(chains: Map<Int, List<Item>>): Pair<Map<Item, List<Item>>, Map<Item, List<Item>>> {
-            val preds = HashMap<Item, MutableList<Item>>()
-            val succs = HashMap<Item, MutableList<Item>>()
-            for (chain in chains.values) {
-                for (i in 0 until chain.lastIndex) {
-                    succs.getOrPut(chain[i]) { mutableListOf() } += chain[i + 1]
-                    preds.getOrPut(chain[i + 1]) { mutableListOf() } += chain[i]
-                }
-            }
-            return preds to succs
-        }
-
-        private fun reduceCrossings(layers: List<MutableList<Item>>, chains: Map<Int, List<Item>>) {
-            val (preds, succs) = neighboursOf(chains)
-            fun barycenter(item: Item, neighbours: Map<Item, List<Item>>, refLayer: List<Item>): Float {
-                val ns = neighbours[item].orEmpty()
-                if (ns.isEmpty()) return -1f
-                val index = refLayer.withIndex().associate { it.value to it.index }
-                val positions = ns.mapNotNull { index[it] }
-                return if (positions.isEmpty()) -1f else positions.average().toFloat()
-            }
-            repeat(8) { sweep ->
-                if (sweep % 2 == 0) {
-                    for (li in 1 until layers.size) {
-                        val ref = layers[li - 1].toList()
-                        val current = layers[li]
-                        val keyed = current.withIndex().map { (i, item) ->
-                            val b = barycenter(item, preds, ref)
-                            item to (if (b < 0f) i.toFloat() else b)
-                        }
-                        current.clear()
-                        current += keyed.sortedBy { it.second }.map { it.first }
-                    }
-                } else {
-                    for (li in layers.size - 2 downTo 0) {
-                        val ref = layers[li + 1].toList()
-                        val current = layers[li]
-                        val keyed = current.withIndex().map { (i, item) ->
-                            val b = barycenter(item, succs, ref)
-                            item to (if (b < 0f) i.toFloat() else b)
-                        }
-                        current.clear()
-                        current += keyed.sortedBy { it.second }.map { it.first }
-                    }
-                }
-            }
-        }
-
-        private fun itemWidth(item: Item): Float = when (item) {
-            is Item.Real -> sizes.getValue(item.id).width
-            is Item.Dummy -> 0f
-        }
-
-        private fun assignCoordinates(
-            layers: List<MutableList<Item>>,
-            layerOf: Map<String, Int>,
-            chains: Map<Int, List<Item>>,
-        ): Map<Item, DiagramPoint> {
-            val centerX = HashMap<Item, Float>()
-            val layerWidths = layers.map { items ->
-                items.sumOf { itemWidth(it).toDouble() }.toFloat() +
-                    options.nodeGap * max(0, items.size - 1)
-            }
-            val labelled = labelledRanks(layerOf)
-            val maxWidth = layerWidths.maxOrNull() ?: 0f
-            for ((li, items) in layers.withIndex()) {
-                var x = (maxWidth - layerWidths[li]) / 2f
-                for (item in items) {
-                    val w = itemWidth(item)
-                    centerX[item] = x + w / 2f
-                    x += w + options.nodeGap
-                }
-            }
-            // Ranks are centred by their own width. Mermaid (dagre) additionally
-            // aligns nodes with their neighbours, but for the shapes a flowchart
-            // produces, rank-centred packing is what its result looks like: a
-            // parent sits over its children's span, and a merge node between its
-            // parents. The sweeps that used to be here pulled those nodes to one
-            // side instead.
-            val minLeft = layers.flatten().minOfOrNull { centerX.getValue(it) - itemWidth(it) / 2f } ?: 0f
-            val result = HashMap<Item, DiagramPoint>()
-            for ((li, items) in layers.withIndex()) {
-                val cy = layerTop(li, layers, labelled) + layerHeight(li, layers) / 2f
-                for (item in items) {
-                    result[item] = DiagramPoint(centerX.getValue(item) - minLeft, cy)
-                }
-            }
-            return result
-        }
-
-        private fun layerHeight(layerIdx: Int, layers: List<List<Item>>): Float =
-            layers[layerIdx].maxOfOrNull {
-                if (it is Item.Real) sizes.getValue(it.id).height else 0f
-            } ?: 0f
-
-        /**
-         * Ranks an edge label occupies: dagre inserts a dummy node for every
-         * labelled edge, so the gap between its endpoints is two rank
-         * separations rather than one. Without this, diagrams with edge labels
-         * come out visibly shorter than mermaid's.
-         */
-        private fun labelledRanks(layerOf: Map<String, Int>): Set<Int> =
-            chart.edges.filter { it.label != null }.mapNotNull { edge ->
-                val from = layerOf[edge.from] ?: return@mapNotNull null
-                val to = layerOf[edge.to] ?: return@mapNotNull null
-                if (from == to) null else minOf(from, to)
-            }.toSet()
-
-        private fun layerTop(layerIdx: Int, layers: List<List<Item>>, labelled: Set<Int>): Float {
-            var y = 0f
-            for (i in 0 until layerIdx) {
-                y += layerHeight(i, layers) + options.layerGap
-                if (i in labelled) y += options.edgeLabelRankGap
-            }
-            return y
-        }
-
-        private fun buildEdges(
-            effective: List<EffEdge>,
-            chains: Map<Int, List<Item>>,
-            centers: Map<Item, DiagramPoint>,
-            nodeRects: Map<String, DiagramRect>,
-            layers: List<List<Item>>,
-        ): List<PositionedEdge> {
-            val out = mutableListOf<PositionedEdge>()
-            val effByIndex = effective.associateBy { it.index }
-            for ((idx, edge) in chart.edges.withIndex()) {
-                if (edge.from == edge.to) {
-                    nodeRects[edge.from]?.let { r -> out += selfLoop(edge, r) }
-                    continue
-                }
-                val eff = effByIndex[idx] ?: continue
-                val chain = chains[idx] ?: continue
-                val fromRect = nodeRects.getValue(eff.from)
-                val toRect = nodeRects.getValue(eff.to)
-                val waypoints = mutableListOf(DiagramPoint(fromRect.centerX, fromRect.bottom))
-                for (item in chain.subList(1, chain.lastIndex)) {
-                    waypoints += centers.getValue(item)
-                }
-                waypoints += DiagramPoint(toRect.centerX, toRect.y)
-                var points = orthogonalize(waypoints)
-                if (eff.reversed) points = points.reversed()
-                val labelSize = edgeLabelSize(edge)
-                val labelRect = labelSize?.let { size ->
-                    // Mermaid puts an edge label in the middle of the rank gap
-                    // (its dagre label dummy sits between the two ranks), on the
-                    // edge's x at that height - not at a waypoint of the
-                    // polyline, which is what made our labels sit too low.
-                    val upper = if (fromRect.bottom <= toRect.y) fromRect else toRect
-                    val lower = if (upper === fromRect) toRect else fromRect
-                    val gapY = (upper.bottom + lower.y) / 2f
-                    val anchor = waypoints.minByOrNull { kotlin.math.abs(it.y - gapY) } ?: waypoints.first()
-                    DiagramRect(anchor.x - size.width / 2f, gapY - size.height / 2f, size.width, size.height)
-                }
-                out += PositionedEdge(edge, points, labelRect)
-            }
-            return out
         }
 
         private fun orthogonalize(waypoints: List<DiagramPoint>): List<DiagramPoint> {
