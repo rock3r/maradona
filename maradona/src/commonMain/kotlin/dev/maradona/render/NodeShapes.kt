@@ -54,10 +54,11 @@ fun nodeShape(shape: NodeShape, cornerRadius: Dp = 5.dp): Shape = when (shape) {
         val m = h / 2f
         moveTo(m, 0f); lineTo(w - m, 0f); lineTo(w, h); lineTo(0f, h); close()
     }
-    // a notch of h/4 on the left edge.
+    // a notch of h/4, which pokes out past the left edge (mermaid draws the
+    // notch point outside the label box, so the drawn shape is wider than it).
     NodeShape.Asymmetric -> PolygonShape { w, h ->
         val m = h / 4f
-        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(0f, h); lineTo(m, h / 2f); close()
+        moveTo(m, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(m, h); lineTo(0f, h / 2f); close()
     }
     NodeShape.Cylinder -> CylinderShape
 }
@@ -75,11 +76,15 @@ private object CylinderShape : Shape {
         val h = size.height
         // mermaid: rx = w/2, ry = rx / (2.5 + w/50)
         val ry = (w / 2f) / (2.5f + w / 50f)
+        // mermaid's path: a cap above the body (from -ry to ry), the body, then
+        // a bulge below it, so the outline spans the full height.
+        val body = h - ry * 2f
         val path = Path().apply {
             moveTo(0f, ry)
-            arcTo(Rect(0f, 0f, w, ry * 2), 180f, 180f, false)
-            lineTo(w, h - ry)
-            arcTo(Rect(0f, h - ry * 2, w, h), 0f, 180f, false)
+            arcTo(Rect(0f, 0f, w, ry * 2), 180f, -180f, false)
+            arcTo(Rect(0f, 0f, w, ry * 2), 180f, -180f, false)
+            lineTo(w, body + ry)
+            arcTo(Rect(0f, body, w, ry * 2), 0f, 180f, false)
             close()
         }
         return Outline.Generic(path)

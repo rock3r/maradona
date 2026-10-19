@@ -117,6 +117,17 @@ def _shapes(element):
         yield from _shapes(child)
 
 
+def _kind_from_box(measured):
+    """Shape kind from the element Chrome measured."""
+    tag = measured["tag"]
+    cls = measured.get("cls") or ""
+    for kind in ("cylinder", "stadium", "subroutine", "hexagon", "parallelogram",
+                 "trapezoid", "circle", "rhombus", "diamond"):
+        if kind in cls:
+            return kind
+    return tag
+
+
 def _element_text(element):
     """Label text: SVG <text>/<tspan> when htmlLabels is off, XHTML span otherwise."""
     for tspan in element.iter(SVG_NS + "tspan"):
@@ -143,9 +154,24 @@ def _shape_kind(shape_el, node_group):
     return tag
 
 
+def chrome_boxes(svg_path):
+    """Exact shape boxes from Chrome's getBBox(), keyed by node id."""
+    import subprocess
+    out = subprocess.run(
+        ["node", str(ROOT / "tools" / "svg_boxes.mjs"), str(svg_path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()
+    boxes = {}
+    for line in out:
+        for _, node_boxes in json.loads(line).items():
+            boxes.update(node_boxes)
+    return boxes
+
+
 def extract(chart_id, svg_path=None, png_path=None):
     svg_path = pathlib.Path(svg_path) if svg_path else ROOT / "goldens" / f"{chart_id}.svg"
     png_path = pathlib.Path(png_path) if png_path else ROOT / "goldens" / f"{chart_id}.png"
+    exact = chrome_boxes(svg_path)
     root = ET.fromstring(svg_path.read_text())
     view = root.get("viewBox", "0 0 0 0").split()
     origin = (float(view[0]), float(view[1]))
@@ -188,11 +214,14 @@ def extract(chart_id, svg_path=None, png_path=None):
             d = ((shape["centre"][0] - cx) ** 2 + (shape["centre"][1] - cy) ** 2) ** 0.5
             if best_d is None or d < best_d:
                 best, best_d = shape, d
-        # The SVG box is authoritative (it is the source of truth, and the PNG
-        # fill mask fails for nodes with a custom `style` fill). The PNG fill is
-        # only a fallback for path-shaped nodes, whose bbox we cannot read from
-        # the SVG attributes.
-        if node["svg_box"]:
+        # Chrome's getBBox() is the source of truth: exact for every shape,
+        # including path-shaped ones (whose fill bbox stops short of a cap) and
+        # ones whose outline pokes outside the label box (a flag).
+        measured = exact.get(node["id"])
+        if measured is not None:
+            box = to_png(measured["box"])
+            node["shape"] = _kind_from_box(measured)
+        elif node["svg_box"]:
             box = to_png(node["svg_box"])
         elif best is not None and best_d < 40:
             box = list(best["bbox"])

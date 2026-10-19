@@ -79,7 +79,13 @@ object NodeSizing {
             val h = labelH + PADDING * 2
             DiagramSize(labelW + PADDING * 4 + h, h)
         }
-        NodeShape.Asymmetric -> DiagramSize(labelW + 42f, labelH + 24f)
+        // The flag's notch pokes out past the left edge, so the drawn shape is
+        // wider than the label box by the notch depth (h/4). Verified against
+        // Chrome's getBBox() for mermaid's node.
+        NodeShape.Asymmetric -> {
+            val h = labelH + 24f
+            DiagramSize(labelW + 42f + h / 4f, h)
+        }
     }
 
     /** The height the shape's slanted end eats on each side (for drawing paths). */
@@ -106,11 +112,16 @@ object NodeSizing {
         return DiagramSize(w, h)
     }
 
+    /**
+     * The cylinder path draws a cap above and a bulge below its body, so the
+     * drawn height is `labelH + 24 + 3*ry` (mermaid's `h` is the body, and the
+     * path spans from -ry to h + ry). Verified against Chrome's getBBox().
+     */
     private fun cylinder(labelW: Float, labelH: Float): DiagramSize {
         val w = labelW + 24f
         val rx = w / 2f
         val ry = rx / (2.5f + w / 50f)
-        return DiagramSize(w, labelH + 24f + ry * 2f)
+        return DiagramSize(w, labelH + 24f + ry * 3f)
     }
 
     private fun hypot(a: Float, b: Float): Float = sqrt(a * a + b * b)
