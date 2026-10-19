@@ -43,6 +43,11 @@ MAX_LABEL_ERR = 0.03       # edge label centre offset, share of the diagonal
 # Rendered fill vs the IL box: the fill sits inside a 1dp border (density px)
 # and its edges anti-alias, so a couple of px per side is expected.
 MAX_RENDER_ERR = 2.0 * 3.0
+# Edge endpoints, as a share of the diagonal: an edge must start and end where
+# mermaid's does (its attachment point on the node outline). The budget is
+# generous because attachment points still differ on a few shapes - recorded as
+# a known difference in the README - but a missing or unrouted edge (100%) fails.
+MAX_EDGE_ERR = 0.06
 
 
 def _centre(rect):
@@ -72,7 +77,7 @@ def compare_chart(chart):
     our_nodes = {n["id"]: n for n in ours["nodes"]}
 
     rows, worst = [], {"size": 0.0, "centre": 0.0, "label": 0.0,
-                       "render": 0.0, "missing": 0}
+                       "render": 0.0, "edges": 0.0, "missing": 0}
     for gn in golden["nodes"]:
         on = our_nodes.get(gn["id"])
         if on is None:
@@ -152,15 +157,44 @@ def compare_chart(chart):
         # polluted by the shape's own stroke on diamonds and stadiums, so it is
         # reported for information only.
 
+    # Edges: presence, endpoints and length. Node geometry alone does not catch
+    # a diagram that renders with no connections at all, which is exactly the
+    # regression this check exists for.
+    our_edges = {(e["from"], e["to"]): e for e in ours["edges"]}
+    edge_rows = []
+    for ge in golden["edges"]:
+        key = (ge.get("from"), ge.get("to"))
+        if key[0] is None or key[1] is None:
+            continue
+        oe = our_edges.get(key)
+        if oe is None:
+            worst["edges"] = max(worst["edges"], 1.0)
+            edge_rows.append((f"{key[0]}->{key[1]}", "MISSING", "", ""))
+            continue
+        gp = [(x * scale, y * scale) for x, y in ge["path"]]
+        op = [(x, y) for x, y in oe["points"]]
+        if len(gp) < 2 or len(op) < 2:
+            worst["edges"] = max(worst["edges"], 1.0)
+            edge_rows.append((f"{key[0]}->{key[1]}", "EMPTY", f"{len(gp)}", f"{len(op)}"))
+            continue
+        start_err = max(abs(gp[0][0] - op[0][0]), abs(gp[0][1] - op[0][1]))
+        end_err = max(abs(gp[-1][0] - op[-1][0]), abs(gp[-1][1] - op[-1][1]))
+        err = max(start_err, end_err) / diagonal
+        worst["edges"] = max(worst["edges"], err)
+        edge_rows.append((f"{key[0]}->{key[1]}", f"{start_err:.0f}/{end_err:.0f}px",
+                          f"{len(gp)}", f"{len(op)}"))
+
     # The layout itself is what this oracle judges: the renderer line is a
     # separate (still rough) check, reported but not gated.
-    passed = (worst["missing"] == 0 and worst["size"] <= MAX_SIZE_ERR
-              and worst["centre"] <= MAX_CENTRE_ERR and worst["label"] <= MAX_LABEL_ERR
-)
+    passed = (worst["missing"] == 0
+              and worst["size"] <= MAX_SIZE_ERR
+              and worst["centre"] <= MAX_CENTRE_ERR
+              and worst["label"] <= MAX_LABEL_ERR
+              and worst["edges"] <= MAX_EDGE_ERR)
     return {
         "kind": "layout", "chart": chart, "scale": round(scale, 4),
         "absolute_scale": round(absolute_scale, 4), "rows": rows,
-        "labels": label_rows, "pads": pad_rows, "render": render_rows,
+        "labels": label_rows, "pads": pad_rows, "render": render_rows, "edges": edge_rows,
         "worst": {k: round(v, 4) for k, v in worst.items()}, "pass": passed,
     }
 
@@ -186,7 +220,7 @@ def main():
         print(f"\n{'PASS' if result['pass'] else 'FAIL'}  {chart}   "
               f"(absolute scale x{result['absolute_scale']:.3f})")
         print(f"      worst: size {w['size'] * 100:.1f}%  centre {w['centre'] * 100:.1f}% of diagonal  "
-              f"label {w['label'] * 100:.1f}%  "
+              f"label {w['label'] * 100:.1f}%  edges {w['edges'] * 100:.1f}%  "
               f"render-vs-IL {w['render']:.0f}px  missing {w['missing']}")
         print(f"      {'node':6s} {'mermaid box @centre':>26s} {'maradona box @centre':>26s} "
               f"{'delta w/h':>12s} {'centre':>8s} {'text':>7s}")
@@ -196,6 +230,8 @@ def main():
             print(f"      edge label {label[0]!r}: offset {label[1]} ({label[2]})")
         for node, gold_text, our_text in result["pads"]:
             print(f"      text    {node:6s} mermaid {gold_text:>9s}      maradona {our_text:>9s}")
+        for edge, endpoints, gold_points, our_points in result["edges"]:
+            print(f"      edge {edge:10s} endpoints {endpoints:>12s}  points {gold_points}->{our_points}")
         bad_render = [r for r in result["render"] if r[1].endswith("px") and float(r[1][:-2]) > MAX_RENDER_ERR]
         unmatched = [r for r in result["render"] if not r[1].endswith("px")]
         print(f"      renderer: {len(result['render'])} nodes, {len(unmatched)} unmatched in the render, "

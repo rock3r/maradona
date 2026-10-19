@@ -185,6 +185,11 @@ internal object Dagre {
 
     private fun undoAcyclic(g: DagreGraph, reversed: List<Pair<DagreEdge, String>>) {
         for ((e, name) in reversed) {
+            // The route was computed for the reversed edge; hand its geometry
+            // back to the original (in the original direction) before dropping
+            // the reversed copy, or that edge renders with no path at all.
+            val reversedEdge = g.edge(e.w, e.v, name)
+            if (reversedEdge != null) e.points = reversedEdge.points
             g.removeEdge(e.w, e.v, name)
             e.reversed = true
             g.setEdge(e.v, e.w, e, e.forwardName)

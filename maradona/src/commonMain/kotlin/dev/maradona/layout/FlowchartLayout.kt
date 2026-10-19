@@ -56,6 +56,7 @@ object FlowchartLayout {
 
         fun compute(): DiagramLayout {
             val sizesById = chart.nodes.associate { it.id to sizes.getValue(it.id) }
+            val shapes = chart.nodes.associate { it.id to it.shape }
             val dagreNodes = chart.nodes.map { it.id to (sizesById.getValue(it.id).width to sizesById.getValue(it.id).height) }
             val dagreEdges = chart.edges
                 .withIndex()
@@ -92,7 +93,19 @@ object FlowchartLayout {
                     return@mapIndexed selfLoop(edge, nodeRects.getValue(edge.from))
                 }
                 val path = result.paths["e$index"]
-                val waypoints = path?.points?.map { DiagramPoint(it.first, it.second) }.orEmpty()
+                var waypoints = path?.points?.map { DiagramPoint(it.first, it.second) }.orEmpty()
+                // Attach to the shapes' outlines, not their bounding boxes:
+                // mermaid draws connections to the geometry it renders.
+                if (waypoints.size >= 2) {
+                    val fromRect = nodeRects.getValue(edge.from)
+                    val toRect = nodeRects.getValue(edge.to)
+                    val fromShape = shapes.getValue(edge.from)
+                    val toShape = shapes.getValue(edge.to)
+                    waypoints = waypoints.toMutableList().also { points ->
+                        points[0] = NodeOutline.intersect(fromShape, fromRect, points[1])
+                        points[points.lastIndex] = NodeOutline.intersect(toShape, toRect, points[points.lastIndex - 1])
+                    }
+                }
                 var points = orthogonalize(waypoints)
                 val labelSize = edgeLabelSize(edge)
                 val labelRect = labelSize?.let { size ->
