@@ -57,11 +57,11 @@ internal object Dagre {
         marginx: Float = 8f,
         marginy: Float = 8f,
     ): Result {
-        // mermaid does not use dagre's compound (nested-cluster) layout for
-        // flowcharts: it lays each cluster out as its own dagre graph and
-        // composes the results. Until that composition is ported, clusters are
-        // laid out as plain nodes and their boxes are derived from their
-        // members, so `clusters` is accepted but only used for bookkeeping.
+        // dagre's compound layout is ported but not enabled: it diverges from
+        // dagre's own result on the reference chart (cluster extents and node
+        // columns), and it is not the blocker it looks like - layout the
+        // clusters as plain nodes and the nodes' own geometry is unaffected.
+        // See oracle/README.md for the state of clusters.
         val compound = false && clusters.isNotEmpty()
         val g = DagreGraph(multigraph = true, compound = compound)
         g.nodesep = nodesep
@@ -98,6 +98,8 @@ internal object Dagre {
         // dagre ranks the non-compound view: only leaves get a rank, clusters
         // derive theirs from their nesting border nodes.
         rank(if (compound) g.asNonCompound() else g)
+        if (false) println("DBG ranks " + g.nodes.entries.joinToString(" ") { (id, n) -> "$id:${n.rank}" }
+            + " | edges " + g.edges.keys.joinToString(" ") { "${it.v}->${it.w}" })
         injectEdgeLabelProxies(g)
         g.removeEmptyRanks()
         if (compound) g.cleanupNestingGraph()

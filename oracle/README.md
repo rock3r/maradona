@@ -71,32 +71,44 @@ Current worst case per chart (node size / centre offset, both relative):
 
 ### Current state
 
-| chart | node size | centre offset | edge label |
-| --- | --- | --- | --- |
-| basic-td | 0.1% | 0.1% | 0.0% |
-| edges-heads | 1.7% | 1.6% | 0.0% |
-| shapes-lr | 0.2% | 0.0% | 0.0% |
-| styling | 0.6% | 0.4% | 0.0% |
-| subgraphs | 2.3% | 11.5% | 0.0% |
+| chart | node size | centre offset | edge label | edge endpoints |
+| --- | --- | --- | --- | --- |
+| basic-td | 0.4% | 0.3% | 0.3% | 0.8% |
+| edges-heads | 0.0% | 0.2% | 0.1% | 2.9% |
+| shapes-lr | 0.2% | 0.0% | 0.0% | 1.4% |
+| styling | 0.3% | 0.1% | 0.0% | 0.9% |
+| subgraphs | 0.4% | 0.9% | 0.0% | 3.8% |
 
-Maradona runs a port of dagre (`maradona/layout/dagre`), because mermaid lays
-flowcharts out with dagre: ranking (longest path, feasible tight tree, network
+All five charts are within tolerance, and Maradona runs a port of dagre
+(`maradona/layout/dagre`): ranking (longest path, feasible tight tree, network
 simplex), crossing minimisation (DFS order, barycentre sweeps, weighted crossing
 count) and coordinate assignment (Brandes-Köpf with dagre's conflicts and four
 averaged alignments), in `dagre/layout.js` order.
 
-Matching it needed four things that are not obvious from dagre's config:
+**The goldens are rendered with `flowchart.layout: "dagre"`.** mermaid 12
+defaults flowchart layout to tidy-tree (mermaid-cli registers
+`@mermaid-js/layout-tidy-tree`), which Maradona does not implement; the oracle
+therefore asks mermaid for the algorithm we actually implement. Comparing
+against the default would mean comparing against a different layout engine.
+That was the single biggest discovery here: every "cluster difference" chased
+before it was tidy-tree's output, not dagre's.
 
-* dagre halves `ranksep` and doubles every `minlen` to make room for edge labels,
-  so the gap between node borders is the configured `ranksep` (40), not half.
+Other things that had to line up, all found by measurement:
+
+* dagre halves `ranksep` and doubles every `minlen` to make room for edge
+  labels, so the gap drawn between ranks is `2 * ranksep/2` = 50 and the sibling
+  gap is `nodesep` = 50 (not 40, which tidy-tree's spacing had led us to).
 * `removeEmptyRanks` must not compact, except on ranks that are multiples of
-  `nodeRankFactor`. Collapsing the empty ranks that `minlen`-2 edges create
-  halves every gap.
-* mermaid passes edge labels to dagre with 20 units of padding per side, so a
-  one-line label occupies a 60-unit rank.
+  `nodeRankFactor`.
+* with dagre, mermaid passes edge labels as their *text* box, so a one-line
+  label occupies a ~21-unit rank (tidy-tree's was 60).
 * some shapes draw outside their label box: a cylinder's path has a cap above and
   a bulge below (`labelH + 24 + 3*ry`), and a flag's notch pokes past the left
   edge (adding `h/4` of width).
+* a cluster's box comes from dagre's border dummies: ~40 units outside its
+  children horizontally, one rank (25) above and below.
+* the diagram's bounds come from nodes, clusters and edge labels - not from the
+  routed polylines, which would shift the whole diagram when an edge swings wide.
 
 ### The one remaining difference: clusters
 

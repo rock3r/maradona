@@ -133,27 +133,92 @@ private fun DagreGraph.addBorderNode(prop: String, prefix: String, sg: String, s
     if (prev != null) setEdge(prev, curr, DagreEdge(prev, curr).also { it.weight = 1f })
 }
 
-/** `parent-dummy-chains`: give every edge dummy the parent of the node it follows. */
+/**
+ * `parent-dummy-chains`: re-parent each edge dummy to the innermost cluster that
+ * both of its edge's endpoints live in, by walking their lowest common ancestor.
+ * Without it, cross-cluster edges' dummies stay parented to nothing and the
+ * ordering constraints that keep a cluster's members together are lost.
+ */
 internal fun DagreGraph.parentDummyChains(dummyChains: List<String>) {
-    if (dummyChains.isEmpty()) return
+    if (dummyChains.isEmpty() || !hasAnyCluster()) return
+    val postorder = postorderNumbers()
     for (start in dummyChains) {
-        var v = start
-        var node = node(v)
-        val edgeObj = node.edgeObj ?: continue
-        // Ascend from the edge's source to its target, adopting parents.
-        var previousParent = parentOf(edgeObj.v)
-        while (true) {
-            val current = node
-            val parent = parentOf(current.edgeObj?.v ?: edgeObj.v)
-            if (current.parent == null) setParent(v, parent ?: previousParent)
-            previousParent = parentOf(v) ?: previousParent
-            if (current.rank != null && current.rank == node(edgeObj.w).rank) break
-            val next = successors(v).firstOrNull() ?: break
-            v = next
-            node = node(v)
-            if (node.dummy == null) break
+        val first = node(start)
+        val edgeObj = first.edgeObj ?: continue
+        val (path, lca) = findPath(postorder, edgeObj.v, edgeObj.w)
+        var pathIndex = 0
+        var ascending = true
+        var current = start
+        while (current != edgeObj.w) {
+            val current_node = node(current)
+            val rank = current_node.rank ?: break
+            if (ascending) {
+                while (pathIndex < path.size) {
+                    val candidate = path[pathIndex]
+                    if (candidate == lca) break
+                    val candidateMax = candidate?.let { node(it).maxRank } ?: 0
+                    if (candidateMax < rank) pathIndex++ else break
+                }
+                if (pathIndex < path.size && path[pathIndex] == lca && lca == null) ascending = false
+                if (pathIndex < path.size && path.getOrNull(pathIndex) == lca && lca == null) ascending = false
+                if (lca == null) ascending = false
+            }
+            if (!ascending) {
+                while (pathIndex < path.size - 1) {
+                    val next = path[pathIndex + 1]
+                    val nextMin = next?.let { node(it).minRank ?: 0 } ?: 0
+                    if (nextMin <= rank) pathIndex++ else break
+                }
+            }
+            val parent = path.getOrNull(pathIndex)
+            if (parent != null) setParent(current, parent)
+            current = successors(current).firstOrNull() ?: break
+            if (!node(current).isDummy) break
         }
     }
+}
+
+private fun DagreGraph.hasAnyCluster(): Boolean = nodes.keys.any { childrenOf(it).isNotEmpty() }
+
+/** `parent-dummy-chains.js: postorder`. */
+private fun DagreGraph.postorderNumbers(): Map<String, Pair<Int, Int>> {
+    val result = HashMap<String, Pair<Int, Int>>()
+    var limit = 0
+    fun dfs(v: String) {
+        val low = limit
+        for (child in childrenOf(v)) dfs(child)
+        result[v] = low to limit++
+    }
+    for (v in nodes.keys.filter { parentOf(it) == null }) dfs(v)
+    return result
+}
+
+/** `parent-dummy-chains.js: findPath`. */
+private fun DagreGraph.findPath(
+    postorder: Map<String, Pair<Int, Int>>,
+    v: String,
+    w: String,
+): Pair<List<String?>, String?> {
+    val vPath = mutableListOf<String?>()
+    val wPath = mutableListOf<String?>()
+    val low = minOf(postorder[v]?.first ?: 0, postorder[w]?.first ?: 0)
+    val lim = maxOf(postorder[v]?.second ?: 0, postorder[w]?.second ?: 0)
+
+    var parent: String? = v
+    do {
+        parent = parent?.let { parentOf(it) }
+        vPath += parent
+    } while (parent != null && ((postorder[parent]?.first ?: 0) > low || lim > (postorder[parent]?.second ?: 0)))
+    val lca = parent
+
+    parent = w
+    while (true) {
+        parent = parent?.let { parentOf(it) }
+        if (parent == lca) break
+        if (parent == null) break
+        wPath += parent
+    }
+    return (vPath + wPath.reversed()) to lca
 }
 
 /** `removeBorderNodes`: turn the border nodes into each cluster's box. */

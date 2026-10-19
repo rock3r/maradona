@@ -201,7 +201,14 @@ internal class DagreGraph(
         out.acyclicer = acyclicer
         out.ranker = ranker
         for ((v, label) in nodes) if (childrenOf(v).isEmpty()) out.setNode(v, label)
-        for ((_, e) in edges) out.setEdge(e.v, e.w, e, e.name)
+        for ((_, e) in edges) {
+            // dagre's setEdge auto-creates its endpoints, so an edge to a cluster
+            // still materialises a (sizeless) node for it.
+            for (endpoint in listOf(e.v, e.w)) {
+                if (!out.hasNode(endpoint)) out.setNode(endpoint, DagreNode(0f, 0f))
+            }
+            out.setEdge(e.v, e.w, e, e.name)
+        }
         return out
     }
 }

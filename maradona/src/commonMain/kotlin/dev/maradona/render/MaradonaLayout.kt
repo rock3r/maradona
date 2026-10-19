@@ -132,9 +132,8 @@ fun MaradonaLayout(
                 nodeGap = nodeGap * density,
                 layerGap = layerGap * density,
                 padding = padding * density,
-                subgraphPadding = subgraphPadding * density,
-                subgraphLabelHeight = subgraphLabelHeight * density,
-                edgeLabelPadding = edgeLabelPadding * density,
+                subgraphPaddingX = subgraphPaddingX * density,
+                subgraphPaddingY = subgraphPaddingY * density,
             )
         }
         var result = FlowchartLayout.layout(

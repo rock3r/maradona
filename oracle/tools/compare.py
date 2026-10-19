@@ -197,6 +197,7 @@ def _cols(fractions):
 def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
     """Returns {entry_name: report_dict} for one chart."""
     canvas, view, tile_map = chart_meta(manifest, chart)
+    meta = manifest["charts"][chart]
     results = {}
     prefix = f"{chart}-"
 
@@ -226,8 +227,12 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
     size = ours_content.size
     offset = (box[0], box[1])
 
-    ratio_w = size[0] / gold_content.size[0]
-    ratio_h = size[1] / gold_content.size[1]
+    # The size relationship uses the renderer's own content measurement (from
+    # the manifest): measuring the stitched tiles here would compare against a
+    # different background threshold and report drift that is not in the layout.
+    measured = (meta["contentW"], meta["contentH"])
+    ratio_w = measured[0] / gold_content.size[0]
+    ratio_h = measured[1] / gold_content.size[1]
     drift = (round(max(ratio_w, 1 / ratio_w), 4), round(max(ratio_h, 1 / ratio_h), 4))
     # 1.0 == same size as the golden. The renderer picks its scale so one axis
     # lines up; the other legitimately differs (Maradona's layout is not

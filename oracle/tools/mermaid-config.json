@@ -16,6 +16,7 @@
   },
   "flowchart": {
     "htmlLabels": false,
-    "useMaxWidth": false
+    "useMaxWidth": false,
+    "layout": "dagre"
   }
 }

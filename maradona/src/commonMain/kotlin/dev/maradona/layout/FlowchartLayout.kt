@@ -58,22 +58,18 @@ object FlowchartLayout {
             val sizesById = chart.nodes.associate { it.id to sizes.getValue(it.id) }
             val shapes = chart.nodes.associate { it.id to it.shape }
             val dagreNodes = chart.nodes.map { it.id to (sizesById.getValue(it.id).width to sizesById.getValue(it.id).height) }
-            // A cluster occupies space of its own, not just its children: mermaid
-            // reserves ranks for cluster boundaries (dagre's nesting graph), which
-            // is why its cross-cluster gaps are much larger than its rank spacing.
-            // Without it the cluster boxes overlap their neighbours.
+            // A cluster occupies space of its own, not just its children, so an
+            // edge that crosses a cluster boundary gets an extra rank for it.
+            // One rank is what mermaid's dagre layout shows: 290 units between a
+            // cluster's last child and the next cluster's first, against 240 for
+            // a plain rank step at these sizes.
             val clusterOf = chart.nodes.associate { it.id to it.subgraphId }
-            val boundaryRanks = if (chart.subgraphs.isEmpty()) 0 else {
-                val needed = options.subgraphPadding * 2 + options.subgraphLabelHeight
-                kotlin.math.ceil(needed / options.layerGap).toInt().coerceAtLeast(1)
-            }
+            val boundaryRanks = if (chart.subgraphs.isEmpty()) 0 else 1
             fun minlenFor(edge: dev.maradona.model.FlowEdge): Int {
                 if (boundaryRanks == 0) return 1
                 val from = clusterOf[edge.from]
                 val to = clusterOf[edge.to]
-                val crosses = from != to && (from != null || to != null)
-                // Each extra rank adds one layer gap of separation.
-                return if (crosses) 1 + boundaryRanks else 1
+                return if (from != to && (from != null || to != null)) 1 + boundaryRanks else 1
             }
 
             val dagreEdges = chart.edges
@@ -87,7 +83,7 @@ object FlowchartLayout {
                         name = "e$index",
                         minlen = minlenFor(edge),
                         labelWidth = label?.width ?: 0f,
-                        labelHeight = label?.let { it.height + options.edgeLabelPadding * 2 } ?: 0f,
+                        labelHeight = label?.height ?: 0f,
                     )
                 }
 
@@ -152,15 +148,10 @@ object FlowchartLayout {
             }
             nodeRects.values.forEach(::include)
             subgraphRects.forEach { include(it.rect) }
-            positionedEdges.forEach { edge ->
-                edge.points.forEach { p ->
-                    if (p.x < minX) minX = p.x
-                    if (p.y < minY) minY = p.y
-                    if (p.x > maxX) maxX = p.x
-                    if (p.y > maxY) maxY = p.y
-                }
-                edge.labelRect?.let(::include)
-            }
+            // Bounds come from nodes, clusters and edge labels - not from the
+            // routed polylines: dagre positions from node and label geometry, so
+            // counting a line that swings wide would shift the whole diagram.
+            positionedEdges.forEach { edge -> edge.labelRect?.let(::include) }
             val dx = options.padding - minX
             val dy = options.padding - minY
             fun DiagramRect.shifted() = copy(x = x + dx, y = y + dy)
@@ -233,10 +224,10 @@ object FlowchartLayout {
             return chart.subgraphs.mapNotNull { sg ->
                 val rects = membersOf(sg.id).mapNotNull { nodeRects[it] }
                 if (rects.isEmpty()) return@mapNotNull null
-                val minX = rects.minOf { it.x } - options.subgraphPadding
-                val minY = rects.minOf { it.y } - options.subgraphPadding - options.subgraphLabelHeight
-                val maxX = rects.maxOf { it.right } + options.subgraphPadding
-                val maxY = rects.maxOf { it.bottom } + options.subgraphPadding
+                val minX = rects.minOf { it.x } - options.subgraphPaddingX
+                val minY = rects.minOf { it.y } - options.subgraphPaddingY
+                val maxX = rects.maxOf { it.right } + options.subgraphPaddingX
+                val maxY = rects.maxOf { it.bottom } + options.subgraphPaddingY
                 PositionedSubgraph(sg, DiagramRect(minX, minY, maxX - minX, maxY - minY))
             }
         }

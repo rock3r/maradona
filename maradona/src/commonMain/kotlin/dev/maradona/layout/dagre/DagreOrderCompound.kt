@@ -29,7 +29,7 @@ private class CompoundEntry(val v: String, val i: Int) {
  */
 internal class CompoundLayerGraph(
     val g: DagreGraph,
-    private val rank: Int,
+    val rank: Int,
     incoming: Boolean,
     private val originalParents: Map<String, String?>,
 ) {
@@ -128,8 +128,11 @@ private fun sortSubgraph(
     biasRight: Boolean,
 ): CompoundEntry {
     val node = if (lg.g.hasNode(v)) lg.g.node(v) else null
-    val bl = node?.borderLeft?.get(node.minRank ?: -1)
-    val br = node?.borderRight?.get(node.minRank ?: -1)
+    // The border pair for THIS rank: dagre's buildLayerGraph gives the layer
+    // graph's cluster node the border nodes of the rank being sorted, so each
+    // layer has its own left/right pair bounding the cluster's span there.
+    val bl = node?.borderLeft?.get(lg.rank)
+    val br = node?.borderRight?.get(lg.rank)
 
     var movable = lg.childrenOf(v)
     if (bl != null) movable = movable.filter { it != bl && it != br }
