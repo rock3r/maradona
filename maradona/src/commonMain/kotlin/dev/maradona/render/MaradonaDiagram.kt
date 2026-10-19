@@ -93,6 +93,8 @@ fun MaradonaDiagram(
     initialPan: Offset? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
     onNaturalSize: (IntSize) -> Unit = {},
+    /** Reports the computed layout (see [MaradonaLayout.onLayout]). */
+    onLayout: (dev.maradona.layout.DiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { FlowchartParser.parse(source) } }
     var lastGood by remember { mutableStateOf<Flowchart?>(null) }
@@ -292,6 +294,7 @@ fun MaradonaDiagram(
                         // density-scaled values, so zooming in would spuriously
                         // flip a horizontal chart to vertical.
                         availableWidthPx = layoutWidthPx,
+                        onLayout = onLayout,
                         modifier = Modifier
                             .wrapContentSize(Alignment.TopStart, unbounded = true)
                             .onSizeChanged {

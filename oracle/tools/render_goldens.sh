@@ -13,5 +13,12 @@ for chart in "$ROOT"/oracle/charts/*.mmd; do
   id=$(basename "$chart" .mmd)
   npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" \
     -i "$chart" -o "$ROOT/oracle/goldens/$id.png" -b "#FFFCF0" -s 2 --quiet
-  echo "golden: $id"
+  # The SVG is the structural oracle for the layout comparison.
+  npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" \
+    -i "$chart" -o "$ROOT/oracle/goldens/$id.svg" -b "#FFFCF0" --quiet
+  echo "golden: $id (png + svg)"
 done
+
+# Extract the geometry (node ids/shapes/boxes, edges, labels, clusters) that the
+# layout oracle compares Maradona's IL against.
+"$ROOT/oracle/tools/.venv/bin/python" "$TOOLS/golden_geometry.py"

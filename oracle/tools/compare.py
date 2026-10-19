@@ -10,10 +10,11 @@ normalisation and no rescaling of our render.
 
 Levels mean different things, and are reported as such:
 
-* ``100`` - fidelity: our full-size render vs the golden, aligned by content
-  bounding box, compared per pixel. This is the check that can catch wrong
-  nodes, edges, shapes or styling.
-* ``min`` - fidelity at 0.1x: same comparison, golden scaled to 0.1.
+* ``100`` - the full-size render: capture sanity plus the size relationship
+  (our content must match the golden's in the axis the density was matched
+  against). The pixel difference is reported for the viewer but is not a gate -
+  fidelity is measured structurally by compare_layout.py.
+* ``min`` - 0.1x: the drawing must sit where the golden's does.
 * ``max`` - scale correctness at 5x. Mermaid cannot produce a meaningful 5x
   reference (its raster would be a blurry upscale, ours crisp vector), so the
   reference is our own 100% render upscaled 5x, which must match ours closely.
@@ -48,9 +49,12 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 PIXEL_TOLERANCE = 48
 # distance from the background colour treated as background
 BG_TOLERANCE = 28
-# fidelity levels vs the golden; measured worst case is ~0.20 (styling, whose
-# text is re-shaped entirely), so the budget sits just above it.
-FIDELITY_MAX_MISMATCH = 0.24
+# There is deliberately NO mismatch budget for the golden levels. A flowchart is
+# sparse line art: a 4px misalignment scores the same as a perfect render
+# (measured: 0.084 vs 0.085 of the canvas), so a fraction-of-canvas threshold
+# either passes everything or fails everything. Fidelity is measured
+# structurally instead - see compare_layout.py, which compares Maradona's
+# layout to mermaid's SVG geometry. The pixel diff here is a visual aid.
 # 5x self-consistency: same geometry at a different scale, so this is tight.
 SCALE_MAX_MISMATCH = 0.10
 # ... and we must have drawn a comparable amount of ink to the reference.
@@ -301,8 +305,9 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
                             (ours_box[3] - ours_box[1]) / max(1, ref_box[3] - ref_box[1]))
                 if off > MIN_BOX_OFFSET * max(view) or not (MIN_BOX_SCALE <= scale <= 1 / MIN_BOX_SCALE):
                     box_error = (f"0.1x drawing is misplaced (offset {off:.0f}px, size x{scale:.2f})")
-        budget = SCALE_MAX_MISMATCH if level == "max" else FIDELITY_MAX_MISMATCH
-        passed = frac <= budget
+        budget = SCALE_MAX_MISMATCH if level == "max" else None
+        # Golden levels are gated on the size relationship, not on pixels.
+        passed = True if budget is None else frac <= budget
         if level == "max" and not (INK_RATIO_MIN <= ink_ratio <= INK_RATIO_MAX):
             passed = False
         if box_error:
@@ -340,7 +345,7 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
 
 
 def _mode(level):
-    return "scale" if level == "max" else "fidelity"
+    return "scale" if level == "max" else "capture"
 
 
 def _ink_pixels(img, threshold=128):
@@ -386,7 +391,7 @@ def main():
 
     for stem in sorted(report):
         r = report[stem]
-        detail = r.get("error") or (f"mismatch={r['mismatch']} "
+        detail = r.get("error") or (f"mismatch={r['mismatch']} (visual only) "
                                     f"drift={r['driftW']}/{r['driftH']}")
         print(f"{'PASS' if r['pass'] else 'FAIL'}  {platform}/{stem:26s} {r.get('mode', '?'):8s} {detail}")
     out = ROOT / "out" / f"report-{platform}.json"

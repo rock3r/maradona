@@ -43,6 +43,10 @@ fun MaradonaLayout(
      * [autoDirection]. Callers that measure this layout unbounded (for
      * fit-to-size zooming) must pass it explicitly. */
     availableWidthPx: Int = Int.MAX_VALUE,
+    /** Reports the computed layout (the intermediate representation the oracle
+     * compares against mermaid's SVG geometry, and the renderer against its own
+     * pixels). Called whenever the layout is recomputed. */
+    onLayout: (DiagramLayout) -> Unit = {},
 ) {
     val holder = remember { LayoutHolder() }
     val connections = remember(chart) { connectionDescriptions(chart) }
@@ -157,6 +161,7 @@ fun MaradonaLayout(
             )
         }
         holder.layout = result
+        onLayout(result)
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             for (positioned in result.nodes) {

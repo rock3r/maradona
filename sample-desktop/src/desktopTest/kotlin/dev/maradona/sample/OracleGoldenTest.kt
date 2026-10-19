@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
+import dev.maradona.layout.DiagramLayout
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 import java.io.ByteArrayInputStream
@@ -51,6 +52,7 @@ class OracleGoldenTest {
         density: Float,
         pan: Offset? = null,
         naturalSize: ((IntSize) -> Unit)? = null,
+        layout: ((DiagramLayout) -> Unit)? = null,
     ): ByteArray {
         val scene = ImageComposeScene(width = width, height = height, density = Density(density)) {
             MaradonaDiagram(
@@ -65,6 +67,7 @@ class OracleGoldenTest {
                 initialScale = scale,
                 initialPan = pan,
                 onNaturalSize = { naturalSize?.invoke(it) },
+                onLayout = { layout?.invoke(it) },
             )
         }
         try {
@@ -108,6 +111,38 @@ class OracleGoldenTest {
         return intArrayOf(minX, minY, maxX - minX + 1, maxY - minY + 1)
     }
 
+    /**
+     * Maradona's intermediate representation, as the layout oracle compares it
+     * against mermaid's SVG geometry: px at the oracle density, so the two are
+     * directly comparable once the density-matched content sizes are aligned.
+     */
+    private fun layoutJson(layout: DiagramLayout, density: Float): String {
+        fun rect(r: dev.maradona.layout.DiagramRect) =
+            "[${r.x}, ${r.y}, ${r.width}, ${r.height}]"
+        val nodes = layout.nodes.joinToString(", ") { positioned ->
+            """{"id": "${positioned.node.id}", "label": "${positioned.node.label.replace("\"", "\\\"")}", "rect": ${rect(positioned.rect)}}"""
+        }
+        val edges = layout.edges.joinToString(", ") { positioned ->
+            val points = positioned.points.joinToString(", ") { "[${it.x}, ${it.y}]" }
+            val label = positioned.labelRect?.let { """[${it.x}, ${it.y}, ${it.width}, ${it.height}]""" } ?: "null"
+            """{"from": "${positioned.edge.from}", "to": "${positioned.edge.to}", "label": ${positioned.edge.label?.let { "\"$it\"" } ?: "null"}, "points": [$points], "label_rect": $label}"""
+        }
+        val subgraphs = layout.subgraphs.joinToString(", ") { positioned ->
+            """{"id": "${positioned.subgraph.id}", "label": "${positioned.subgraph.label}", "rect": ${rect(positioned.rect)}}"""
+        }
+        return """
+            {
+              "width": ${layout.width},
+              "height": ${layout.height},
+              "direction": "${layout.direction}",
+              "density": $density,
+              "nodes": [$nodes],
+              "edges": [$edges],
+              "subgraphs": [$subgraphs]
+            }
+        """.trimIndent() + "\n"
+    }
+
     @Test
     fun renderOracleCharts() {
         val charts = chartsDir.listFiles { f -> f.extension == "mmd" }!!.sortedBy { it.name }
@@ -122,10 +157,10 @@ class OracleGoldenTest {
             // modest scene is enough: it measures its full size regardless.
             var natW = 0
             var natH = 0
-            renderPng(source, 1f, 400, 400, 1f) { size ->
+            renderPng(source, 1f, 400, 400, 1f, naturalSize = { size ->
                 natW = size.width
                 natH = size.height
-            }
+            })
             require(natW > 0 && natH > 0) { "$id has no measurable layout" }
             val gold = contentBounds(File(goldensDir, "$id.png").readBytes())
 
@@ -146,7 +181,11 @@ class OracleGoldenTest {
             val canvasW = maxOf(gold[2], layoutW) + margin
             val canvasH = maxOf(gold[3], layoutH) + margin
 
-            File(outDir, "$id-100.png").writeBytes(renderPng(source, 1f, canvasW, canvasH, density))
+            var layoutDump: DiagramLayout? = null
+            File(outDir, "$id-100.png").writeBytes(
+                renderPng(source, 1f, canvasW, canvasH, density, layout = { layoutDump = it }),
+            )
+            File(outDir, "$id.layout.json").writeText(layoutJson(requireNotNull(layoutDump), density))
             File(outDir, "$id-min.png").writeBytes(renderPng(source, 0.1f, canvasW, canvasH, density))
             val fractions = listOf(0f, 0.5f, 1f)
             val tiles = buildList {

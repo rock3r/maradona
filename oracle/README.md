@@ -15,7 +15,65 @@ Every capture is framed the same way on every platform, so the comparison is
 * levels too big for the viewport are captured as pan tiles, and `compare.py`
   replays the same pan maths to crop the matching view out of the golden.
 
-## Levels
+## Two levels, because pixels cannot express fidelity
+
+A flowchart is sparse line art: the pixel diff between two *completely
+different* renders is still only ~2% of the canvas, and a deliberate 4px shift
+scores the same as a perfect render (measured: 0.084 vs 0.085). So there is no
+mismatch budget for the golden levels any more, and fidelity is measured where
+it is actually defined - in geometry:
+
+**1. Layout: Maradona's IL vs mermaid's SVG** (`tools/compare_layout.py`)
+
+mermaid's SVG is a machine-readable geometry oracle: node ids and shape
+elements, edge topology and paths, label boxes, clusters. `golden_geometry.py`
+extracts it (validated against the PNG: SVG boxes and rasterised fill boxes
+agree within 1-2px) into `goldens/<id>.geometry.json`. Maradona's side is its
+own intermediate representation - the `FlowchartLayout` result, dumped by the
+desktop test as `out/desktop/<id>.layout.json` (`onLayout` on
+`MaradonaDiagram`/`MaradonaLayout`).
+
+The comparison is per node id: box size, centre offset, edge-label placement,
+label padding. This is the check that says *why* two renders look different,
+in numbers. **It currently fails every chart**, e.g. for `basic-td`:
+
+| node | mermaid | maradona | delta w/h | centre | padding |
+| --- | --- | --- | --- | --- | --- |
+| A Mermaid text | 302x88 | 288x85 | -5%/-3% | 160px | 68,34 -> 32,26 |
+| B Flowchart? | 338x338 | 333x127 | -1%/-62% | 108px | 102,158 -> 72,48 |
+| C Maradona | 302x88 | 234x85 | -23%/-3% | 69px | 91,34 -> 32,27 |
+| D Pele | 302x88 | 136x85 | -55%/-3% | 73px | 126,34 -> 32,27 |
+| E Composables | 340x88 | 328x85 | -4%/-3% | 125px | 90,30 -> 48,24 |
+
+i.e. mermaid gives every node a wide box with generous label padding and a
+full-size diamond; ours hug the text and flatten the decision node, and node
+centres sit up to 15% of the diagonal away. That is the work item this oracle
+exists to drive.
+
+**2. Rendering: our pixels vs our IL** (same script, `renderer:` line)
+
+The renderer must draw the IL it was given: node boxes and positions are
+compared against the IL rects (relative geometry, so the capture's frame offset
+does not count). This separates "our layout is wrong" from "our renderer is
+wrong". It is a first cut - it matches rendered fill boxes to IL rects
+heuristically, so a couple of nodes per chart come out ambiguous.
+
+## Capture checks
+
+`compare.py` keeps the per-platform capture checks and the visual diff:
+
+| level | what it proves |
+| --- | --- |
+| `100` | capture sanity (viewport-sized, bright background, plausible ink) and the size relationship: our content must match the golden's in the axis the density was matched against (<=3%). |
+| `min` | 0.1x: the (sub-pixel) drawing sits where the golden's does. |
+| `max` | 5x scale self-consistency against our own 100% render, with an ink-ratio check. |
+
+The per-level `mismatch` in the report is the share of the canvas that differs
+- reported for the viewer, deliberately not a gate. The share of the *drawing*
+that differs (`inkMismatch`, ~200-300% here) is the honest number: the two
+drawings share almost no pixels.
+
+## Old levels section
 
 | level | what it proves |
 | --- | --- |
