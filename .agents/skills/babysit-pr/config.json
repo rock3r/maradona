@@ -1,12 +1,20 @@
 {
   "version": 1,
-  "local_gate": null,
+  "local_gate": "./gradlew check",
   "expected_skipped_checks": [],
   "required_checks": [],
-  "retry_eligible_workflow_keywords": ["e2e"],
+  "retry_eligible_workflow_keywords": [
+    "e2e"
+  ],
   "hung_check_minutes": 30,
-  "trusted_author_associations": ["OWNER", "MEMBER", "COLLABORATOR"],
-  "review_bot_login_keywords": ["codex"],
+  "trusted_author_associations": [
+    "OWNER",
+    "MEMBER",
+    "COLLABORATOR"
+  ],
+  "review_bot_login_keywords": [
+    "codex"
+  ],
   "max_session_minutes": 90,
   "require_up_to_date": "auto",
   "codex": {
