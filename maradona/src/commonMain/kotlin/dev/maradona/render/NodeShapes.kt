@@ -21,7 +21,8 @@ import dev.maradona.model.NodeShape
  * mermaid's shapes derive their slants from the box height, so the drawn shape
  * and the layout box agree (e.g. a hexagon's ends are h/3.5 wide).
  */
-fun nodeShape(shape: NodeShape, cornerRadius: Dp = 4.dp): Shape = when (shape) {
+fun nodeShape(shape: NodeShape, cornerRadius: Dp = 5.dp): Shape = when (shape) {
+    // 5 is mermaid's `themeVariables.radius`, which its roundedRect uses.
     NodeShape.Rect, NodeShape.Subroutine -> RectangleShape
     NodeShape.RoundedRect -> RoundedCornerShape(cornerRadius)
     NodeShape.Stadium -> RoundedCornerShape(percent = 50)

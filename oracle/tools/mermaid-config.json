@@ -11,7 +11,8 @@
     "edgeLabelBackground": "#FFFCF0",
     "fontSize": "14px",
     "fontFamily": "Roboto, sans-serif",
-    "dropShadow": "none"
+    "dropShadow": "none",
+    "useGradient": false
   },
   "flowchart": {
     "htmlLabels": false,
