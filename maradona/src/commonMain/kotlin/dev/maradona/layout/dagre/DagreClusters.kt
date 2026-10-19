@@ -163,8 +163,8 @@ internal fun DagreGraph.removeBorderNodes() {
         val node = node(v)
         val top = node.borderTop ?: continue
         val bottom = node.borderBottom ?: continue
-        val left = node.borderLeft.toSortedMap().values.lastOrNull() ?: continue
-        val right = node.borderRight.toSortedMap().values.lastOrNull() ?: continue
+        val left = node.borderLeft.keys.maxOrNull()?.let { node.borderLeft[it] } ?: continue
+        val right = node.borderRight.keys.maxOrNull()?.let { node.borderRight[it] } ?: continue
         val l = node(left)
         val r = node(right)
         val t = node(top)

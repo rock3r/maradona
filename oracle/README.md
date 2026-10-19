@@ -100,15 +100,38 @@ Matching it needed four things that are not obvious from dagre's config:
 
 ### The one remaining difference: clusters
 
-`subgraphs` is off by 26% of the diagonal. mermaid does *not* use dagre's
-compound layout for flowcharts: its wrapper builds a separate dagre graph per
-cluster (`clusterGraph`, `chunk-WA6RL3DZ.mjs`), lays each out recursively and
-composes the results, so a cluster's children get their own rank spacing and
-margins (measured gaps of 69, 105 and 177 units in one chart rather than one set
-of rules). A port of dagre's own nesting-graph/compound machinery is in
-`layout/dagre/DagreClusters.kt` and `DagreOrderCompound.kt`, but it models a
-different algorithm, so it is not wired in; matching mermaid means porting that
-composition step.
+`subgraphs` is off by 26% of the diagonal, and the reason is now pinned down.
+mermaid pre-processes clusters before dagre sees the graph, in its dagre wrapper
+(`chunk-WA6RL3DZ.mjs`):
+
+1. `clusterDb` records, for every cluster, a *safe anchor* child
+   (`findNonClusterChild`, preferring a child with no edges in common with the
+   cluster) and whether the cluster has an external connection.
+2. `adjustClustersAndEdges` rewrites any edge that is incident on a cluster id so
+   that it is incident on that anchor child instead, and then marks the cluster
+   as having external connections.
+3. `extractor` replaces every cluster that has children and *no* external
+   connections with a `clusterNode` holding its own dagre graph: the cluster's
+   subtree is copied in and laid out with the **opposite rank direction**
+   (`rankdir === 'TB' ? 'LR' : 'TB'`), `nodesep`/`ranksep` 50 and margins 8.
+   Nested clusters repeat this recursively (depth-limited).
+4. When rendering, a cluster node is drawn from its top-left rather than its
+   centre (`translate(x - w/2, y - h/2 - 8)`), so its box is offset by mermaid's
+   padding rather than centred.
+
+Evidence that this is what produces the golden and not dagre's own compound
+layout: running real dagre with compound nodes on the same node sizes and
+spacings gives a *mirrored* result (UI at x=174.5, VM at x=119) where the golden
+has the opposite (UI 107.5, VM 152), and a different rank spacing (85 vs 105
+units). Neither a plain TB nor an LR cluster graph reproduces the golden's
+diagonal child offsets (44.5, 105) on its own, so the anchored external edges are
+part of the internal layout too.
+
+Porting that machinery (the three steps above plus the recursive composition and
+the top-left cluster anchoring) is what remains for this chart. dagre's own
+nesting-graph/compound implementation is already ported in
+`layout/dagre/DagreClusters.kt` and `DagreOrderCompound.kt`; it models a
+different algorithm, so it is not wired in.
 
 ## Layout
 

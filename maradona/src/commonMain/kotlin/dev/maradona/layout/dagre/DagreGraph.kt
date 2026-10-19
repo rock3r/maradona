@@ -240,7 +240,7 @@ internal fun DagreGraph.removeEmptyRanks() {
     val ranked = nodes.values.mapNotNull { it.rank }
     if (ranked.isEmpty()) return
     val offset = ranked.min()
-    val layers = sortedMapOf<Int, MutableList<String>>()
+    val layers = LinkedHashMap<Int, MutableList<String>>()
     // Cluster nodes have no rank of their own (only leaves are ranked), so they
     // take no part in layering.
     for ((v, node) in nodes) {
@@ -248,15 +248,14 @@ internal fun DagreGraph.removeEmptyRanks() {
         layers.getOrPut(rank - offset) { mutableListOf() } += v
     }
     var delta = 0
-    var i = 0
-    while (i <= (layers.keys.maxOrNull() ?: 0)) {
-        val vs = layers[i]
-        if (vs == null && i % nodeRankFactor != 0) {
+    val maxIndex = layers.keys.maxOrNull() ?: return
+    for (index in 0..maxIndex) {
+        val vs = layers[index]
+        if (vs == null && index % nodeRankFactor != 0) {
             delta -= 1
         } else if (vs != null && delta != 0) {
             for (v in vs) nodes.getValue(v).rank = nodes.getValue(v).rank!! + delta
         }
-        i++
     }
 }
 
