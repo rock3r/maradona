@@ -393,6 +393,14 @@ def _capture_problems(tile, view):
 
 def main():
     platform = sys.argv[1] if len(sys.argv) > 1 else "desktop"
+    from freshness import require_fresh
+    hint = (
+        "./gradlew :sample-desktop:desktopTest --tests dev.maradona.sample.OracleGoldenTest --rerun-tasks"
+        if platform == "desktop"
+        else f"oracle/tools/capture_{'android' if platform == 'android' else 'ios'}.sh <device>"
+    )
+    if not require_fresh(ROOT / "out" / platform, hint):
+        return 2
     gold_dir = ROOT / "goldens"
     ours_dir = ROOT / "out" / platform
     web_img = ROOT / "out" / "web" / "img"

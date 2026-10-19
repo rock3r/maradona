@@ -200,6 +200,13 @@ def compare_chart(chart):
 
 
 def main():
+    from freshness import require_fresh
+    hint = (
+        "./gradlew :sample-desktop:desktopTest --tests dev.maradona.sample.OracleGoldenTest "
+        "--rerun-tasks"
+    )
+    if not require_fresh(OUT, hint):
+        return 2
     charts = sys.argv[1:] or sorted(p.stem for p in (ROOT / "charts").glob("*.mmd"))
     failures = 0
     report = {}

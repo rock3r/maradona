@@ -21,6 +21,21 @@ kotlin {
     }
 }
 
+// The oracle test writes its renders into ../oracle/out/desktop, outside the
+// test task's own outputs, and reads the goldens, charts and font. Gradle knew
+// about neither, so it was free to skip the task as up to date - and the
+// comparison scripts would then happily re-measure the previous run's images and
+// report PASS. Declaring the real inputs and outputs fixes the first half; the
+// task writing pixels is the whole point, so it always runs.
+tasks.withType<Test>().configureEach {
+    inputs.dir(rootProject.file("oracle/goldens"))
+    inputs.dir(rootProject.file("oracle/charts"))
+    inputs.dir(rootProject.file("oracle/fonts"))
+    inputs.file(rootProject.file("maradona/src/commonMain/kotlin/dev/maradona/layout/NodeSizing.kt"))
+    outputs.dir(rootProject.file("oracle/out/desktop"))
+    outputs.upToDateWhen { false }
+}
+
 compose.desktop {
     application {
         mainClass = "dev.maradona.sample.MainKt"

@@ -16,6 +16,9 @@ PY=$ROOT/oracle/tools/.venv/bin/python
 GEOM=$ROOT/oracle/tools/oracle_geom.py
 APP=dev.maradona.sample
 mkdir -p "$OUT"
+# Start clean: a render left by an earlier run (or by an older naming scheme) must
+# never be measured as if it came from this one.
+rm -f "$OUT"/*.png "$OUT"/captures.txt "$OUT"/manifest.json
 CAPTURES=$OUT/captures.txt
 
 case "$SIM" in

@@ -203,6 +203,24 @@ deterministic:
   re-renders and re-logs, even when a tile is captured twice with identical
   parameters.
 
+## Stale renders cannot be compared
+
+The renders are written by the test task and by the capture scripts, outside
+Gradle's declared outputs, so Gradle is free to skip the test as up to date - and
+the comparison scripts, which are not tests, will then happily re-measure the
+previous run's images and report PASS. That happened, and a round of rendering
+fixes was "verified" against two-hour-old images before anyone noticed.
+
+Three guards now prevent it:
+
+* the desktop test task declares `oracle/goldens`, `oracle/charts`,
+  `oracle/fonts` as inputs and `oracle/out/desktop` as an output, and always
+  re-runs (`outputs.upToDateWhen { false }`): writing the pixels is its purpose.
+* the test wipes `oracle/out/desktop` before rendering, and both capture scripts
+  wipe their output directory, so a leftover file can never be measured.
+* `compare.py` and `compare_layout.py` refuse to run when any render is older
+  than the newest source that can change it, and print the command to re-render.
+
 ## Looking at the differences
 
 `tools/side_by_side.py` crops the same region of the golden and of our render and

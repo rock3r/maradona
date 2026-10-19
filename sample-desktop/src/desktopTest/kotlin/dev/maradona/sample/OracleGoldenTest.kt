@@ -163,6 +163,9 @@ class OracleGoldenTest {
     fun renderOracleCharts() {
         val charts = chartsDir.listFiles { f -> f.extension == "mmd" }!!.sortedBy { it.name }
         require(charts.isNotEmpty()) { "no charts in ${chartsDir.absolutePath}" }
+        // Start clean: a stale render from a previous run must never be left for
+        // the comparison scripts to measure.
+        outDir.deleteRecursively()
         outDir.mkdirs()
         val manifest = StringBuilder("{\n  \"charts\": {\n")
         for (chart in charts) {
