@@ -74,6 +74,10 @@ object FlowchartLayout {
             val result = dev.maradona.layout.dagre.Dagre.layout(
                 nodes = dagreNodes,
                 edges = dagreEdges,
+                clusters = chart.subgraphs.map {
+                    dev.maradona.layout.dagre.Dagre.ClusterSpec(it.id, 0f)
+                },
+                clusterOf = { id -> chart.nodes.firstOrNull { it.id == id }?.subgraphId },
                 nodesep = options.nodeGap,
                 ranksep = options.layerGap,
             )
@@ -101,7 +105,7 @@ object FlowchartLayout {
                 dev.maradona.layout.PositionedEdge(edge, points, labelRect)
             }
 
-            val subgraphRects = buildSubgraphs(nodeRects)
+            val subgraphRects = buildSubgraphs(nodeRects, result.clusters)
 
             // Normalise so the minimum coordinate sits at [options.padding].
             var minX = Float.MAX_VALUE
@@ -176,8 +180,19 @@ object FlowchartLayout {
             return PositionedEdge(edge, points, labelRect)
         }
 
-        private fun buildSubgraphs(nodeRects: Map<String, DiagramRect>): List<PositionedSubgraph> {
+        private fun buildSubgraphs(
+            nodeRects: Map<String, DiagramRect>,
+            clusterBoxes: Map<String, dev.maradona.layout.dagre.Dagre.NodeBox>,
+        ): List<PositionedSubgraph> {
             if (chart.subgraphs.isEmpty()) return emptyList()
+            // dagre's compound layout already positions every cluster from its
+            // border nodes, so its box is authoritative.
+            if (clusterBoxes.isNotEmpty()) {
+                return chart.subgraphs.mapNotNull { sg ->
+                    val box = clusterBoxes[sg.id] ?: return@mapNotNull null
+                    PositionedSubgraph(sg, DiagramRect(box.left, box.top, box.width, box.height))
+                }
+            }
             fun membersOf(sgId: String): List<String> {
                 val direct = chart.nodes.filter { it.subgraphId == sgId }.map { it.id }
                 val nested = chart.subgraphs.filter { it.parentId == sgId }.flatMap { membersOf(it.id) }

@@ -69,78 +69,46 @@ Current worst case per chart (node size / centre offset, both relative):
 | styling | 0.6% | 0.4% | 1.003 |
 | subgraphs | 26.0% | 8.9% | 0.882 |
 
-Known remaining differences, with their mechanism:
+### Current state
 
-* **subgraphs** (11-16%): mermaid's dagre wrapper builds a *separate nested
-  dagre graph per cluster* (`chunk-WA6RL3DZ.mjs`: `clusterGraph = new
-  Graph({compound: true}).setGraph({nodesep: 50, ranksep: 50, ...})`), lays it
-  out recursively and composes the results. So a cluster's children get their
-  own rank spacing and margins, which is why the drawn gaps vary (measured 69,
-  105 and 177 units in one chart) rather than following one set of rules.
-  Matching it means porting dagre's rank/order/BK pipeline plus that
-  composition step.
-* **flag, subroutine** (a few %): mermaid reuses `node.width`/`node.height`
-  between its two render passes, so those shapes come out larger than their own
-  formula.
-* **long-edge endpoints** (edges-heads' root and sink, 65px): dagre aligns an
-  endpoint with the dummy chain that routes its long edge, which places it
-  beside the main column; we keep it on the column.
-* **edge routing**: mermaid draws `curve: basis` splines; we draw orthogonal
-  polylines.
+| chart | node size | centre offset | edge label |
+| --- | --- | --- | --- |
+| basic-td | 0.1% | 0.1% | 0.0% |
+| edges-heads | 1.7% | 1.6% | 0.0% |
+| shapes-lr | 0.2% | 0.0% | 0.0% |
+| styling | 0.6% | 0.4% | 0.0% |
+| subgraphs | 2.1% | 26.1% | 0.0% |
 
-**2. Rendering: our pixels vs our IL** (same script, `renderer:` line)
+Maradona runs a port of dagre (`maradona/layout/dagre`), because mermaid lays
+flowcharts out with dagre: ranking (longest path, feasible tight tree, network
+simplex), crossing minimisation (DFS order, barycentre sweeps, weighted crossing
+count) and coordinate assignment (Brandes-Köpf with dagre's conflicts and four
+averaged alignments), in `dagre/layout.js` order.
 
-The renderer must draw the IL it was given: node boxes and positions are
-compared against the IL rects (relative geometry, so the capture's frame offset
-does not count). This separates "our layout is wrong" from "our renderer is
-wrong". It is a first cut - it matches rendered fill boxes to IL rects
-heuristically, so a couple of nodes per chart come out ambiguous.
+Matching it needed four things that are not obvious from dagre's config:
 
-## Capture checks
+* dagre halves `ranksep` and doubles every `minlen` to make room for edge labels,
+  so the gap between node borders is the configured `ranksep` (40), not half.
+* `removeEmptyRanks` must not compact, except on ranks that are multiples of
+  `nodeRankFactor`. Collapsing the empty ranks that `minlen`-2 edges create
+  halves every gap.
+* mermaid passes edge labels to dagre with 20 units of padding per side, so a
+  one-line label occupies a 60-unit rank.
+* some shapes draw outside their label box: a cylinder's path has a cap above and
+  a bulge below (`labelH + 24 + 3*ry`), and a flag's notch pokes past the left
+  edge (adding `h/4` of width).
 
-`compare.py` keeps the per-platform capture checks and the visual diff:
+### The one remaining difference: clusters
 
-| level | what it proves |
-| --- | --- |
-| `100` | capture sanity (viewport-sized, bright background, plausible ink) and the size relationship: our content must match the golden's in the axis the density was matched against (<=3%). |
-| `min` | 0.1x: the (sub-pixel) drawing sits where the golden's does. |
-| `max` | 5x scale self-consistency against our own 100% render, with an ink-ratio check. |
-
-The per-level `mismatch` in the report is the share of the canvas that differs
-- reported for the viewer, deliberately not a gate. The share of the *drawing*
-that differs (`inkMismatch`, ~200-300% here) is the honest number: the two
-drawings share almost no pixels.
-
-## Old levels section
-
-| level | what it proves |
-| --- | --- |
-| `100` | fidelity: our full-size render vs the golden, aligned by content bbox. Also enforces the size relationship the oracle exists for: our content must match the golden's in the binding axis (≤3%), because that is the axis the density was matched against. |
-| `min` | 0.1×: the drawing sits where the golden's does (position and size of the faint content). At 0.1× strokes are sub-pixel, so ink counting says nothing. |
-| `max` | 5×: scale correctness. Mermaid cannot produce a meaningful 5× reference (its raster would be a blurry upscale, ours crisp vector), so the reference is our own 100% render upscaled 5×, and the ink we drew must be comparable to it. |
-
-`fit` is deliberately absent: on desktop it equals 100% (the canvas is the
-100% size), and on a device it is just a viewport-dependent view of the same
-render, not a content-fidelity level.
-
-## What is and is not checked
-
-Capture sanity comes first, and is what makes the failures loud: a capture must
-be viewport-sized, have a bright diagram background (a dimmed screenshot means a
-system dialog or an ANR stole the foreground) and plausible ink. The device
-capture scripts additionally verify that our app holds window focus before every
-screenshot, and abort otherwise.
-
-The pixel diff against the golden is a *gross-error* check, not a fidelity
-verdict. Maradona's layout is not mermaid's (our diagrams are 15–75% narrower
-than mermaid's for the same content, and an `LR` chart of ours is a single row
-where mermaid's wraps), so thin lines land a few pixels apart and a large share
-of the drawing differs even when the render is faithful — `inkMismatch` in the
-report is that share, reported but not gated. What the fidelity levels do
-enforce is the size relationship and the absence of missing/wrong content; the
-per-chart `drift` (our content size vs the golden's, per axis) is reported in
-the viewer so the layout difference stays visible instead of being normalised
-away.
+`subgraphs` is off by 26% of the diagonal. mermaid does *not* use dagre's
+compound layout for flowcharts: its wrapper builds a separate dagre graph per
+cluster (`clusterGraph`, `chunk-WA6RL3DZ.mjs`), lays each out recursively and
+composes the results, so a cluster's children get their own rank spacing and
+margins (measured gaps of 69, 105 and 177 units in one chart rather than one set
+of rules). A port of dagre's own nesting-graph/compound machinery is in
+`layout/dagre/DagreClusters.kt` and `DagreOrderCompound.kt`, but it models a
+different algorithm, so it is not wired in; matching mermaid means porting that
+composition step.
 
 ## Layout
 

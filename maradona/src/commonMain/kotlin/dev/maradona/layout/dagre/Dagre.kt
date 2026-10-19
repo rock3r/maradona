@@ -12,6 +12,9 @@ package dev.maradona.layout.dagre
  */
 internal object Dagre {
 
+    /** A cluster: its id, the nodes it contains, and its label height. */
+    class ClusterSpec(val id: String, val labelHeight: Float)
+
     class EdgeSpec(
         val from: String,
         val to: String,
@@ -38,6 +41,7 @@ internal object Dagre {
     class Result(
         val nodes: Map<String, NodeBox>,
         val paths: Map<String, EdgePath>,
+        val clusters: Map<String, NodeBox>,
         val width: Float,
         val height: Float,
     )
@@ -45,13 +49,21 @@ internal object Dagre {
     fun layout(
         nodes: List<Pair<String, Pair<Float, Float>>>,
         edges: List<EdgeSpec>,
+        clusters: List<ClusterSpec> = emptyList(),
+        clusterOf: (String) -> String? = { null },
         nodesep: Float = 50f,
         ranksep: Float = 40f,
         edgesep: Float = 20f,
         marginx: Float = 8f,
         marginy: Float = 8f,
     ): Result {
-        val g = DagreGraph(multigraph = true, compound = false)
+        // mermaid does not use dagre's compound (nested-cluster) layout for
+        // flowcharts: it lays each cluster out as its own dagre graph and
+        // composes the results. Until that composition is ported, clusters are
+        // laid out as plain nodes and their boxes are derived from their
+        // members, so `clusters` is accepted but only used for bookkeeping.
+        val compound = false && clusters.isNotEmpty()
+        val g = DagreGraph(multigraph = true, compound = compound)
         g.nodesep = nodesep
         g.ranksep = ranksep
         g.edgesep = edgesep
@@ -60,6 +72,15 @@ internal object Dagre {
         g.rankdir = "tb"
 
         for ((id, size) in nodes) g.setNode(id, DagreNode(size.first, size.second))
+        if (compound) {
+            for (cluster in clusters) {
+                // A cluster is a node whose children are its members; its box is
+                // derived from the border nodes after positioning.
+                val label = DagreNode(0f, cluster.labelHeight)
+                g.setNode(cluster.id, label)
+            }
+            for ((id, _) in nodes) clusterOf(id)?.let { g.setParent(id, it) }
+        }
         for (edge in edges) {
             val label = DagreEdge(edge.from, edge.to, edge.name)
             label.weight = edge.weight
@@ -73,16 +94,23 @@ internal object Dagre {
 
         makeSpaceForEdgeLabels(g)
         val reversedEdges = runAcyclic(g)
-        rank(g)
+        if (compound) g.runNestingGraph()
+        // dagre ranks the non-compound view: only leaves get a rank, clusters
+        // derive theirs from their nesting border nodes.
+        rank(if (compound) g.asNonCompound() else g)
         injectEdgeLabelProxies(g)
         g.removeEmptyRanks()
+        if (compound) g.cleanupNestingGraph()
         g.normalizeRanks()
         assignRankMinMax(g)
         removeEdgeLabelProxies(g)
         val dummyChains = normalize(g)
-        order(g)  // DagreOrder.order
+        if (compound) g.parentDummyChains(dummyChains)
+        if (compound) g.addBorderSegments()
+        if (compound) orderCompound(g) else order(g)
         adjustCoordinateSystem(g)
         position(g)
+        if (compound) g.removeBorderNodes()
         undoNormalize(g, dummyChains)
         fixupEdgeLabelCoords(g)
         undoCoordinateSystem(g)
@@ -91,9 +119,11 @@ internal object Dagre {
         undoAcyclic(g, reversedEdges)
 
         val nodeBoxes = HashMap<String, NodeBox>()
+        val clusterBoxes = HashMap<String, NodeBox>()
         for ((v, node) in g.nodes) {
             if (node.isDummy) continue
-            nodeBoxes[v] = NodeBox(node.x, node.y, node.width, node.height)
+            val box = NodeBox(node.x, node.y, node.width, node.height)
+            if (g.childrenOf(v).isNotEmpty()) clusterBoxes[v] = box else nodeBoxes[v] = box
         }
         val paths = LinkedHashMap<String, EdgePath>()
         for ((key, e) in g.edges) {
@@ -101,7 +131,7 @@ internal object Dagre {
             val centre = if (e.hasLabel) e.x to e.y else e.points.getOrNull(e.points.size / 2)
             paths[id] = EdgePath(e.points.toList(), centre)
         }
-        return Result(nodeBoxes, paths, bounds.first, bounds.second)
+        return Result(nodeBoxes, paths, clusterBoxes, bounds.first, bounds.second)
     }
 
     // --- steps, in dagre's order ---
@@ -191,11 +221,17 @@ internal object Dagre {
         }
     }
 
-    /** `assignRankMinMax`: cluster bookkeeping only, so it just records ranks. */
+    /**
+     * `assignRankMinMax`: a cluster's rank span comes from the nesting border
+     * nodes that `runNestingGraph` added, which is what later gives it a box.
+     * Plain nodes need no bookkeeping.
+     */
     private fun assignRankMinMax(g: DagreGraph) {
         for (node in g.nodes.values) {
-            node.minRank = node.rank
-            node.maxRank = node.rank
+            val top = node.borderTop ?: continue
+            val bottom = node.borderBottom ?: continue
+            node.minRank = g.node(top).rank
+            node.maxRank = g.node(bottom).rank
         }
     }
 

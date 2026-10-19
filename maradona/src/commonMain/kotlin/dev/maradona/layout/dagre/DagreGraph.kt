@@ -25,8 +25,10 @@ internal class DagreNode(
     // Cluster bookkeeping (compound graphs).
     var minRank: Int? = null
     var maxRank: Int? = null
-    var borderLeft: String? = null
-    var borderRight: String? = null
+    var borderTop: String? = null
+    var borderBottom: String? = null
+    var borderLeft: MutableMap<Int, String> = mutableMapOf()
+    var borderRight: MutableMap<Int, String> = mutableMapOf()
 
     /** For dummy nodes standing in for an edge label. */
     var edgeLabel: DagreEdge? = null
@@ -67,6 +69,9 @@ internal class DagreEdge(
     var forwardName: String? = null
 
     var points: MutableList<Pair<Float, Float>> = mutableListOf()
+
+    /** dagre's nesting edges, removed once the layout is done. */
+    var nestingEdge: Boolean = false
     var cutvalue: Int = 0
 
     /** The dummy node standing in for this edge's label, if it has one. */
@@ -100,6 +105,20 @@ internal class DagreGraph(
     var align: String? = null
     var acyclicer: String? = null
     var ranker: String? = null
+    var nestingRoot: String? = null
+    var nodeRankFactor: Int = 1
+
+    /** dagre's util.addDummyNode: a uniquely named dummy node of the given kind. */
+    fun addDummyNode(kind: String, label: DagreNode, prefix: String): String {
+        var name: String
+        var i = 0
+        do {
+            name = "$prefix${i++}"
+        } while (hasNode(name))
+        label.dummy = kind
+        setNode(name, label)
+        return name
+    }
 
     fun setNode(v: String, label: DagreNode = DagreNode()): DagreNode {
         val existing = nodes[v]
@@ -165,7 +184,9 @@ internal class DagreGraph(
     }
 
     fun parentOf(v: String): String? = parents[v]
-    fun childrenOf(v: String): List<String> = children[v] ?: emptyList()
+    /** A snapshot: dagre's `g.children(v)` returns a fresh array, and callers
+     * rely on that while they add nodes to the same cluster. */
+    fun childrenOf(v: String): List<String> = children[v]?.toList() ?: emptyList()
 
     /** dagre's `asNonCompoundGraph`: only leaves, with the same edges. */
     fun asNonCompound(): DagreGraph {
@@ -209,21 +230,33 @@ internal fun DagreGraph.normalizeRanks() {
 /**
  * dagre's util.removeEmptyRanks.
  *
- * Only ranks that contain nodes are visited: dagre's `layers` is a sparse
- * array and lodash's `forEach` skips the holes, so an empty rank never
- * decrements `delta` and nothing is ever compacted unless `nodeRankFactor`
- * says otherwise. Collapsing those gaps would pull minlen-2 ranks together and
- * halve every edge's length.
+ * Empty ranks are only compacted when they are not a multiple of
+ * `nodeRankFactor`; without clusters that factor is 1, so nothing is compacted
+ * (collapsing them would pull the ranks that minlen-2 edges create together and
+ * halve every edge's length). With clusters the factor is the nesting
+ * multiplier, so only the ranks the nesting edges reserve survive.
  */
 internal fun DagreGraph.removeEmptyRanks() {
     val ranked = nodes.values.mapNotNull { it.rank }
     if (ranked.isEmpty()) return
     val offset = ranked.min()
     val layers = sortedMapOf<Int, MutableList<String>>()
-    for ((v, node) in nodes) layers.getOrPut(node.rank!! - offset) { mutableListOf() } += v
+    // Cluster nodes have no rank of their own (only leaves are ranked), so they
+    // take no part in layering.
+    for ((v, node) in nodes) {
+        val rank = node.rank ?: continue
+        layers.getOrPut(rank - offset) { mutableListOf() } += v
+    }
     var delta = 0
-    for ((_, vs) in layers) {
-        if (delta != 0) for (v in vs) nodes.getValue(v).rank = nodes.getValue(v).rank!! + delta
+    var i = 0
+    while (i <= (layers.keys.maxOrNull() ?: 0)) {
+        val vs = layers[i]
+        if (vs == null && i % nodeRankFactor != 0) {
+            delta -= 1
+        } else if (vs != null && delta != 0) {
+            for (v in vs) nodes.getValue(v).rank = nodes.getValue(v).rank!! + delta
+        }
+        i++
     }
 }
 
