@@ -77,7 +77,7 @@ Current worst case per chart (node size / centre offset, both relative):
 | edges-heads | 1.7% | 1.6% | 0.0% |
 | shapes-lr | 0.2% | 0.0% | 0.0% |
 | styling | 0.6% | 0.4% | 0.0% |
-| subgraphs | 2.1% | 26.1% | 0.0% |
+| subgraphs | 2.3% | 11.5% | 0.0% |
 
 Maradona runs a port of dagre (`maradona/layout/dagre`), because mermaid lays
 flowcharts out with dagre: ranking (longest path, feasible tight tree, network
@@ -100,7 +100,11 @@ Matching it needed four things that are not obvious from dagre's config:
 
 ### The one remaining difference: clusters
 
-`subgraphs` is off by 26% of the diagonal, and the reason is now pinned down.
+`subgraphs` is off by 11.5% of the diagonal, and the reason is pinned down.
+Reserving rank space for cluster boundaries the way dagre's nesting graph does
+(an edge that crosses a cluster gets extra `minlen`) took it from 26% to 11.5%
+and stopped the cluster boxes overlapping their neighbours. The rest is the
+extraction described below.
 mermaid pre-processes clusters before dagre sees the graph, in its dagre wrapper
 (`chunk-WA6RL3DZ.mjs`):
 

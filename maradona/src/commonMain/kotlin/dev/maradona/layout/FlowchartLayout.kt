@@ -58,6 +58,24 @@ object FlowchartLayout {
             val sizesById = chart.nodes.associate { it.id to sizes.getValue(it.id) }
             val shapes = chart.nodes.associate { it.id to it.shape }
             val dagreNodes = chart.nodes.map { it.id to (sizesById.getValue(it.id).width to sizesById.getValue(it.id).height) }
+            // A cluster occupies space of its own, not just its children: mermaid
+            // reserves ranks for cluster boundaries (dagre's nesting graph), which
+            // is why its cross-cluster gaps are much larger than its rank spacing.
+            // Without it the cluster boxes overlap their neighbours.
+            val clusterOf = chart.nodes.associate { it.id to it.subgraphId }
+            val boundaryRanks = if (chart.subgraphs.isEmpty()) 0 else {
+                val needed = options.subgraphPadding * 2 + options.subgraphLabelHeight
+                kotlin.math.ceil(needed / options.layerGap).toInt().coerceAtLeast(1)
+            }
+            fun minlenFor(edge: dev.maradona.model.FlowEdge): Int {
+                if (boundaryRanks == 0) return 1
+                val from = clusterOf[edge.from]
+                val to = clusterOf[edge.to]
+                val crosses = from != to && (from != null || to != null)
+                // Each extra rank adds one layer gap of separation.
+                return if (crosses) 1 + boundaryRanks else 1
+            }
+
             val dagreEdges = chart.edges
                 .withIndex()
                 .filter { it.value.from != it.value.to }
@@ -67,6 +85,7 @@ object FlowchartLayout {
                         from = edge.from,
                         to = edge.to,
                         name = "e$index",
+                        minlen = minlenFor(edge),
                         labelWidth = label?.width ?: 0f,
                         labelHeight = label?.let { it.height + options.edgeLabelPadding * 2 } ?: 0f,
                     )
