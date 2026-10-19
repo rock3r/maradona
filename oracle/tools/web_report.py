@@ -50,6 +50,14 @@ HTML = """<!DOCTYPE html>
   #sliders { display: flex; gap: 24px; justify-content: center; padding: 8px; background: var(--panel); border-top: 1px solid #ddd8c8; }
   #sliders label { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #444; }
   #empty { margin: auto; color: #888; }
+  #stage.flow { display: block; }
+  .row { display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
+  .report { margin: 0 auto; max-width: 1000px; }
+  .report h3 { font-size: 13px; margin: 14px 0 4px; }
+  .report table { border-collapse: collapse; font-size: 12px; }
+  .report th, .report td { border-bottom: 1px solid #e4dfcc; padding: 3px 10px; text-align: right; }
+  .report th:first-child, .report td:first-child { text-align: left; font-weight: 600; }
+  .report td.pad { color: #666; }
 </style>
 </head>
 <body>
@@ -89,16 +97,68 @@ function applyOnion() {
   top.style.opacity = opacity.value / 100;
   top.style.clipPath = `inset(0 ${100 - wipe.value}% 0 0)`;
 }
+function table(e) {
+  const wrap = document.createElement('div'); wrap.className = 'report';
+  const h = document.createElement('h3');
+  h.textContent = `layout vs mermaid geometry (golden scaled x${e.scale.toFixed(3)})`;
+  wrap.appendChild(h);
+  const w = e.worst;
+  const sum = document.createElement('p'); sum.className = 'cap';
+  sum.textContent = `worst: box size ${(w.size * 100).toFixed(1)}%  centre ${(w.centre * 100).toFixed(1)}% of diagonal  `
+    + `edge label ${(w.label * 100).toFixed(1)}%  padding ${w.pad.toFixed(0)}px  missing ${w.missing}`;
+  wrap.appendChild(sum);
+  const t = document.createElement('table');
+  t.innerHTML = '<tr><th>node</th><th>mermaid</th><th>maradona</th><th>delta w/h</th><th>centre</th><th>padding</th></tr>';
+  const pads = Object.fromEntries(e.pads.map(p => [p[0], p[1]]));
+  for (const r of e.rows) {
+    const tr = document.createElement('tr');
+    const pad = pads[r[0]] || '';
+    tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td>`
+      + `<td class="pad">${pad}</td>`;
+    t.appendChild(tr);
+  }
+  wrap.appendChild(t);
+  for (const l of e.labels) {
+    const p = document.createElement('p'); p.className = 'cap';
+    p.textContent = `edge label ${JSON.stringify(l[0])}: centre off by ${l[1]} (${l[2]})`;
+    wrap.appendChild(p);
+  }
+  const unmatched = e.render.filter(r => !r[1].endsWith('px')).length;
+  const bad = e.render.filter(r => r[1].endsWith('px') && parseFloat(r[1]) > 6).length;
+  const p2 = document.createElement('p'); p2.className = 'cap';
+  p2.textContent = `renderer: ${e.render.length} nodes, ${unmatched} unmatched, ${bad} drawn more than 6px off the IL`;
+  wrap.appendChild(p2);
+  return wrap;
+}
+
 function render() {
   stage.textContent = '';
   if (!sel) { stage.innerHTML = '<div id="empty">Select a comparison on the left.</div>'; return; }
   const e = sel.data;
+  if (e.kind === 'layout') {
+    sliders.hidden = true;
+    stage.classList.add('flow');
+    document.querySelectorAll('#tabs button').forEach(b => b.disabled = true);
+    if (e.images) {
+      const row = document.createElement('div'); row.className = 'row';
+      for (const [src, cap] of [[e.images.gold, 'mermaid golden'], [e.images.ours, 'maradona']]) {
+        const p = document.createElement('div'); p.className = 'panel';
+        p.appendChild(img(src));
+        const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
+        p.appendChild(c); row.appendChild(p);
+      }
+      stage.appendChild(row);
+    }
+    stage.appendChild(table(e));
+    return;
+  }
   meta.textContent = `${sel.platform} · ${sel.key} · ${e.mode}` +
-    ('mismatch' in e ? ` · mismatch ${(e.mismatch * 100).toFixed(2)}% (budget ${(e.budget * 100).toFixed(0)}%)` : '') +
+    ('mismatch' in e ? ` · pixel diff ${(e.mismatch * 100).toFixed(2)}% (visual only)` : '') +
     ('driftW' in e ? ` · size vs golden W x${e.driftW.toFixed(2)} H x${e.driftH.toFixed(2)}` : '') +
     (e.tiles > 1 ? ` · ${e.tiles} tiles` : '') +
     (e.error ? ` · ${e.error}` : '');
   sliders.hidden = true;
+  stage.classList.remove('flow');
   if (e.error || !e.images) {
     const d = document.createElement('div'); d.id = 'empty';
     d.textContent = e.error || 'no capture';
@@ -137,8 +197,14 @@ function select(el, platform, key, data) {
   render();
 }
 const side = document.getElementById('side');
+const SECTION = {
+  layout: 'layout vs mermaid geometry',
+  android: 'capture checks: android',
+  desktop: 'capture checks: desktop',
+  ios: 'capture checks: ios',
+};
 for (const [platform, entries] of Object.entries(DATA)) {
-  const h = document.createElement('h2'); h.textContent = platform; side.appendChild(h);
+  const h = document.createElement('h2'); h.textContent = SECTION[platform] || platform; side.appendChild(h);
   for (const [key, e] of Object.entries(entries)) {
     const d = document.createElement('div');
     d.className = 'item';
@@ -167,8 +233,13 @@ wipe.oninput = applyOnion;
 
 def main() -> None:
     data = {}
+    layout = ROOT / "out" / "report-layout.json"
+    if layout.exists():
+        data["layout"] = json.loads(layout.read_text())
     for report in sorted((ROOT / "out").glob("report-*.json")):
         platform = report.stem.removeprefix("report-")
+        if platform == "layout":
+            continue
         data[platform] = json.loads(report.read_text())
     OUT.mkdir(parents=True, exist_ok=True)
     html = HTML.replace("__DATA__", json.dumps(data))

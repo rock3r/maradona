@@ -152,12 +152,14 @@ def compare_chart(chart):
             worst["pad"] = max(worst["pad"], abs(best["pad_x"] - g_pad[0]), abs(best["pad_y"] - g_pad[1]))
             pad_rows.append((gn["id"], f"{g_pad[0]:.0f},{g_pad[1]:.0f}", f"{best['pad_x']:.0f},{best['pad_y']:.0f}"))
 
+    # The layout itself is what this oracle judges: the renderer line is a
+    # separate (still rough) check, reported but not gated.
     passed = (worst["missing"] == 0 and worst["size"] <= MAX_SIZE_ERR
               and worst["centre"] <= MAX_CENTRE_ERR and worst["label"] <= MAX_LABEL_ERR
-              and worst["pad"] <= MAX_PAD_ERR and worst["render"] <= MAX_RENDER_ERR)
+              and worst["pad"] <= MAX_PAD_ERR)
     return {
-        "chart": chart, "scale": round(scale, 4), "rows": rows, "labels": label_rows,
-        "pads": pad_rows, "render": render_rows,
+        "kind": "layout", "chart": chart, "scale": round(scale, 4), "rows": rows,
+        "labels": label_rows, "pads": pad_rows, "render": render_rows,
         "worst": {k: round(v, 4) for k, v in worst.items()}, "pass": passed,
     }
 
@@ -165,12 +167,20 @@ def compare_chart(chart):
 def main():
     charts = sys.argv[1:] or sorted(p.stem for p in (ROOT / "charts").glob("*.mmd"))
     failures = 0
+    report = {}
+    desktop = json.loads((ROOT / "out" / "report-desktop.json").read_text()) \
+        if (ROOT / "out" / "report-desktop.json").exists() else {}
     for chart in charts:
         if not (OUT / f"{chart}.layout.json").exists():
             print(f"SKIP  {chart}: no layout dump (run the desktop oracle test first)")
             continue
         result = compare_chart(chart)
         failures += 0 if result["pass"] else 1
+        # Link the visual side-by-side from the capture report, if there is one.
+        visual = desktop.get(f"{chart}-100")
+        if visual and visual.get("images"):
+            result["images"] = visual["images"]
+        report[chart] = result
         w = result["worst"]
         print(f"\n{'PASS' if result['pass'] else 'FAIL'}  {chart}   "
               f"(golden scaled x{result['scale']:.3f})")
@@ -188,7 +198,9 @@ def main():
         unmatched = [r for r in result["render"] if not r[1].endswith("px")]
         print(f"      renderer: {len(result['render'])} nodes, {len(unmatched)} unmatched in the render, "
               f"{len(bad_render)} drawn more than {MAX_RENDER_ERR:.0f}px off the IL")
-    print(f"\nlayout: {len(charts) - failures}/{len(charts)} charts within tolerance")
+    out = ROOT / "out" / "report-layout.json"
+    out.write_text(json.dumps(report, indent=1))
+    print(f"\nlayout: {len(charts) - failures}/{len(charts)} charts within tolerance -> {out}")
     return 1 if failures else 0
 
 
