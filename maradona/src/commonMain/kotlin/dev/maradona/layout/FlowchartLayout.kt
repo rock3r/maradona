@@ -259,6 +259,7 @@ object FlowchartLayout {
                 items.sumOf { itemWidth(it).toDouble() }.toFloat() +
                     options.nodeGap * max(0, items.size - 1)
             }
+            val labelled = labelledRanks(layerOf)
             val maxWidth = layerWidths.maxOrNull() ?: 0f
             for ((li, items) in layers.withIndex()) {
                 var x = (maxWidth - layerWidths[li]) / 2f
@@ -268,31 +269,12 @@ object FlowchartLayout {
                     x += w + options.nodeGap
                 }
             }
-            // Alignment sweeps: pull each item to the centre of its
-            // neighbours (dagre's median alignment), then restore the minimum
-            // gaps. A parent with one child ends up over it, with two it sits
-            // between them.
-            val (preds, succs) = neighboursOf(chains)
-            val labelled = labelledRanks(layerOf)
-
-            fun align(items: List<Item>, neighbours: Map<Item, List<Item>>) {
-                for (item in items) {
-                    val ns = neighbours[item].orEmpty().mapNotNull { centerX[it] }
-                    if (ns.isNotEmpty()) centerX[item] = ns.average().toFloat()
-                }
-                for (i in 1 until items.size) {
-                    val min = centerX.getValue(items[i - 1]) + itemWidth(items[i - 1]) / 2f + options.nodeGap + itemWidth(items[i]) / 2f
-                    if (centerX.getValue(items[i]) < min) centerX[items[i]] = min
-                }
-                for (i in items.size - 2 downTo 0) {
-                    val maxC = centerX.getValue(items[i + 1]) - itemWidth(items[i + 1]) / 2f - options.nodeGap - itemWidth(items[i]) / 2f
-                    if (centerX.getValue(items[i]) > maxC) centerX[items[i]] = maxC
-                }
-            }
-            repeat(4) {
-                for (items in layers) align(items, preds)
-                for (items in layers.asReversed()) align(items, succs)
-            }
+            // Ranks are centred by their own width. Mermaid (dagre) additionally
+            // aligns nodes with their neighbours, but for the shapes a flowchart
+            // produces, rank-centred packing is what its result looks like: a
+            // parent sits over its children's span, and a merge node between its
+            // parents. The sweeps that used to be here pulled those nodes to one
+            // side instead.
             val minLeft = layers.flatten().minOfOrNull { centerX.getValue(it) - itemWidth(it) / 2f } ?: 0f
             val result = HashMap<Item, DiagramPoint>()
             for ((li, items) in layers.withIndex()) {

@@ -50,8 +50,10 @@ data class LayoutOptions(
     /** Extra rank a labelled edge gets: dagre's label dummy, whose height is the
      * label height plus twice its edgesep (20). Measured: 61.5 units. */
     val edgeLabelRankGap: Float = 61.5f,
-    val subgraphPadding: Float = 16f,
-    val subgraphLabelHeight: Float = 28f,
+    // Measured from mermaid's clusters: 24 units of padding all round, plus a
+    // 24-unit band at the top for the cluster label.
+    val subgraphPadding: Float = 24f,
+    val subgraphLabelHeight: Float = 24f,
     /** Force a direction regardless of the source (used for narrow-screen adaption). */
     val directionOverride: Direction? = null,
 )

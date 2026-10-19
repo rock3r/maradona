@@ -27,28 +27,54 @@ it is actually defined - in geometry:
 
 mermaid's SVG is a machine-readable geometry oracle: node ids and shape
 elements, edge topology and paths, label boxes, clusters. `golden_geometry.py`
-extracts it (validated against the PNG: SVG boxes and rasterised fill boxes
-agree within 1-2px) into `goldens/<id>.geometry.json`. Maradona's side is its
-own intermediate representation - the `FlowchartLayout` result, dumped by the
+extracts it into `goldens/<id>.geometry.json` (validated against the PNG: SVG
+boxes and rasterised fill boxes agree within 1-2px). Maradona's side is its own
+intermediate representation - the `FlowchartLayout` result, dumped by the
 desktop test as `out/desktop/<id>.layout.json` (`onLayout` on
 `MaradonaDiagram`/`MaradonaLayout`).
 
 The comparison is per node id: box size, centre offset, edge-label placement,
-label padding. This is the check that says *why* two renders look different,
-in numbers. **It currently fails every chart**, e.g. for `basic-td`:
+label padding, at matched scale (the absolute scale difference is reported
+separately so a calibration artifact cannot hide as geometry).
 
-| node | mermaid | maradona | delta w/h | centre | padding |
-| --- | --- | --- | --- | --- | --- |
-| A Mermaid text | 302x88 | 288x85 | -5%/-3% | 160px | 68,34 -> 32,26 |
-| B Flowchart? | 338x338 | 333x127 | -1%/-62% | 108px | 102,158 -> 72,48 |
-| C Maradona | 302x88 | 234x85 | -23%/-3% | 69px | 91,34 -> 32,27 |
-| D Pele | 302x88 | 136x85 | -55%/-3% | 73px | 126,34 -> 32,27 |
-| E Composables | 340x88 | 328x85 | -4%/-3% | 125px | 90,30 -> 48,24 |
+For this to mean anything the two sides have to agree on their inputs, which
+took most of the work:
 
-i.e. mermaid gives every node a wide box with generous label padding and a
-full-size diamond; ours hug the text and flatten the decision node, and node
-centres sit up to 15% of the diagonal away. That is the work item this oracle
-exists to drive.
+* **font**: both render Roboto 14px - the TTF is vendored at `oracle/fonts`,
+  loaded by mermaid through `--cssFile` and by the oracle renderer via Skia
+  (`MaradonaTheme.fontFamily`). The goldens used to be "trebuchet ms".
+* **shadow**: mermaid's `neo` look drop-shadows node shapes, which inflated the
+  rasterised fills the extractor measures. Disabled with
+  `themeVariables.dropShadow: none` (we draw none).
+* **node metrics**: `NodeSizing` ports mermaid's own rules - labels wrap at
+  `wrappingWidth` 120 and clamp to `minNodeWidth` 120 (circles measure the raw
+  text), line height 1.5, and each shape's padding formula, with the shape
+  point sets derived from the box height so the drawn shape and the box agree.
+* **spacing**: mermaid configures dagre with 50/50, but dagre halves `ranksep`
+  and doubles every `minlen`, so the gap drawn is 40 units; a labelled edge gets
+  a 61.5-unit label rank (label height + 2 * `edgesep`).
+* **coordinate assignment**: ranks are centred by their own width. dagre
+  additionally aligns nodes with their neighbours, but its result for a
+  flowchart is what rank-centred packing produces anyway (a parent over its
+  children's span, a merge node between its parents); the alignment sweeps we
+  had pulled those nodes to one side.
+
+Current worst case per chart (node size / centre offset, both relative):
+
+| chart | size | centre | absolute scale |
+| --- | --- | --- | --- |
+| basic-td | 2.4% | 0.2% | 0.999 |
+| edges-heads | 0.2% | 2.9% | 0.998 |
+| shapes-lr | 6.1% | 0.8% | 1.003 |
+| styling | 0.6% | 0.4% | 1.003 |
+| subgraphs | 26.0% | 8.9% | 0.882 |
+
+Known remaining differences: `subgraphs` (mermaid lays clusters out with dagre's
+compound algorithm, which spaces a cluster's children differently - 24/60 units
+where we use a uniform 40), the `flag` and `subroutine` shapes (mermaid reuses
+`node.width`/`node.height` between its two render passes, so those come out a
+few percent larger), and edge routing (mermaid draws `curve: basis` splines with
+its own label placement; we draw orthogonal polylines).
 
 **2. Rendering: our pixels vs our IL** (same script, `renderer:` line)
 
