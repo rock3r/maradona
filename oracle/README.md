@@ -69,12 +69,24 @@ Current worst case per chart (node size / centre offset, both relative):
 | styling | 0.6% | 0.4% | 1.003 |
 | subgraphs | 26.0% | 8.9% | 0.882 |
 
-Known remaining differences: `subgraphs` (mermaid lays clusters out with dagre's
-compound algorithm, which spaces a cluster's children differently - 24/60 units
-where we use a uniform 40), the `flag` and `subroutine` shapes (mermaid reuses
-`node.width`/`node.height` between its two render passes, so those come out a
-few percent larger), and edge routing (mermaid draws `curve: basis` splines with
-its own label placement; we draw orthogonal polylines).
+Known remaining differences, with their mechanism:
+
+* **subgraphs** (11-16%): mermaid's dagre wrapper builds a *separate nested
+  dagre graph per cluster* (`chunk-WA6RL3DZ.mjs`: `clusterGraph = new
+  Graph({compound: true}).setGraph({nodesep: 50, ranksep: 50, ...})`), lays it
+  out recursively and composes the results. So a cluster's children get their
+  own rank spacing and margins, which is why the drawn gaps vary (measured 69,
+  105 and 177 units in one chart) rather than following one set of rules.
+  Matching it means porting dagre's rank/order/BK pipeline plus that
+  composition step.
+* **flag, subroutine** (a few %): mermaid reuses `node.width`/`node.height`
+  between its two render passes, so those shapes come out larger than their own
+  formula.
+* **long-edge endpoints** (edges-heads' root and sink, 65px): dagre aligns an
+  endpoint with the dummy chain that routes its long edge, which places it
+  beside the main column; we keep it on the column.
+* **edge routing**: mermaid draws `curve: basis` splines; we draw orthogonal
+  polylines.
 
 **2. Rendering: our pixels vs our IL** (same script, `renderer:` line)
 
