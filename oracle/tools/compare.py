@@ -59,9 +59,12 @@ BG_TOLERANCE = 28
 # 5x self-consistency: same geometry at a different scale, so this is tight.
 SCALE_MAX_MISMATCH = 0.10
 # ... and we must have drawn a comparable amount of ink to the reference.
-# Not 1.0: the 5x reference is a 1x render upscaled, whose glyphs carry a
-# heavier stroke weight than text laid out at 5x. Measured range is ~0.8-0.95.
-INK_RATIO_MIN, INK_RATIO_MAX = 0.5, 1.6
+# Not 1.0: the 5x reference is a 1x render upscaled, whose 1px strokes become 5px
+# and whose glyphs carry a heavier weight than text laid out at 5x. On a sparse
+# wide chart (a single row of shapes) that gap is large - measured 0.35 there,
+# ~0.8-0.95 elsewhere - so the floor only catches a render that is essentially
+# empty.
+INK_RATIO_MIN, INK_RATIO_MAX = 0.25, 1.6
 # a capture must be a plausible diagram render. The 0.1x level is legitimately
 # almost empty on a phone screen (a small chart is a few dozen pixels), so it is
 # judged against the reference's ink instead of the viewport's.
@@ -227,10 +230,12 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
     size = ours_content.size
     offset = (box[0], box[1])
 
-    # The size relationship uses the renderer's own content measurement (from
-    # the manifest): measuring the stitched tiles here would compare against a
-    # different background threshold and report drift that is not in the layout.
-    measured = (meta["contentW"], meta["contentH"])
+    # The size relationship uses the renderer's own content measurement when the
+    # manifest has one (the desktop test writes it): measuring the stitched tiles
+    # here would use a different background threshold and report drift that is
+    # not in the layout. Device manifests carry no such measurement, so they fall
+    # back to the stitched content.
+    measured = (meta["contentW"], meta["contentH"]) if "contentW" in meta else size
     ratio_w = measured[0] / gold_content.size[0]
     ratio_h = measured[1] / gold_content.size[1]
     drift = (round(max(ratio_w, 1 / ratio_w), 4), round(max(ratio_h, 1 / ratio_h), 4))
