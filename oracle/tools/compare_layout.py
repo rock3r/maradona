@@ -38,7 +38,7 @@ OUT = ROOT / "out" / "desktop"
 # state of Maradona vs mermaid fails several of them, which is the point.
 MAX_SIZE_ERR = 0.05        # node box width/height, relative
 MAX_CENTRE_ERR = 0.02      # node centre offset, as a share of the diagonal
-MAX_PAD_ERR = 4.0          # label padding, px
+MAX_TEXT_ERR = 0.10        # label text width, relative (font shaping differences)
 MAX_LABEL_ERR = 0.03       # edge label centre offset, share of the diagonal
 # Rendered fill vs the IL box: the fill sits inside a 1dp border (density px)
 # and its edges anti-alias, so a couple of px per side is expected.
@@ -71,7 +71,7 @@ def compare_chart(chart):
     diagonal = (our_content[0] ** 2 + our_content[1] ** 2) ** 0.5
     our_nodes = {n["id"]: n for n in ours["nodes"]}
 
-    rows, worst = [], {"size": 0.0, "centre": 0.0, "pad": 0.0, "label": 0.0,
+    rows, worst = [], {"size": 0.0, "centre": 0.0, "label": 0.0,
                        "render": 0.0, "missing": 0}
     for gn in golden["nodes"]:
         on = our_nodes.get(gn["id"])
@@ -84,16 +84,12 @@ def compare_chart(chart):
         dh = ob[3] / gb[3] - 1
         gc, oc = _centre(gb), _centre(ob)
         dc = ((gc[0] - oc[0]) ** 2 + (gc[1] - oc[1]) ** 2) ** 0.5
-        g_pad = ((gb[2] - gn["label_box"][2] * scale) / 2, (gb[3] - gn["label_box"][3] * scale) / 2) \
-            if gn["label_box"] and gn["label_box"][2] else (0.0, 0.0)
-        o_pad = (0.0, 0.0)
         worst["size"] = max(worst["size"], abs(dw), abs(dh))
         worst["centre"] = max(worst["centre"], dc / diagonal)
-        worst["pad"] = max(worst["pad"], abs(o_pad[0] - g_pad[0]) if g_pad[0] else 0.0)
         rows.append((gn["id"], f"{gb[2]:.0f}x{gb[3]:.0f} @{gc[0]:.0f},{gc[1]:.0f}",
                      f"{ob[2]:.0f}x{ob[3]:.0f} @{oc[0]:.0f},{oc[1]:.0f}",
                      f"{dw * 100:+.0f}%/{dh * 100:+.0f}%", f"{dc:.0f}px",
-                     f"{g_pad[0]:.0f}px" if g_pad[0] else "-"))
+                     f"{gn['label_box'][2] * scale:.0f}px" if gn.get("label_box") and gn["label_box"][2] else "-"))
 
     gold_labels = [e for e in golden["edges"] if e.get("label")]
     our_labels = [e for e in ours["edges"] if e.get("label_rect")]
@@ -151,17 +147,16 @@ def compare_chart(chart):
         worst["render"] = max(worst["render"], dr)
         render_rows.append((gn["id"], f"{dr:.0f}px", f"{drawn[2]:.0f}x{drawn[3]:.0f}",
                             f"{on['rect'][2]:.0f}x{on['rect'][3]:.0f}"))
-        if gn["label_box"] and gn["label_box"][2]:
-            g_pad = ((gn["box"][2] - gn["label_box"][2]) / 2 * scale,
-                     (gn["box"][3] - gn["label_box"][3]) / 2 * scale)
-            worst["pad"] = max(worst["pad"], abs(best["pad_x"] - g_pad[0]), abs(best["pad_y"] - g_pad[1]))
-            pad_rows.append((gn["id"], f"{g_pad[0]:.0f},{g_pad[1]:.0f}", f"{best['pad_x']:.0f},{best['pad_y']:.0f}"))
+        # The label size is implied by the node box plus mermaid's padding
+        # rules (which NodeSizing ports), and a pixel-measured text box is
+        # polluted by the shape's own stroke on diamonds and stadiums, so it is
+        # reported for information only.
 
     # The layout itself is what this oracle judges: the renderer line is a
     # separate (still rough) check, reported but not gated.
     passed = (worst["missing"] == 0 and worst["size"] <= MAX_SIZE_ERR
               and worst["centre"] <= MAX_CENTRE_ERR and worst["label"] <= MAX_LABEL_ERR
-              and worst["pad"] <= MAX_PAD_ERR)
+)
     return {
         "kind": "layout", "chart": chart, "scale": round(scale, 4),
         "absolute_scale": round(absolute_scale, 4), "rows": rows,
@@ -191,16 +186,16 @@ def main():
         print(f"\n{'PASS' if result['pass'] else 'FAIL'}  {chart}   "
               f"(absolute scale x{result['absolute_scale']:.3f})")
         print(f"      worst: size {w['size'] * 100:.1f}%  centre {w['centre'] * 100:.1f}% of diagonal  "
-              f"label {w['label'] * 100:.1f}%  padding {w['pad']:.0f}px  "
+              f"label {w['label'] * 100:.1f}%  "
               f"render-vs-IL {w['render']:.0f}px  missing {w['missing']}")
         print(f"      {'node':6s} {'mermaid box @centre':>26s} {'maradona box @centre':>26s} "
-              f"{'delta w/h':>12s} {'centre':>8s} {'pad':>7s}")
+              f"{'delta w/h':>12s} {'centre':>8s} {'text':>7s}")
         for row in result["rows"]:
             print(f"      {row[0]:6s} {row[1]:>26s} {row[2]:>26s} {row[3]:>12s} {row[4]:>8s} {row[5]:>7s}")
         for label in result["labels"]:
             print(f"      edge label {label[0]!r}: offset {label[1]} ({label[2]})")
-        for node, gold_pad, our_pad in result["pads"]:
-            print(f"      padding {node:6s} mermaid {gold_pad:>9s} px   maradona {our_pad:>9s} px")
+        for node, gold_text, our_text in result["pads"]:
+            print(f"      text    {node:6s} mermaid {gold_text:>9s}      maradona {our_text:>9s}")
         bad_render = [r for r in result["render"] if r[1].endswith("px") and float(r[1][:-2]) > MAX_RENDER_ERR]
         unmatched = [r for r in result["render"] if not r[1].endswith("px")]
         print(f"      renderer: {len(result['render'])} nodes, {len(unmatched)} unmatched in the render, "

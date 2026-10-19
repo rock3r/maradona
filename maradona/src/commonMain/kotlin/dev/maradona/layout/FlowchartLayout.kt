@@ -340,8 +340,15 @@ object FlowchartLayout {
                 if (eff.reversed) points = points.reversed()
                 val labelSize = edgeLabelSize(edge)
                 val labelRect = labelSize?.let { size ->
-                    val mid = points[points.size / 2]
-                    DiagramRect(mid.x - size.width / 2f, mid.y - size.height / 2f, size.width, size.height)
+                    // Mermaid puts an edge label in the middle of the rank gap
+                    // (its dagre label dummy sits between the two ranks), on the
+                    // edge's x at that height - not at a waypoint of the
+                    // polyline, which is what made our labels sit too low.
+                    val upper = if (fromRect.bottom <= toRect.y) fromRect else toRect
+                    val lower = if (upper === fromRect) toRect else fromRect
+                    val gapY = (upper.bottom + lower.y) / 2f
+                    val anchor = waypoints.minByOrNull { kotlin.math.abs(it.y - gapY) } ?: waypoints.first()
+                    DiagramRect(anchor.x - size.width / 2f, gapY - size.height / 2f, size.width, size.height)
                 }
                 out += PositionedEdge(edge, points, labelRect)
             }
