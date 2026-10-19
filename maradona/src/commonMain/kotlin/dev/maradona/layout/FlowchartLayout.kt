@@ -93,7 +93,7 @@ object FlowchartLayout {
                     if (item is Item.Real) {
                         val size = sizes.getValue(item.id)
                         val c = centers.getValue(item)
-                        nodeRects[item.id] = DiagramRect(c.x - size.width / 2f, layerTop(layerIdx, orderedLayers) + (layerHeight(layerIdx, orderedLayers) - size.height) / 2f, size.width, size.height)
+                        nodeRects[item.id] = DiagramRect(c.x - size.width / 2f, c.y - size.height / 2f, size.width, size.height)
                     }
                 }
             }
@@ -268,15 +268,18 @@ object FlowchartLayout {
                     x += w + options.nodeGap
                 }
             }
-            // Alignment sweeps: pull items towards the mean centre of neighbours,
-            // clamped so ordering and minimum gaps hold.
+            // Alignment sweeps: pull each item to the centre of its
+            // neighbours (dagre's median alignment), then restore the minimum
+            // gaps. A parent with one child ends up over it, with two it sits
+            // between them.
             val (preds, succs) = neighboursOf(chains)
+            val labelled = labelledRanks(layerOf)
+
             fun align(items: List<Item>, neighbours: Map<Item, List<Item>>) {
                 for (item in items) {
                     val ns = neighbours[item].orEmpty().mapNotNull { centerX[it] }
-                    if (ns.isNotEmpty()) centerX[item] = (centerX.getValue(item) + ns.average().toFloat()) / 2f
+                    if (ns.isNotEmpty()) centerX[item] = ns.average().toFloat()
                 }
-                // Restore gaps left to right, then right to left.
                 for (i in 1 until items.size) {
                     val min = centerX.getValue(items[i - 1]) + itemWidth(items[i - 1]) / 2f + options.nodeGap + itemWidth(items[i]) / 2f
                     if (centerX.getValue(items[i]) < min) centerX[items[i]] = min
@@ -293,7 +296,7 @@ object FlowchartLayout {
             val minLeft = layers.flatten().minOfOrNull { centerX.getValue(it) - itemWidth(it) / 2f } ?: 0f
             val result = HashMap<Item, DiagramPoint>()
             for ((li, items) in layers.withIndex()) {
-                val cy = layerTop(li, layers) + layerHeight(li, layers) / 2f
+                val cy = layerTop(li, layers, labelled) + layerHeight(li, layers) / 2f
                 for (item in items) {
                     result[item] = DiagramPoint(centerX.getValue(item) - minLeft, cy)
                 }
@@ -306,9 +309,25 @@ object FlowchartLayout {
                 if (it is Item.Real) sizes.getValue(it.id).height else 0f
             } ?: 0f
 
-        private fun layerTop(layerIdx: Int, layers: List<List<Item>>): Float {
+        /**
+         * Ranks an edge label occupies: dagre inserts a dummy node for every
+         * labelled edge, so the gap between its endpoints is two rank
+         * separations rather than one. Without this, diagrams with edge labels
+         * come out visibly shorter than mermaid's.
+         */
+        private fun labelledRanks(layerOf: Map<String, Int>): Set<Int> =
+            chart.edges.filter { it.label != null }.mapNotNull { edge ->
+                val from = layerOf[edge.from] ?: return@mapNotNull null
+                val to = layerOf[edge.to] ?: return@mapNotNull null
+                if (from == to) null else minOf(from, to)
+            }.toSet()
+
+        private fun layerTop(layerIdx: Int, layers: List<List<Item>>, labelled: Set<Int>): Float {
             var y = 0f
-            for (i in 0 until layerIdx) y += layerHeight(i, layers) + options.layerGap
+            for (i in 0 until layerIdx) {
+                y += layerHeight(i, layers) + options.layerGap
+                if (i in labelled) y += options.layerGap
+            }
             return y
         }
 

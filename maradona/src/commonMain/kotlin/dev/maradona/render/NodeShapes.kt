@@ -14,56 +14,51 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.maradona.model.NodeShape
 
-/** Compose [Shape] for each flowchart node geometry. */
+/**
+ * Compose [Shape] for each flowchart node geometry.
+ *
+ * The point sets are mermaid's, drawn into the node box [NodeSizing] computed:
+ * mermaid's shapes derive their slants from the box height, so the drawn shape
+ * and the layout box agree (e.g. a hexagon's ends are h/3.5 wide).
+ */
 fun nodeShape(shape: NodeShape, cornerRadius: Dp = 4.dp): Shape = when (shape) {
     NodeShape.Rect, NodeShape.Subroutine -> RectangleShape
     NodeShape.RoundedRect -> RoundedCornerShape(cornerRadius)
     NodeShape.Stadium -> RoundedCornerShape(percent = 50)
     NodeShape.Circle, NodeShape.DoubleCircle -> CircleShape
+    // side = labelW + labelH + 2*padding, i.e. a square diamond.
     NodeShape.Diamond -> PolygonShape { w, h ->
         moveTo(w / 2f, 0f); lineTo(w, h / 2f); lineTo(w / 2f, h); lineTo(0f, h / 2f); close()
     }
+    // ends are h/3.5 wide, top/bottom edges inset by that much.
     NodeShape.Hexagon -> PolygonShape { w, h ->
-        val inset = minOf(w * 0.18f, h * 0.5f)
-        moveTo(inset, 0f); lineTo(w - inset, 0f); lineTo(w, h / 2f)
-        lineTo(w - inset, h); lineTo(inset, h); lineTo(0f, h / 2f); close()
+        val m = h / 3.5f
+        moveTo(m, 0f); lineTo(w - m, 0f); lineTo(w, h / 2f)
+        lineTo(w - m, h); lineTo(m, h); lineTo(0f, h / 2f); close()
     }
+    // ends are h/2 wide.
     NodeShape.Parallelogram -> PolygonShape { w, h ->
-        val slant = minOf(16f, w * 0.2f)
-        moveTo(slant, 0f); lineTo(w, 0f); lineTo(w - slant, h); lineTo(0f, h); close()
+        val m = h / 2f
+        moveTo(m, 0f); lineTo(w, 0f); lineTo(w - m, h); lineTo(0f, h); close()
     }
     NodeShape.ParallelogramAlt -> PolygonShape { w, h ->
-        val slant = minOf(16f, w * 0.2f)
-        moveTo(0f, 0f); lineTo(w - slant, 0f); lineTo(w, h); lineTo(slant, h); close()
+        val m = h / 2f
+        moveTo(0f, 0f); lineTo(w - m, 0f); lineTo(w, h); lineTo(m, h); close()
     }
     NodeShape.Trapezoid -> PolygonShape { w, h ->
-        val inset = minOf(18f, w * 0.22f)
-        moveTo(inset, 0f); lineTo(w - inset, 0f); lineTo(w, h); lineTo(0f, h); close()
+        val m = h / 2f
+        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w - m, h); lineTo(m, h); close()
     }
     NodeShape.TrapezoidAlt -> PolygonShape { w, h ->
-        val inset = minOf(18f, w * 0.22f)
-        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w - inset, h); lineTo(inset, h); close()
+        val m = h / 2f
+        moveTo(m, 0f); lineTo(w - m, 0f); lineTo(w, h); lineTo(0f, h); close()
     }
+    // a notch of h/4 on the left edge.
     NodeShape.Asymmetric -> PolygonShape { w, h ->
-        val point = minOf(14f, w * 0.18f)
-        moveTo(point, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(point, h); lineTo(0f, h / 2f); close()
+        val m = h / 4f
+        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(0f, h); lineTo(m, h / 2f); close()
     }
     NodeShape.Cylinder -> CylinderShape
-}
-
-/** Extra inner padding so text stays inside non-rectangular shapes. */
-fun nodeContentPadding(shape: NodeShape): Pair<Dp, Dp> = when (shape) {
-    // horizontal to vertical
-    NodeShape.Diamond -> 28.dp to 16.dp
-    NodeShape.Hexagon -> 22.dp to 10.dp
-    NodeShape.Circle, NodeShape.DoubleCircle -> 20.dp to 14.dp
-    NodeShape.Parallelogram, NodeShape.ParallelogramAlt,
-    NodeShape.Trapezoid, NodeShape.TrapezoidAlt,
-    NodeShape.Asymmetric -> 20.dp to 10.dp
-    NodeShape.Stadium -> 18.dp to 8.dp
-    NodeShape.Cylinder -> 14.dp to 14.dp
-    NodeShape.Subroutine -> 18.dp to 8.dp
-    else -> 12.dp to 8.dp
 }
 
 private class PolygonShape(private val build: Path.(Float, Float) -> Unit) : Shape {
@@ -77,7 +72,8 @@ private object CylinderShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
-        val ry = minOf(h * 0.22f, 14f)
+        // mermaid: rx = w/2, ry = rx / (2.5 + w/50)
+        val ry = (w / 2f) / (2.5f + w / 50f)
         val path = Path().apply {
             moveTo(0f, ry)
             arcTo(Rect(0f, 0f, w, ry * 2), 180f, 180f, false)

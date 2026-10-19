@@ -34,6 +34,7 @@ real captures.
 
 Usage: compare.py <desktop|android|ios>  - exit code 0 iff every entry passes.
 """
+import collections
 import json
 import pathlib
 import sys
@@ -80,9 +81,15 @@ WHITE = (255, 255, 255)
 # ---------- shared image helpers ----------
 
 def bg_color(img):
-    w, h = img.size
-    pts = [img.getpixel(p) for p in [(2, 2), (w - 3, 2), (2, h - 3), (w - 3, h - 3)]]
-    return tuple(sorted(c[i] for c in pts)[1] for i in range(3))
+    """The diagram background: the most common colour, not a corner sample.
+
+    A zoomed tile can land with a node border in its corner, which would make a
+    corner-based estimate report the border as the background (and then flag a
+    perfectly good render as "too dark").
+    """
+    small = img.resize((160, 160)) if max(img.size) > 160 else img
+    counts = collections.Counter(small.getdata())
+    return counts.most_common(1)[0][0]
 
 
 def content_bbox(img, bg):

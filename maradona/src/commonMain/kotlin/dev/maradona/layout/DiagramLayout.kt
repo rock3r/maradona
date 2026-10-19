@@ -40,9 +40,11 @@ data class DiagramLayout(
 }
 
 data class LayoutOptions(
-    val nodeGap: Float = 48f,
-    val layerGap: Float = 76f,
-    val padding: Float = 24f,
+    // mermaid's flowchart defaults: nodeSpacing / rankSpacing / diagramPadding.
+    // Matching them is what makes our node positions comparable to its SVG.
+    val nodeGap: Float = 50f,
+    val layerGap: Float = 50f,
+    val padding: Float = 8f,
     val subgraphPadding: Float = 16f,
     val subgraphLabelHeight: Float = 28f,
     /** Force a direction regardless of the source (used for narrow-screen adaption). */

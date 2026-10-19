@@ -56,10 +56,10 @@ def compare_chart(chart):
 
     gold_content = golden["content"]
     our_content = (manifest["contentW"], manifest["contentH"])
-    ratio_w = gold_content[2] / our_content[0]
-    ratio_h = gold_content[3] / our_content[1]
-    # The capture pipeline matched whichever axis binds (min scale); use it.
-    scale = ratio_w if abs(ratio_w - 1) <= abs(ratio_h - 1) else ratio_h
+    # No rescaling: the oracle capture density was already matched to the
+    # golden, so both sides are in the same units and any residual scale error
+    # is a real difference, not something to normalise away.
+    scale = 1.0
 
     def to_ours(rect):
         return [rect[0] * scale, rect[1] * scale, rect[2] * scale, rect[3] * scale]
@@ -86,7 +86,8 @@ def compare_chart(chart):
         worst["size"] = max(worst["size"], abs(dw), abs(dh))
         worst["centre"] = max(worst["centre"], dc / diagonal)
         worst["pad"] = max(worst["pad"], abs(o_pad[0] - g_pad[0]) if g_pad[0] else 0.0)
-        rows.append((gn["id"], f"{gb[2]:.0f}x{gb[3]:.0f}", f"{ob[2]:.0f}x{ob[3]:.0f}",
+        rows.append((gn["id"], f"{gb[2]:.0f}x{gb[3]:.0f} @{gc[0]:.0f},{gc[1]:.0f}",
+                     f"{ob[2]:.0f}x{ob[3]:.0f} @{oc[0]:.0f},{oc[1]:.0f}",
                      f"{dw * 100:+.0f}%/{dh * 100:+.0f}%", f"{dc:.0f}px",
                      f"{g_pad[0]:.0f}px" if g_pad[0] else "-"))
 
@@ -182,14 +183,14 @@ def main():
             result["images"] = visual["images"]
         report[chart] = result
         w = result["worst"]
-        print(f"\n{'PASS' if result['pass'] else 'FAIL'}  {chart}   "
-              f"(golden scaled x{result['scale']:.3f})")
+        print(f"\n{'PASS' if result['pass'] else 'FAIL'}  {chart}")
         print(f"      worst: size {w['size'] * 100:.1f}%  centre {w['centre'] * 100:.1f}% of diagonal  "
               f"label {w['label'] * 100:.1f}%  padding {w['pad']:.0f}px  "
               f"render-vs-IL {w['render']:.0f}px  missing {w['missing']}")
-        print(f"      {'node':6s} {'mermaid':>11s} {'maradona':>11s} {'delta w/h':>12s} {'centre':>8s} {'pad':>7s}")
+        print(f"      {'node':6s} {'mermaid box @centre':>26s} {'maradona box @centre':>26s} "
+              f"{'delta w/h':>12s} {'centre':>8s} {'pad':>7s}")
         for row in result["rows"]:
-            print(f"      {row[0]:6s} {row[1]:>11s} {row[2]:>11s} {row[3]:>12s} {row[4]:>8s} {row[5]:>7s}")
+            print(f"      {row[0]:6s} {row[1]:>26s} {row[2]:>26s} {row[3]:>12s} {row[4]:>8s} {row[5]:>7s}")
         for label in result["labels"]:
             print(f"      edge label {label[0]!r}: offset {label[1]} ({label[2]})")
         for node, gold_pad, our_pad in result["pads"]:

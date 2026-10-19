@@ -131,9 +131,9 @@ def _shape_kind(shape_el, node_group):
     return tag
 
 
-def extract(chart_id):
-    svg_path = ROOT / "goldens" / f"{chart_id}.svg"
-    png_path = ROOT / "goldens" / f"{chart_id}.png"
+def extract(chart_id, svg_path=None, png_path=None):
+    svg_path = pathlib.Path(svg_path) if svg_path else ROOT / "goldens" / f"{chart_id}.svg"
+    png_path = pathlib.Path(png_path) if png_path else ROOT / "goldens" / f"{chart_id}.png"
     root = ET.fromstring(svg_path.read_text())
     view = root.get("viewBox", "0 0 0 0").split()
     origin = (float(view[0]), float(view[1]))

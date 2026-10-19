@@ -9,7 +9,11 @@
     "clusterBkg": "#EAE6D8",
     "clusterBorder": "#CECDC3",
     "edgeLabelBackground": "#FFFCF0",
-    "fontSize": "14px"
+    "fontSize": "14px",
+    "fontFamily": "-apple-system, BlinkMacSystemFont, \"Helvetica Neue\", Helvetica, Arial, sans-serif"
   },
-  "flowchart": { "htmlLabels": false, "useMaxWidth": false }
+  "flowchart": {
+    "htmlLabels": false,
+    "useMaxWidth": false
+  }
 }

@@ -2,9 +2,14 @@ package dev.maradona.render
 
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
+import dev.maradona.layout.NodeSizing
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -43,7 +48,32 @@ fun MaradonaNode(
     val fill = parseCssColor(node.style?.fill) ?: theme.nodeFill
     val borderColor = parseCssColor(node.style?.stroke) ?: theme.nodeBorder
     val textColor = parseCssColor(node.style?.textColor) ?: theme.nodeText
-    val (padH, padV) = nodeContentPadding(node.shape)
+    // Mermaid sizes a node from its *wrapped* label: labels wrap at
+    // `wrappingWidth` and the label box has a minimum width, then each shape
+    // adds its own padding. Matching that is what makes our geometry comparable
+    // to mermaid's SVG (see NodeSizing).
+    val textStyle = TextStyle(
+        color = textColor,
+        fontSize = theme.nodeFontSize,
+        // Mermaid lays labels out with `line-height: 1.5`, so its label box is
+        // 21 units per line for a 14px font; matching that keeps node heights
+        // comparable (a single line is 15.5 without it).
+        lineHeight = theme.nodeFontSize * 1.5f,
+        textAlign = TextAlign.Center,
+    )
+    val measurer = rememberTextMeasurer()
+    val wrappedLabel = annotatedLabel(node.label)
+    val wrapPx = with(LocalDensity.current) { NodeSizing.WRAPPING_WIDTH.dp.roundToPx() }
+    val measured = measurer.measure(wrappedLabel, textStyle, constraints = Constraints(maxWidth = wrapPx))
+    // Mermaid's label box is `lines x (fontSize * 1.5)` tall (its SVG sets
+    // line-height: 1.5), not the font's tight line height, so derive it from the
+    // line count rather than from the measured text height.
+    val labelBox = NodeSizing.labelBox(
+        node.shape,
+        measured.size.width / LocalDensity.current.density,
+        measured.lineCount * theme.nodeFontSize.value * 1.5f,
+    )
+    val nodeBox = NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
     val plainLabel = node.label.replace("**", "").replace("*", "")
     val description = if (connectionsDescription.isNullOrBlank()) {
         plainLabel
@@ -53,6 +83,7 @@ fun MaradonaNode(
 
     Box(
         modifier = modifier
+            .size(nodeBox.width.dp, nodeBox.height.dp)
             // Draw fill + border as plain vectors. Modifier.background/border
             // rasterize generic (non-rect) outlines into an offscreen texture
             // for their BlendMode.Clear cutout, which then gets bilinearly
@@ -111,18 +142,10 @@ fun MaradonaNode(
                 }
             }
             .focusable()
-            .semantics(mergeDescendants = true) { contentDescription = description }
-            .padding(horizontal = padH, vertical = padV),
+            .semantics(mergeDescendants = true) { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        BasicText(
-            text = annotatedLabel(node.label),
-            style = TextStyle(
-                color = textColor,
-                fontSize = theme.nodeFontSize,
-                textAlign = TextAlign.Center,
-            ),
-        )
+        BasicText(text = wrappedLabel, style = textStyle)
     }
 }
 
