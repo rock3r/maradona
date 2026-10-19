@@ -19,6 +19,8 @@ data class NodeStyle(
     val fill: String? = null,
     val stroke: String? = null,
     val textColor: String? = null,
+    /** `stroke-width` from a `style` statement, e.g. "2px" or "2". */
+    val strokeWidth: String? = null,
 )
 
 data class FlowNode(

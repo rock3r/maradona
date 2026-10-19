@@ -149,6 +149,11 @@ def framed(ref, origin, size, fill=WHITE):
     return out
 
 
+def centre_tile(tiles_imgs, total):
+    """The middle tile of a device capture: overlapping windows cannot be joined."""
+    return tiles_imgs[len(tiles_imgs) // 2]
+
+
 def display_asset(img):
     w, h = img.size
     if max(w, h) <= DISPLAY_MAX:
@@ -158,6 +163,12 @@ def display_asset(img):
 
 
 def mosaic(tiles_imgs, fractions):
+    """Side-by-side montage of the tiles, for charts whose tiles form a cover grid.
+
+    Only the desktop renderer produces such a grid. A device capture's tiles are
+    *overlapping* pan windows, so gluing them together repeats the content and
+    looks like broken stitching; callers use [centre_tile] for those instead.
+    """
     ys = sorted({round(fy, 4) for _, fy in fractions})
     xs = sorted({round(fx, 4) for fx, _ in fractions})
     nx, ny = len(xs), len(ys)
@@ -334,9 +345,24 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
 
         name = f"{platform}-{chart}-{level}"
         web_img.mkdir(parents=True, exist_ok=True)
-        display_asset(mosaic(ref_imgs, fractions)).save(web_img / f"{name}-gold.png")
-        display_asset(mosaic(o_imgs, fractions)).save(web_img / f"{name}-ours.png")
-        display_asset(mosaic(diff_imgs, fractions)).save(web_img / f"{name}-diff.png")
+        images = {"gold": [], "ours": [], "diff": []}
+        if len(fractions) == 1:
+            # One window: a plain side-by-side pair.
+            for key, imgs in (("gold", ref_imgs), ("ours", o_imgs), ("diff", diff_imgs)):
+                display_asset(imgs[0]).save(web_img / f"{name}-{key}.png")
+                images[key] = [f"img/{name}-{key}.png"]
+        else:
+            # Several overlapping pan windows: keep them apart, one pair per tile,
+            # so each can be inspected at 1:1 with both sides showing the same
+            # region. Gluing them into a montage repeats content.
+            for index, _ in enumerate(fractions):
+                suffix = f"{name}-t{index}"
+                display_asset(ref_imgs[index]).save(web_img / f"{suffix}-gold.png")
+                display_asset(o_imgs[index]).save(web_img / f"{suffix}-ours.png")
+                display_asset(diff_imgs[index]).save(web_img / f"{suffix}-diff.png")
+                images["gold"].append(f"img/{suffix}-gold.png")
+                images["ours"].append(f"img/{suffix}-ours.png")
+                images["diff"].append(f"img/{suffix}-diff.png")
         results[entry] = {
             "mode": _mode(level),
             "mismatch": round(frac, 4),
@@ -355,8 +381,7 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
                                   else f"ink ratio {ink_ratio:.2f} outside [{INK_RATIO_MIN}, {INK_RATIO_MAX}]"
                                   if level == "max" and not (INK_RATIO_MIN <= ink_ratio <= INK_RATIO_MAX)
                                   else f"mismatch {frac:.3f} > budget {budget}"}),
-            "images": {"gold": f"img/{name}-gold.png", "ours": f"img/{name}-ours.png",
-                       "diff": f"img/{name}-diff.png"},
+            "images": images,
         }
     return results
 

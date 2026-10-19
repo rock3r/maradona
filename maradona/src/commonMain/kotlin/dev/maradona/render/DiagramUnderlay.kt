@@ -122,8 +122,9 @@ private val DrawScope.unit: Float get() = density
 
 /** How far before the tip the line should stop to make room for this head. */
 private fun DrawScope.headTrim(head: ArrowHead): Float {
-    // Overshoot 1dp into the head so rounding/AA can't leave a hairline gap.
-    val overlap = 1.dp.toPx()
+    // Overshoot well into the head so the line always ends inside its butt: a
+    // 1dp overshoot still showed a gap once the head was scaled by the density.
+    val overlap = 3f * unit
     return when (head) {
         ArrowHead.Arrow -> ArrowLengthUnits * unit - overlap
         ArrowHead.Circle -> CircleRadiusUnits * 2 * unit - overlap

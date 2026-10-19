@@ -173,6 +173,7 @@ object FlowchartParser {
                     "fill" -> style.copy(fill = value)
                     "stroke" -> style.copy(stroke = value)
                     "color" -> style.copy(textColor = value)
+                    "stroke-width" -> style.copy(strokeWidth = value)
                     else -> style
                 }
             }

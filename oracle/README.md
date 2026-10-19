@@ -221,6 +221,11 @@ Three guards now prevent it:
 * `compare.py` and `compare_layout.py` refuse to run when any render is older
   than the newest source that can change it, and print the command to re-render.
 
+Device captures re-check window focus immediately before each screenshot and
+retry: on a shared device another app can take the foreground between the launch
+check and the capture, and be photographed instead of the diagram. Captures are
+taken on the Android emulator and the iOS simulator - never on a personal phone.
+
 ## Looking at the differences
 
 `tools/side_by_side.py` crops the same region of the golden and of our render and
