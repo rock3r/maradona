@@ -1,0 +1,11 @@
+/* Golden rendering overrides, applied with mmdc --cssFile.
+
+   Font: the same TTF our Compose renderer loads (oracle/fonts/Roboto-Regular.ttf),
+   so text metrics - and therefore node boxes - are comparable. Mermaid's node
+   drop-shadow is disabled via themeVariables.dropShadow in mermaid-config.json. */
+@font-face {
+  font-family: 'Roboto';
+  src: url('file:///Users/rock3r/src/maradona/oracle/fonts/Roboto-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}

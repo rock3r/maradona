@@ -40,11 +40,16 @@ data class DiagramLayout(
 }
 
 data class LayoutOptions(
-    // mermaid's flowchart defaults: nodeSpacing / rankSpacing / diagramPadding.
-    // Matching them is what makes our node positions comparable to its SVG.
-    val nodeGap: Float = 50f,
-    val layerGap: Float = 50f,
+    // Mermaid configures dagre with nodeSpacing/rankSpacing 50, but dagre halves
+    // ranksep and doubles every edge's minlen (to make room for edge labels), so
+    // the gap actually drawn between node borders is 40. Measured from the
+    // goldens: 40.0 units for both axes.
+    val nodeGap: Float = 40f,
+    val layerGap: Float = 40f,
     val padding: Float = 8f,
+    /** Extra rank a labelled edge gets: dagre's label dummy, whose height is the
+     * label height plus twice its edgesep (20). Measured: 61.5 units. */
+    val edgeLabelRankGap: Float = 61.5f,
     val subgraphPadding: Float = 16f,
     val subgraphLabelHeight: Float = 28f,
     /** Force a direction regardless of the source (used for narrow-screen adaption). */

@@ -11,10 +11,10 @@ if [ ! -d node_modules/@mermaid-js ]; then
 fi
 for chart in "$ROOT"/oracle/charts/*.mmd; do
   id=$(basename "$chart" .mmd)
-  npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" \
+  npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" --cssFile "$TOOLS/golden.css" \
     -i "$chart" -o "$ROOT/oracle/goldens/$id.png" -b "#FFFCF0" -s 2 --quiet
   # The SVG is the structural oracle for the layout comparison.
-  npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" \
+  npx --no-install mmdc -p "$TOOLS/puppeteer-config.json" -c "$TOOLS/mermaid-config.json" --cssFile "$TOOLS/golden.css" \
     -i "$chart" -o "$ROOT/oracle/goldens/$id.svg" -b "#FFFCF0" --quiet
   echo "golden: $id (png + svg)"
 done

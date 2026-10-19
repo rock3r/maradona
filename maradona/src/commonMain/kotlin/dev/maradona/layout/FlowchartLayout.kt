@@ -326,7 +326,7 @@ object FlowchartLayout {
             var y = 0f
             for (i in 0 until layerIdx) {
                 y += layerHeight(i, layers) + options.layerGap
-                if (i in labelled) y += options.layerGap
+                if (i in labelled) y += options.edgeLabelRankGap
             }
             return y
         }

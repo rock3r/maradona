@@ -83,6 +83,7 @@ fun MaradonaLayout(
                         },
                     style = TextStyle(
                         color = theme.edgeLabelText,
+                        fontFamily = theme.fontFamily,
                         fontSize = theme.edgeLabelFontSize,
                         textAlign = TextAlign.Center,
                     ),
@@ -94,6 +95,7 @@ fun MaradonaLayout(
                     modifier = Modifier.layoutId("sg:${sg.id}"),
                     style = TextStyle(
                         color = theme.subgraphText,
+                        fontFamily = theme.fontFamily,
                         fontSize = theme.subgraphFontSize,
                     ),
                 )
@@ -132,6 +134,7 @@ fun MaradonaLayout(
                 padding = padding * density,
                 subgraphPadding = subgraphPadding * density,
                 subgraphLabelHeight = subgraphLabelHeight * density,
+                edgeLabelRankGap = edgeLabelRankGap * density,
             )
         }
         var result = FlowchartLayout.layout(

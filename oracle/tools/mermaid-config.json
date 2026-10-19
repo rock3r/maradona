@@ -10,7 +10,8 @@
     "clusterBorder": "#CECDC3",
     "edgeLabelBackground": "#FFFCF0",
     "fontSize": "14px",
-    "fontFamily": "-apple-system, BlinkMacSystemFont, \"Helvetica Neue\", Helvetica, Arial, sans-serif"
+    "fontFamily": "Roboto, sans-serif",
+    "dropShadow": "none"
   },
   "flowchart": {
     "htmlLabels": false,

@@ -1,6 +1,7 @@
 package dev.maradona.render
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 
@@ -20,6 +21,9 @@ data class MaradonaTheme(
     val subgraphBorder: Color,
     val subgraphText: Color,
     val error: Color,
+    /** Font for node, edge and subgraph labels. The oracle sets this to the same
+     * TTF mermaid renders the goldens with, so text metrics are comparable. */
+    val fontFamily: FontFamily = FontFamily.Default,
     val nodeFontSize: TextUnit = 14.sp,
     val edgeLabelFontSize: TextUnit = 12.sp,
     val subgraphFontSize: TextUnit = 12.sp,

@@ -38,6 +38,18 @@ SVG_NS = "{http://www.w3.org/2000/svg}"
 XHTML_NS = "{http://www.w3.org/1999/xhtml}"
 
 
+def text_box(png, box):
+    """Text bounding box inside a node box, from dark pixels (fill-independent)."""
+    x, y, w, h = [int(round(v)) for v in box]
+    inset = 3
+    crop = png.crop((x + inset, y + inset, max(x + inset + 1, x + w - inset), max(y + inset + 1, y + h - inset)))
+    grey = crop.convert("L").point(lambda v: 255 if v < 140 else 0)
+    bbox = grey.getbbox()
+    if bbox is None:
+        return None
+    return [x + inset + bbox[0], y + inset + bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]]
+
+
 def _translate(element):
     transform = element.get("transform") or ""
     m = re.search(r"translate\(\s*([-\d.]+)[ ,]+([-\d.]+)", transform)
@@ -176,16 +188,19 @@ def extract(chart_id, svg_path=None, png_path=None):
             d = ((shape["centre"][0] - cx) ** 2 + (shape["centre"][1] - cy) ** 2) ** 0.5
             if best_d is None or d < best_d:
                 best, best_d = shape, d
-        # The PNG box is authoritative (exact pixels); the SVG box is a fallback.
-        if best is not None and best_d < 40:
-            box = list(best["bbox"])
-            tx_, ty_, tw_, th_ = best["text"]
-            label_box = [box[0] + tx_, box[1] + ty_, tw_, th_]
-        elif node["svg_box"]:
+        # The SVG box is authoritative (it is the source of truth, and the PNG
+        # fill mask fails for nodes with a custom `style` fill). The PNG fill is
+        # only a fallback for path-shaped nodes, whose bbox we cannot read from
+        # the SVG attributes.
+        if node["svg_box"]:
             box = to_png(node["svg_box"])
-            label_box = None
+        elif best is not None and best_d < 40:
+            box = list(best["bbox"])
         else:
             continue
+        # The label (text) box is measured from pixels inside the node box, so
+        # it works whatever the fill is.
+        label_box = text_box(png, box)
         nodes.append({
             "id": node["id"], "shape": node["shape"], "label": node["label"],
             "box": box, "label_box": label_box,

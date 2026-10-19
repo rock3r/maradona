@@ -5,6 +5,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.maradona.layout.DiagramLayout
@@ -40,6 +41,19 @@ import org.junit.Test
 @OptIn(ExperimentalComposeUiApi::class)
 class OracleGoldenTest {
 
+    /**
+     * The same font the goldens are rendered with (see oracle/tools/golden.css),
+     * so node boxes measured by the layout oracle are comparable.
+     */
+    private val oracleFontFamily: FontFamily by lazy {
+        val typeface = requireNotNull(
+            org.jetbrains.skia.FontMgr.default.makeFromFile(
+                File("../oracle/fonts/Roboto-Regular.ttf").absolutePath,
+            ),
+        ) { "could not load oracle/fonts/Roboto-Regular.ttf" }
+        FontFamily(androidx.compose.ui.text.platform.Typeface(typeface))
+    }
+
     private val chartsDir = File("../oracle/charts")
     private val goldensDir = File("../oracle/goldens")
     private val outDir = File("../oracle/out/desktop")
@@ -57,7 +71,7 @@ class OracleGoldenTest {
         val scene = ImageComposeScene(width = width, height = height, density = Density(density)) {
             MaradonaDiagram(
                 source = source,
-                theme = MaradonaTheme.light(),
+                theme = MaradonaTheme.light().copy(fontFamily = oracleFontFamily),
                 modifier = Modifier.fillMaxSize(),
                 zoomEnabled = false,
                 // Mermaid does not re-flow a horizontal chart into a vertical one
@@ -99,7 +113,9 @@ class OracleGoldenTest {
         var maxY = -1
         for (y in 0 until image.height) {
             for (x in 0 until image.width) {
-                if (diffAt(x, y) > 16) {
+                // Same threshold the oracle uses to measure the golden's ink,
+                // so the density calibration compares like with like.
+                if (diffAt(x, y) > 28) {
                     if (x < minX) minX = x
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y

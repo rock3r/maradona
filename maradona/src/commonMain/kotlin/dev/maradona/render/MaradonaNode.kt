@@ -54,6 +54,7 @@ fun MaradonaNode(
     // to mermaid's SVG (see NodeSizing).
     val textStyle = TextStyle(
         color = textColor,
+        fontFamily = theme.fontFamily,
         fontSize = theme.nodeFontSize,
         // Mermaid lays labels out with `line-height: 1.5`, so its label box is
         // 21 units per line for a 14px font; matching that keeps node heights
