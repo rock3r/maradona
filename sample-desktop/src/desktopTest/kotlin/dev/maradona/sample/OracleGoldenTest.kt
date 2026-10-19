@@ -7,31 +7,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
-import dev.maradona.render.DiagramZoom
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 import java.io.ByteArrayInputStream
 import java.io.File
 import javax.imageio.ImageIO
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
 import org.junit.Test
 
 /**
  * Renders every oracle chart (the .mmd files in oracle/charts) into
- * oracle/out/desktop for comparison against the mermaid goldens.
+ * oracle/out/desktop.
  *
- * All zoom levels share one fixed canvas per chart: the gold's 100% content
- * size plus a small margin. Our render is density-matched so its natural
- * content size equals the gold's (aspect drift beyond 15% fails loudly).
+ * The renders are framed exactly like the device captures, so compare.py has
+ * one comparison path for every platform:
  *
- * Levels: 100 (natural) and min (0.1x) show the whole diagram on the fixed
- * canvas; max (5x) is a viewport into the zoomed diagram, so it is captured
- * as a 3x3 grid of pan tiles covering the whole content.
+ *  * the render density is chosen so our content comes out at the golden's
+ *    pixel size (the device app does the same),
+ *  * the viewport is a fixed canvas per chart (the device's is the screen),
+ *  * each level renders at an absolute scale (`initialScale`): 1x, 0.1x, 5x,
+ *  * levels too big for the viewport are captured as pan tiles.
  *
- * Also writes manifest.json (canvas + measured content size per chart) which
- * compare.py uses to derive the matching gold views.
+ * Levels: 100 (1x, compared against the golden), min (0.1x, also against the
+ * golden), max (5x, a 3x3 pan sample checked for scale consistency, since
+ * mermaid cannot produce a meaningful 5x reference).
+ *
+ * Writes manifest.json (canvas, viewport and the pan fractions of every tile)
+ * which compare.py replays to crop the matching view out of the golden.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class OracleGoldenTest {
@@ -42,7 +45,7 @@ class OracleGoldenTest {
 
     private fun renderPng(
         source: String,
-        zoom: DiagramZoom,
+        scale: Float,
         width: Int,
         height: Int,
         density: Float,
@@ -55,7 +58,11 @@ class OracleGoldenTest {
                 theme = MaradonaTheme.light(),
                 modifier = Modifier.fillMaxSize(),
                 zoomEnabled = false,
-                initialZoom = zoom,
+                // Mermaid does not re-flow a horizontal chart into a vertical one
+                // when the viewport is narrow, and the oracle compares against
+                // mermaid: keep the layout identical at every zoom level.
+                autoDirection = false,
+                initialScale = scale,
                 initialPan = pan,
                 onNaturalSize = { naturalSize?.invoke(it) },
             )
@@ -78,9 +85,9 @@ class OracleGoldenTest {
         fun diffAt(x: Int, y: Int): Int {
             val p = image.getRGB(x, y)
             return maxOf(
-                abs((p shr 16 and 0xFF) - (bg shr 16 and 0xFF)),
-                abs((p shr 8 and 0xFF) - (bg shr 8 and 0xFF)),
-                abs((p and 0xFF) - (bg and 0xFF)),
+                kotlin.math.abs((p shr 16 and 0xFF) - (bg shr 16 and 0xFF)),
+                kotlin.math.abs((p shr 8 and 0xFF) - (bg shr 8 and 0xFF)),
+                kotlin.math.abs((p and 0xFF) - (bg and 0xFF)),
             )
         }
         var minX = Int.MAX_VALUE
@@ -106,64 +113,69 @@ class OracleGoldenTest {
         val charts = chartsDir.listFiles { f -> f.extension == "mmd" }!!.sortedBy { it.name }
         require(charts.isNotEmpty()) { "no charts in ${chartsDir.absolutePath}" }
         outDir.mkdirs()
-        val manifest = StringBuilder("{\n")
+        val manifest = StringBuilder("{\n  \"charts\": {\n")
         for (chart in charts) {
             val id = chart.nameWithoutExtension
             val source = chart.readText()
 
-            // Natural size at density 1, and the gold's content size.
-            var natLayoutW = 0
-            var natLayoutH = 0
-            val pass1 = renderPng(source, DiagramZoom.Natural, 3000, 3000, 1f) { size ->
-                natLayoutW = size.width
-                natLayoutH = size.height
+            // Natural layout size at density 1. The layout is unbounded, so a
+            // modest scene is enough: it measures its full size regardless.
+            var natW = 0
+            var natH = 0
+            renderPng(source, 1f, 400, 400, 1f) { size ->
+                natW = size.width
+                natH = size.height
             }
-            val nat = contentBounds(pass1)
+            require(natW > 0 && natH > 0) { "$id has no measurable layout" }
             val gold = contentBounds(File(goldensDir, "$id.png").readBytes())
-            val scaleW = gold[2].toFloat() / nat[2]
-            val scaleH = gold[3].toFloat() / nat[3]
-            if (abs(scaleW / scaleH - 1f) > 0.15f) {
-                println("oracle: WARNING $id aspect drift vs gold (w x$scaleW, h x$scaleH) - tolerated, gold is rescaled to match")
-            }
-            // With genuinely different layout aspects one axis can't match;
-            // min() keeps renders small and lets compare.py rescale gold to fit.
-            val density = minOf(scaleW, scaleH)
 
-            // Fixed canvas for all zoom levels: must contain the whole layout
-            // (layout can exceed the ink bbox - spacing, label overhang) and
-            // the gold's 100% content; aspects legitimately differ across renderers.
+            // The device app picks its density from the layout box, which
+            // carries padding the golden's ink does not; measure the real ink
+            // once and correct, exactly like the capture scripts do.
+            val roughDensity = minOf(gold[2].toFloat() / natW, gold[3].toFloat() / natH)
+            val roughW = (natW * roughDensity).roundToInt()
+            val roughH = (natH * roughDensity).roundToInt()
+            val roughInk = contentBounds(renderPng(source, 1f, roughW, roughH, roughDensity))
+            val density = roughDensity * minOf(
+                gold[2].toFloat() / roughInk[2],
+                gold[3].toFloat() / roughInk[3],
+            )
+            val layoutW = (natW * density).roundToInt()
+            val layoutH = (natH * density).roundToInt()
             val margin = 32
-            val canvasW = maxOf(gold[2], (natLayoutW * density).roundToInt()) + margin
-            val canvasH = maxOf(gold[3], (natLayoutH * density).roundToInt()) + margin
+            val canvasW = maxOf(gold[2], layoutW) + margin
+            val canvasH = maxOf(gold[3], layoutH) + margin
 
-            // The true layout size (ink bbox + spacing the layout reserves) is
-            // needed to align max-zoom tile windows with the gold views.
-            val layoutW = (natLayoutW * density).roundToInt()
-            val layoutH = (natLayoutH * density).roundToInt()
-            File(outDir, "$id-100.png").writeBytes(
-                renderPng(source, DiagramZoom.Natural, canvasW, canvasH, density),
-            )
-            File(outDir, "$id-min.png").writeBytes(
-                renderPng(source, DiagramZoom.Min, canvasW, canvasH, density),
-            )
+            File(outDir, "$id-100.png").writeBytes(renderPng(source, 1f, canvasW, canvasH, density))
+            File(outDir, "$id-min.png").writeBytes(renderPng(source, 0.1f, canvasW, canvasH, density))
             val fractions = listOf(0f, 0.5f, 1f)
-            for ((i, fx) in fractions.withIndex()) {
-                for ((j, fy) in fractions.withIndex()) {
-                    File(outDir, "$id-max-$i$j.png").writeBytes(
-                        renderPng(source, DiagramZoom.Max, canvasW, canvasH, density, pan = Offset(fx, fy)),
-                    )
+            val tiles = buildList {
+                for (fy in fractions) {
+                    for (fx in fractions) {
+                        add("[$fx, $fy]")
+                        val i = fractions.indexOf(fy)
+                        val j = fractions.indexOf(fx)
+                        File(outDir, "$id-max-$i-$j.png").writeBytes(
+                            renderPng(source, 5f, canvasW, canvasH, density, pan = Offset(fx, fy)),
+                        )
+                    }
                 }
             }
 
-            // Measured 100% content size: the comparison anchor.
             val ours100 = contentBounds(File(outDir, "$id-100.png").readBytes())
             manifest.append(
-                """  "$id": {"canvasW": $canvasW, "canvasH": $canvasH, "layoutW": $layoutW, "layoutH": $layoutH, "contentW": ${ours100[2]}, "contentH": ${ours100[3]}},""",
+                """    "$id": {"canvasW": $layoutW, "canvasH": $layoutH, """ +
+                    """"viewportW": $canvasW, "viewportH": $canvasH, """ +
+                    """"contentW": ${ours100[2]}, "contentH": ${ours100[3]}, """ +
+                    """"tiles": {"100": [[0.5, 0.5]], "min": [[0.5, 0.5]], "max": [${tiles.joinToString(", ")}]}},""",
             ).append('\n')
-            println("oracle: $id natural=${nat[2]}x${nat[3]} gold=${gold[2]}x${gold[3]} density=${(density * 100).roundToInt() / 100f}")
+            println(
+                "oracle: $id layout=${layoutW}x$layoutH gold=${gold[2]}x${gold[3]} " +
+                    "content=${ours100[2]}x${ours100[3]} viewport=${canvasW}x$canvasH",
+            )
         }
-        manifest.setLength(manifest.length - 2) // trailing comma+newline
-        manifest.append("\n}\n")
+        manifest.setLength(manifest.length - 2)
+        manifest.append("\n  }\n}\n")
         File(outDir, "manifest.json").writeText(manifest.toString())
     }
 }

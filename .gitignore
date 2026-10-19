@@ -11,3 +11,7 @@ xcuserdata/
 oracle/out/
 oracle/tools/node_modules/
 oracle/tools/.venv/
+
+# Python bytecode from the oracle tooling
+__pycache__/
+*.pyc

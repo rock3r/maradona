@@ -94,21 +94,22 @@ function render() {
   if (!sel) { stage.innerHTML = '<div id="empty">Select a comparison on the left.</div>'; return; }
   const e = sel.data;
   meta.textContent = `${sel.platform} · ${sel.key} · ${e.mode}` +
-    ('mismatch' in e ? ` · mismatch ${(e.mismatch * 100).toFixed(2)}%` : ` · ink ${(e.ink * 100).toFixed(1)}%`);
-  document.querySelectorAll('#tabs button').forEach(b => b.disabled = e.mode === 'smoke');
-  if (e.mode === 'smoke') {
-    sliders.hidden = true;
-    const p = document.createElement('div'); p.className = 'panel';
-    p.appendChild(img(e.images.raw));
-    const c = document.createElement('div'); c.className = 'cap';
-    c.textContent = 'raw capture (smoke-checked only: viewport-clipped zoom level)';
-    p.appendChild(c); stage.appendChild(p);
+    ('mismatch' in e ? ` · mismatch ${(e.mismatch * 100).toFixed(2)}% (budget ${(e.budget * 100).toFixed(0)}%)` : '') +
+    ('driftW' in e ? ` · size vs golden W x${e.driftW.toFixed(2)} H x${e.driftH.toFixed(2)}` : '') +
+    (e.tiles > 1 ? ` · ${e.tiles} tiles` : '') +
+    (e.error ? ` · ${e.error}` : '');
+  sliders.hidden = true;
+  if (e.error || !e.images) {
+    const d = document.createElement('div'); d.id = 'empty';
+    d.textContent = e.error || 'no capture';
+    stage.appendChild(d);
     return;
   }
   if (view === 'side') {
-    sliders.hidden = true;
-    const goldCap = e.mode === 'zoom' ? 'maradona 100% ×5 (self-consistency)' : 'mermaid (gold)';
-    for (const [src, cap] of [[e.images.gold, goldCap], [e.images.ours, 'maradona']]) {
+    const goldCap = e.mode === 'scale'
+      ? 'maradona 100%, upscaled ×5 (the scale reference)'
+      : (sel.key.endsWith('-min') ? 'mermaid golden ×0.1' : 'mermaid golden');
+    for (const [src, cap] of [[e.images.gold, goldCap], [e.images.ours, 'maradona capture']]) {
       const p = document.createElement('div'); p.className = 'panel';
       p.appendChild(img(src));
       const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
@@ -122,7 +123,6 @@ function render() {
     stage.appendChild(w);
     applyOnion();
   } else {
-    sliders.hidden = true;
     const p = document.createElement('div'); p.className = 'panel';
     p.appendChild(img(e.images.diff));
     const c = document.createElement('div'); c.className = 'cap';

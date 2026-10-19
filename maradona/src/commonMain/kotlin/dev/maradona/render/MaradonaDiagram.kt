@@ -3,7 +3,9 @@ package dev.maradona.render
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.text.BasicText
@@ -81,6 +83,12 @@ fun MaradonaDiagram(
     zoomEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
     initialZoom: DiagramZoom = DiagramZoom.Fit,
+    /**
+     * Absolute scale to start at, in px per natural px, overriding [initialZoom].
+     * Used by the oracle, which needs exact 0.1x/1x/5x renders regardless of
+     * how the diagram happens to fit its viewport.
+     */
+    initialScale: Float? = null,
     /** Fraction of the scrollable range to start at, per axis (0.5 = centered). Only meaningful when the zoomed diagram overflows the viewport. */
     initialPan: Offset? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
@@ -219,11 +227,16 @@ fun MaradonaDiagram(
 
         LaunchedEffect(naturalSize) {
             if (initialViewApplied || naturalSize.width <= 0 || naturalSize.height <= 0) return@LaunchedEffect
-            if (initialZoom == DiagramZoom.Natural) {
+            if (initialScale != null) {
+                // Absolute scale: the oracle needs exactly 0.1x/1x/5x, and the
+                // fit must not feed back into the density (a layout whose
+                // rounding shifts by a pixel would otherwise oscillate).
+                userZoom = 1f
+            } else if (initialZoom == DiagramZoom.Natural) {
                 userZoom = (1f / fitScale()).coerceIn(MIN_ZOOM, MAX_ZOOM)
             }
             initialPan?.let { f ->
-                val scale = fitScale() * userZoom
+                val scale = initialScale ?: (fitScale() * userZoom)
                 val rangeX = naturalSize.width * scale - viewportSize.width
                 val rangeY = naturalSize.height * scale - viewportSize.height
                 pan = Offset(
@@ -236,10 +249,11 @@ fun MaradonaDiagram(
 
         val availW = constraints.maxWidth.toFloat()
         val availH = constraints.maxHeight.toFloat()
+        val layoutWidthPx = constraints.maxWidth
         val fit = if (naturalSize.width > 0 && naturalSize.height > 0 && availW > 0 && availH > 0) {
             minOf(availW / naturalSize.width, availH / naturalSize.height).coerceAtMost(1f)
         } else 1f
-        val scale = (fit * userZoom).coerceAtLeast(0.01f)
+        val scale = (initialScale ?: (fit * userZoom)).coerceAtLeast(0.01f)
         val centerX = (availW - naturalSize.width * scale) / 2f
         val centerY = (availH - naturalSize.height * scale) / 2f
 
@@ -249,32 +263,47 @@ fun MaradonaDiagram(
             // scaled: doing so would zoom text quadratically while dp-sized
             // shapes zoom linearly, and text bursts out of its nodes.
             val zoomedDensity = Density(density.density * scale, density.fontScale)
-            CompositionLocalProvider(LocalDensity provides zoomedDensity) {
-                MaradonaLayout(
-                    chart = chart,
-                    theme = theme,
-                    autoDirection = autoDirection,
-                    layoutOptions = layoutOptions,
-                    // Inner px are zoom-scaled; hand over the width in natural units.
-                    availableWidthPx = (constraints.maxWidth / scale).roundToInt(),
-                    modifier = Modifier
-                        .wrapContentSize(Alignment.TopStart, unbounded = true)
-                        .onSizeChanged {
-                            naturalSize = IntSize(
-                                (it.width / scale).roundToInt(),
-                                (it.height / scale).roundToInt(),
-                            )
-                            onNaturalSize(naturalSize)
-                        }
-                        .alpha(if (error != null) 0.45f else 1f)
-                        .graphicsLayer {
-                            scaleX = gestureZoom
-                            scaleY = gestureZoom
-                            transformOrigin = TransformOrigin(0f, 0f)
-                            translationX = centerX + pan.x + gesturePan.x
-                            translationY = centerY + pan.y + gesturePan.y
-                        },
-                )
+            // The pan/zoom transform lives on a viewport-sized wrapper, not on
+            // the diagram node itself: the node can be far wider than any GPU
+            // texture (a zoomed-in LR chart is tens of thousands of px), and a
+            // layer that big silently fails to rasterise. The wrapper must not
+            // clip - clipping happens in the parent, after the transform, or
+            // zoom would magnify a pre-clipped corner instead of the diagram.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = gestureZoom
+                        scaleY = gestureZoom
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        translationX = centerX + pan.x + gesturePan.x
+                        translationY = centerY + pan.y + gesturePan.y
+                    },
+            ) {
+                CompositionLocalProvider(LocalDensity provides zoomedDensity) {
+                    MaradonaLayout(
+                        chart = chart,
+                        theme = theme,
+                        autoDirection = autoDirection,
+                        layoutOptions = layoutOptions,
+                        // The width the auto-direction adaption compares against,
+                        // in px at the current (zoom-scaled) density. Passing the
+                        // natural-units width here would compare it against
+                        // density-scaled values, so zooming in would spuriously
+                        // flip a horizontal chart to vertical.
+                        availableWidthPx = layoutWidthPx,
+                        modifier = Modifier
+                            .wrapContentSize(Alignment.TopStart, unbounded = true)
+                            .onSizeChanged {
+                                naturalSize = IntSize(
+                                    (it.width / scale).roundToInt(),
+                                    (it.height / scale).roundToInt(),
+                                )
+                                onNaturalSize(naturalSize)
+                            }
+                            .alpha(if (error != null) 0.45f else 1f),
+                    )
+                }
             }
         }
 

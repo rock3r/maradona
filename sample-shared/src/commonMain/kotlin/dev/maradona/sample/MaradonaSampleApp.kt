@@ -20,18 +20,22 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.maradona.render.DiagramZoom
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 
@@ -90,9 +94,16 @@ private class SampleState(
 
 /** Live Mermaid editor + diagram, shared by the desktop, Android, and iOS samples. */
 @Composable
-fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null, oraclePanX: Float? = null, oraclePanY: Float? = null) {
+fun MaradonaSampleApp(
+    oracleChart: String? = null,
+    oracleZoom: String? = null,
+    oraclePanX: Float? = null,
+    oraclePanY: Float? = null,
+    oracleDensity: Float? = null,
+    oracleSeq: Int = 0,
+) {
     if (oracleChart != null) {
-        OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY)
+        OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY, oracleDensity, oracleSeq)
         return
     }
     var dark by remember { mutableStateOf(false) }
@@ -122,25 +133,79 @@ fun MaradonaSampleApp(oracleChart: String? = null, oracleZoom: String? = null, o
 }
 
 @Composable
-private fun OracleMode(chart: String, zoom: String?, panX: Float? = null, panY: Float? = null) {
+private fun OracleMode(
+    chart: String,
+    zoom: String?,
+    panX: Float? = null,
+    panY: Float? = null,
+    requestedDensity: Float? = null,
+    seq: Int = 0,
+) {
     val source = OracleCharts.all[chart]
-    if (source == null) {
+    val gold = OracleGoldSizes.content[chart]
+    if (source == null || gold == null) {
         Text("Unknown oracle chart '$chart'", modifier = Modifier.padding(24.dp))
         return
     }
-    MaradonaDiagram(
-        source = source,
-        theme = MaradonaTheme.light(),
-        modifier = Modifier.fillMaxSize(),
-        zoomEnabled = false,
-        initialZoom = when (zoom) {
-            "100" -> DiagramZoom.Natural
-            "min" -> DiagramZoom.Min
-            "max" -> DiagramZoom.Max
-            else -> DiagramZoom.Fit
-        },
-        initialPan = if (panX != null && panY != null) Offset(panX, panY) else null,
-    )
+    // Pass 1: measure the natural layout size at the device's own density.
+    // Skipped when the capture script passes a calibrated density. Keyed by
+    // chart: the activity is reused across charts and intents.
+    var natural by remember(chart) { mutableStateOf<IntSize?>(null) }
+    val measured = natural
+    val match = requestedDensity
+        ?: measured?.let { minOf(gold.width / it.width.toFloat(), gold.height / it.height.toFloat()) }
+    if (match == null) {
+        MaradonaDiagram(
+            source = source,
+            theme = MaradonaTheme.light(),
+            modifier = Modifier.fillMaxSize(),
+            zoomEnabled = false,
+            autoDirection = false,
+            initialScale = 1f,
+            onNaturalSize = { if (it.width > 0 && it.height > 0) natural = it },
+        )
+        return
+    }
+    // Pass 2: render at a density that makes our content the golden's pixel
+    // size, so the oracle compares the two 1:1 on every platform. Keyed so a
+    // fresh diagram applies its initial view against the settled density.
+    val base = LocalDensity.current
+    // seq forces a fresh composition for every capture, even when a tile is
+    // captured twice with identical parameters (the app would otherwise skip
+    // recomposition and the capture script would wait forever for its log line).
+    key(chart, zoom, panX, panY, match, seq) {
+        CompositionLocalProvider(
+            LocalDensity provides Density(base.density * match, base.fontScale),
+        ) {
+            MaradonaDiagram(
+                source = source,
+                theme = MaradonaTheme.light(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                // Mermaid does not re-flow a horizontal chart into a vertical one
+                // when the viewport is narrow, and the oracle compares against
+                // mermaid: keep the layout identical at every zoom level.
+                autoDirection = false,
+                // Absolute, so 100% means 1:1 with the golden on every platform.
+                initialScale = when (zoom) {
+                    "min" -> 0.1f
+                    "max" -> 5f
+                    else -> 1f
+                },
+                initialPan = if (panX != null && panY != null) Offset(panX, panY) else null,
+                onNaturalSize = { size ->
+                    // `canvas` is the diagram's own size in px at this density;
+                    // the capture scripts frame and compare against it. The
+                    // zoom/pan identify the line, so a stale one is never read.
+                    oracleLog(
+                        "MARADONA_ORACLE chart=$chart canvas=${size.width}x${size.height} " +
+                            "density=$match zoom=${zoom ?: "100"} " +
+                            "pan=${panX ?: -1},${panY ?: -1} seq=$seq",
+                    )
+                },
+            )
+        }
+    }
 }
 
 @Composable

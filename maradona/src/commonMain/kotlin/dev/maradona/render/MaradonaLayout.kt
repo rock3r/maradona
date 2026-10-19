@@ -39,8 +39,9 @@ fun MaradonaLayout(
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
-    /** Width available in the parent, for [autoDirection]. Callers that measure
-     * this layout unbounded (for fit-to-size zooming) must pass it explicitly. */
+    /** Width available in the parent, in px at the current density, for
+     * [autoDirection]. Callers that measure this layout unbounded (for
+     * fit-to-size zooming) must pass it explicitly. */
     availableWidthPx: Int = Int.MAX_VALUE,
 ) {
     val holder = remember { LayoutHolder() }

@@ -1,307 +1,394 @@
 #!/usr/bin/env python3
-"""Compares Maradona renders against mermaid goldens, tolerantly.
+"""Compares Maradona oracle captures against the mermaid goldens.
 
-Desktop (strict, fixed canvas): all zoom levels of a chart share one canvas
-(the gold's 100% content size + margin). Our renderer density-matches so its
-natural content size equals the gold's; compare.py enforces that match
-(per-axis ratio beyond SIZE_TOLERANCE fails the chart). Gold views are
-derived from the committed 100% gold: 100/min paste the (re)sized gold
-content centered on the canvas, max tiles crop the 5x-upscaled gold with the
-same pan window the renderer used. Images are then compared at EXACTLY the
-same size - no rescaling to a common canvas.
+Every capture is framed the same way on every platform: the diagram canvas is
+rendered at a scale chosen so its content matches the golden's, centred in the
+platform's viewport (the desktop render scene or the device screen), and panned
+by a fraction of the scrollable range. `oracle_geom` describes that framing, so
+a capture and its golden are compared 1:1, at the same size, with no letterbox
+normalisation and no rescaling of our render.
 
-Devices (loose): the screen is the viewport, so sizes can't match the gold.
-fit/min get a letterbox-aligned comparison (scale-aligned, blur + tolerance);
-100 and max tiles are viewport fragments and get a smoke check (non-blank,
-sane ink coverage).
+Levels mean different things, and are reported as such:
 
-Tolerances absorb web-vs-native text shaping, fonts and AA:
-  PIXEL_TOLERANCE  per-channel delta that still counts as equal
-  BG_TOLERANCE     distance from bg colour treated as background (flattened)
-  BLUR_RADIUS      gaussian blur before diffing
-  MAX_MISMATCH     fraction of pixels allowed to differ
-  SIZE_TOLERANCE   max per-axis content size ratio vs gold (desktop)
+* ``100`` - fidelity: our full-size render vs the golden, aligned by content
+  bounding box, compared per pixel. This is the check that can catch wrong
+  nodes, edges, shapes or styling.
+* ``min`` - fidelity at 0.1x: same comparison, golden scaled to 0.1.
+* ``max`` - scale correctness at 5x. Mermaid cannot produce a meaningful 5x
+  reference (its raster would be a blurry upscale, ours crisp vector), so the
+  reference is our own 100% render upscaled 5x, which must match ours closely.
 
-Usage: compare.py <desktop|android|ios>   - exit code 0 iff all pairs pass.
+Captures that are not real diagram renders are rejected before any comparison:
+the background must be bright (a dimmed screenshot means a system dialog or an
+ANR stole the foreground) and ink coverage must be sane (not blank, not a wall
+of non-diagram pixels such as system bars).
+
+Fidelity levels also enforce the size relationship the oracle exists for: the
+renderer chooses its scale from the golden, so our content must match the
+golden's in the binding axis (the other axis legitimately drifts - Maradona's
+layout is not mermaid's - and is reported as drift).
+
+Tolerances live right below; `MAX_MISMATCH` fractions are measured against
+real captures.
+
+Usage: compare.py <desktop|android|ios>  - exit code 0 iff every entry passes.
 """
 import json
 import pathlib
 import sys
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops
 
-PIXEL_TOLERANCE = 48
-BG_TOLERANCE = 28
-BLUR_RADIUS = 2.0
-MAX_MISMATCH = 0.15
-# Max-zoom tiles compare against our own upscaled 100% render: text re-laid
-# out at 5x differs subtly from 5x the hinted 100% text, which shifts glyphs,
-# node widths and label positions slightly - so zoom tiles get more blur and
-# a looser budget. They still catch exploded/missing/misplaced content.
-ZOOM_BLUR_RADIUS = 4.0
-ZOOM_MAX_MISMATCH = 0.25
-SIZE_TOLERANCE = None      # disabled: legit layout differences shift the bbox; pixel diff is the judge
-SMOKE_MIN_INK = 0.003
-SMOKE_MAX_INK = 0.6        # an ANR dialog over a dimmed screen is mostly "ink"
-SMOKE_MIN_BG_BRIGHTNESS = 180   # dimmed screenshots are dark grey
-MAX_ZOOM = 5.0
-MIN_ZOOM = 0.1
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from oracle_geom import LEVELS, LEVEL_SCALE, tile_path, window_origin  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MODES = {
-    "desktop": "strict",
-    "android": "loose",
-    "ios": "loose",
-}
+
+# per-channel delta that still counts as equal
+PIXEL_TOLERANCE = 48
+# distance from the background colour treated as background
+BG_TOLERANCE = 28
+# fidelity levels vs the golden; measured worst case is ~0.20 (styling, whose
+# text is re-shaped entirely), so the budget sits just above it.
+FIDELITY_MAX_MISMATCH = 0.24
+# 5x self-consistency: same geometry at a different scale, so this is tight.
+SCALE_MAX_MISMATCH = 0.10
+# ... and we must have drawn a comparable amount of ink to the reference.
+# Not 1.0: the 5x reference is a 1x render upscaled, whose glyphs carry a
+# heavier stroke weight than text laid out at 5x. Measured range is ~0.8-0.95.
+INK_RATIO_MIN, INK_RATIO_MAX = 0.5, 1.6
+# a capture must be a plausible diagram render. The 0.1x level is legitimately
+# almost empty on a phone screen (a small chart is a few dozen pixels), so it is
+# judged against the reference's ink instead of the viewport's.
+MIN_INK, MAX_INK = 0.0015, 0.50
+# 0.1x: the drawing must sit where the reference puts it (offset as a share of
+# the viewport, size as a ratio) even though its strokes are sub-pixel.
+MIN_BOX_OFFSET = 0.02
+MIN_BOX_SCALE = 0.5
+MIN_BG_BRIGHTNESS = 180
+# the renderer picks its scale from the golden, so one content axis must line up
+AXIS_MATCH_TOLERANCE = 0.03
+# viewer composites are downscaled to this long edge
+DISPLAY_MAX = 1600
+WHITE = (255, 255, 255)
 
 
 # ---------- shared image helpers ----------
 
-def bg_color(img: Image.Image) -> tuple[int, int, int]:
+def bg_color(img):
     w, h = img.size
     pts = [img.getpixel(p) for p in [(2, 2), (w - 3, 2), (2, h - 3), (w - 3, h - 3)]]
     return tuple(sorted(c[i] for c in pts)[1] for i in range(3))
 
 
-def content_bbox(img: Image.Image, bg: tuple[int, int, int]):
+def content_bbox(img, bg):
     bg_img = Image.new("RGB", img.size, bg)
     diff = ImageChops.difference(img, bg_img).convert("L").point(lambda v: 255 if v > BG_TOLERANCE else 0)
     return diff.getbbox()
 
 
-def crop_to_content(img: Image.Image, bg: tuple[int, int, int], pad: int = 8) -> Image.Image:
+def crop_to_content(img, bg, pad=0):
     bbox = content_bbox(img, bg)
     if bbox is None:
-        return img
+        return None
     l, t, r, b = bbox
     return img.crop((max(0, l - pad), max(0, t - pad), min(img.size[0], r + pad), min(img.size[1], b + pad)))
 
 
-def flatten_bg(img: Image.Image, bg: tuple[int, int, int]) -> Image.Image:
-    """Near-background pixels become pure white so theme bgs don't dominate the diff."""
+def ink_fraction(img, bg):
+    """Share of pixels that are not background (a real measure, not a bbox area)."""
+    bg_img = Image.new("RGB", img.size, bg)
+    mask = ImageChops.difference(img, bg_img).convert("L").point(lambda v: 255 if v > 60 else 0)
+    return sum(mask.histogram()[1:]) / (img.size[0] * img.size[1])
+
+
+def flatten_bg(img, bg):
     bg_img = Image.new("RGB", img.size, bg)
     mask = ImageChops.difference(img, bg_img).convert("L").point(lambda v: 0 if v <= BG_TOLERANCE else 255)
-    return Image.composite(img, Image.new("RGB", img.size, (255, 255, 255)), mask)
+    return Image.composite(img, Image.new("RGB", img.size, WHITE), mask)
 
 
-def diff_fraction(a: Image.Image, b: Image.Image) -> tuple[float, Image.Image]:
-    """Fraction of mismatching pixels plus a red-overlay visualisation."""
+def diff_counts(a, b):
+    """Mismatching pixel count plus a red-overlay visualisation."""
     diff = ImageChops.difference(a, b)
     mask = diff.split()[0]
     for ch in diff.split()[1:]:
         mask = ImageChops.lighter(mask, ch)
     mask = mask.point(lambda v: 255 if v > PIXEL_TOLERANCE else 0)
-    frac = sum(mask.histogram()[1:]) / (a.size[0] * a.size[1])
+    count = sum(mask.histogram()[1:])
     gray = Image.blend(a, b, 0.5).convert("L").point(lambda v: 200 + v * 55 // 255).convert("RGB")
     red = Image.new("RGB", gray.size, (255, 40, 40))
-    return frac, Image.composite(red, gray, mask)
+    return count, Image.composite(red, gray, mask)
 
 
-# ---------- desktop: strict, fixed canvas ----------
-
-def strict(platform: str, gold_path: pathlib.Path, manifest: dict, chart: str, ours_dir: pathlib.Path,
-           web_img: pathlib.Path, report: dict) -> int:
-    meta = manifest[chart]
-    canvas = (meta["canvasW"], meta["canvasH"])
-    content = (meta["contentW"], meta["contentH"])
-    layout = (meta["layoutW"], meta["layoutH"])
-
-    gold_full = Image.open(gold_path).convert("RGB")
-    gold_crop = crop_to_content(gold_full, bg_color(gold_full))
-
-    # Size match is a hard requirement, checked before any rescaling.
-    ratio = max(
-        gold_crop.size[0] / content[0], content[0] / gold_crop.size[0],
-        gold_crop.size[1] / content[1], content[1] / gold_crop.size[1],
-    )
-    if SIZE_TOLERANCE is not None and ratio - 1 > SIZE_TOLERANCE:
-        for ours in sorted(ours_dir.glob(f"{chart}-*.png")):
-            report[ours.stem] = {
-                "mode": "strict", "pass": False,
-                "error": f"size mismatch: ours 100% content {content}, gold {gold_crop.size} (ratio {ratio:.3f})",
-            }
-        return len(report)
-
-    gold_content = gold_crop.resize(content, Image.LANCZOS)
-
-    def gold_canvas(view: Image.Image) -> Image.Image:
-        c = Image.new("RGB", canvas, (255, 255, 255))
-        c.paste(view, ((canvas[0] - view.size[0]) // 2, (canvas[1] - view.size[1]) // 2))
-        return c
-
-    # Max-zoom tiles can't be compared against mermaid: structural layout
-    # differences (node spacing) amplify 5x and swamp the pixel diff. Instead
-    # they verify zoom self-consistency: our own 100% render upscaled 5x with
-    # the same pan window. That checks vector/stroke/text scaling, which is
-    # what max zoom exercises; layout fidelity is covered by 100 and min.
-    ours100 = Image.open(ours_dir / f"{chart}-100.png").convert("RGB")
-    # The whole 100% canvas upscaled 5x. A max tile at pan fraction f shows
-    # layout window [f*(5*layout - canvas)], and layout point q sits at
-    # (canvas - layout)/2 + q on the 100% canvas, so the window origin in the
-    # upscaled canvas is 2.5*(canvas - layout) + f*(5*layout - canvas).
-    ours_big = ours100.resize(
-        (canvas[0] * int(MAX_ZOOM), canvas[1] * int(MAX_ZOOM)), Image.LANCZOS)
-
-    def gold_view(stem: str) -> Image.Image | None:
-        if stem == "100":
-            return gold_canvas(gold_content)
-        if stem == "min":
-            small = gold_content.resize(
-                (round(content[0] * MIN_ZOOM), round(content[1] * MIN_ZOOM)), Image.LANCZOS)
-            return gold_canvas(small)
-        if stem.startswith("max-"):
-            i, j = int(stem[4]), int(stem[5])
-            fx, fy = i / 2, j / 2
-            x0 = round(2.5 * (canvas[0] - layout[0]) + fx * (MAX_ZOOM * layout[0] - canvas[0]))
-            y0 = round(2.5 * (canvas[1] - layout[1]) + fy * (MAX_ZOOM * layout[1] - canvas[1]))
-            return ours_big.crop((x0, y0, x0 + canvas[0], y0 + canvas[1]))
-        return None
-
-    failures = 0
-    for ours_path in sorted(ours_dir.glob(f"{chart}-*.png")):
-        stem = ours_path.stem.removeprefix(f"{chart}-")
-        gv = gold_view(stem)
-        if gv is None:
-            continue
-        ours = Image.open(ours_path).convert("RGB")
-        if ours.size != canvas:
-            report[ours_path.stem] = {
-                "mode": "strict", "pass": False,
-                "error": f"canvas size mismatch: {ours.size} != {canvas}",
-            }
-            failures += 1
-            continue
-        o = flatten_bg(ours, bg_color(ours))
-        g = flatten_bg(gv, (255, 255, 255))
-        is_zoom_tile = stem.startswith("max-")
-        blur = ZOOM_BLUR_RADIUS if is_zoom_tile else BLUR_RADIUS
-        budget = ZOOM_MAX_MISMATCH if is_zoom_tile else MAX_MISMATCH
-        o = o.filter(ImageFilter.GaussianBlur(blur))
-        g = g.filter(ImageFilter.GaussianBlur(blur))
-        frac, diff_img = diff_fraction(g, o)
-        passed = frac <= budget
-        failures += 0 if passed else 1
-        mode = "zoom" if stem.startswith("max-") else "strict"
-        web_img.mkdir(parents=True, exist_ok=True)
-        name = f"{platform}-{ours_path.stem}"
-        g.save(web_img / f"{name}-gold.png")
-        o.save(web_img / f"{name}-ours.png")
-        diff_img.save(web_img / f"{name}-diff.png")
-        report[ours_path.stem] = {
-            "mode": mode, "mismatch": round(frac, 4), "pass": passed,
-            "images": {"gold": f"img/{name}-gold.png", "ours": f"img/{name}-ours.png", "diff": f"img/{name}-diff.png"},
-        }
-    return failures
+def scaled(img, z):
+    if z == 1.0:
+        return img
+    size = (max(1, round(img.size[0] * z)), max(1, round(img.size[1] * z)))
+    return img.resize(size, Image.LANCZOS)
 
 
-# ---------- devices: loose letterbox compare + smoke ----------
-
-CANVAS = 800
-
-
-def letterbox(img: Image.Image, canvas: int) -> Image.Image:
-    w, h = img.size
-    scale = min(canvas / w, canvas / h)
-    resized = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
-    out = Image.new("RGB", (canvas, canvas), (255, 255, 255))
-    out.paste(resized, ((canvas - resized.size[0]) // 2, (canvas - resized.size[1]) // 2))
+def framed(ref, origin, size, fill=WHITE):
+    """`ref` (a canvas image) seen through a `size` viewport at canvas `origin`."""
+    out = Image.new("RGB", size, fill)
+    out.paste(ref, (-round(origin[0]), -round(origin[1])))
     return out
 
 
-def normalise(path: pathlib.Path) -> Image.Image:
-    img = Image.open(path).convert("RGB")
-    bg = bg_color(img)
-    return letterbox(flatten_bg(crop_to_content(img, bg), bg), CANVAS).filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
-
-
-def loose_compare(gold: pathlib.Path, ours: pathlib.Path, web_img: pathlib.Path, name: str) -> dict:
-    ours_img = Image.open(ours).convert("RGB")
-    ours_bg = bg_color(ours_img)
-    if sum(ours_bg) / 3 < SMOKE_MIN_BG_BRIGHTNESS:
-        return {"mode": "compare", "pass": False,
-                "error": f"ours background too dark {ours_bg} (system UI on top?)"}
-    g = normalise(gold)
-    o = letterbox(flatten_bg(crop_to_content(ours_img, ours_bg), ours_bg), CANVAS).filter(
-        ImageFilter.GaussianBlur(BLUR_RADIUS))
-    frac, diff_img = diff_fraction(g, o)
-    web_img.mkdir(parents=True, exist_ok=True)
-    g.save(web_img / f"{name}-gold.png")
-    o.save(web_img / f"{name}-ours.png")
-    diff_img.save(web_img / f"{name}-diff.png")
-    return {
-        "mode": "compare", "mismatch": round(frac, 4), "pass": frac <= MAX_MISMATCH,
-        "images": {"gold": f"img/{name}-gold.png", "ours": f"img/{name}-ours.png", "diff": f"img/{name}-diff.png"},
-    }
-
-
-def smoke(ours: pathlib.Path) -> dict:
-    """Viewport-clipped views can't be pixel-compared, so check the capture
-    is a plausible diagram render: reasonably big, with a BRIGHT diagram
-    background (a dimmed screen means a system dialog/ANR stole the
-    foreground) and sane ink coverage (not blank, but not a wall of
-    non-diagram pixels either)."""
-    img = Image.open(ours).convert("RGB")
+def display_asset(img):
     w, h = img.size
-    fail = None
-    bg = bg_color(img)
-    if w * h < 40_000:
-        fail = f"suspicious size {w}x{h}"
-    elif sum(bg) / 3 < SMOKE_MIN_BG_BRIGHTNESS:
-        fail = f"background too dark {bg} (system UI on top?)"
-    cropped = crop_to_content(img, bg)
-    bg_img = Image.new("RGB", img.size, bg)
-    mask = ImageChops.difference(img, bg_img).convert("L").point(lambda v: 255 if v > 60 else 0)
-    ink = sum(mask.histogram()[1:]) / (w * h)
-    if fail is None and not (SMOKE_MIN_INK < ink <= SMOKE_MAX_INK):
-        fail = f"ink coverage {ink:.3f} out of range"
-    return {"mode": "smoke", "ink": round(ink, 4), "pass": fail is None,
-            **({"error": fail} if fail else {}),
-            "images": {"raw": f"../{ours.parent.name}/{ours.name}"}}
+    if max(w, h) <= DISPLAY_MAX:
+        return img
+    s = DISPLAY_MAX / max(w, h)
+    return img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
 
 
-def split_stem(stem: str) -> tuple[str, str]:
-    parts = stem.split("-")
-    if len(parts) >= 3 and parts[-2] == "max":
-        return "-".join(parts[:-2]), "max"
-    return "-".join(parts[:-1]), parts[-1]
+def mosaic(tiles_imgs, fractions):
+    ys = sorted({round(fy, 4) for _, fy in fractions})
+    xs = sorted({round(fx, 4) for fx, _ in fractions})
+    nx, ny = len(xs), len(ys)
+    if nx == 1 and ny == 1:
+        return tiles_imgs[0]
+    w, h = tiles_imgs[0].size
+    out = Image.new("RGB", (w * nx, h * ny), WHITE)
+    for (fx, fy), img in zip(fractions, tiles_imgs):
+        out.paste(img, (xs.index(round(fx, 4)) * w, ys.index(round(fy, 4)) * h))
+    return out
 
 
-def main() -> int:
+# ---------- capture loading ----------
+
+def chart_meta(manifest, chart):
+    meta = manifest["charts"][chart]
+    canvas = (meta["canvasW"], meta["canvasH"])
+    view = (meta["viewportW"], meta["viewportH"])
+    return canvas, view, meta["tiles"]
+
+
+def load_tiles(ours_dir, chart, level, fractions):
+    n = len(fractions)
+    tiles = []
+    for i, (fx, fy) in enumerate(fractions):
+        index = None if n == 1 else (i // _cols(fractions), i % _cols(fractions))
+        path = ours_dir / tile_path(chart, level, index)
+        if not path.exists():
+            return None, path
+        tiles.append(Image.open(path).convert("RGB"))
+    return tiles, None
+
+
+def _cols(fractions):
+    return len({round(fx, 4) for fx, _ in fractions})
+
+
+# ---------- comparison ----------
+
+def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
+    """Returns {entry_name: report_dict} for one chart."""
+    canvas, view, tile_map = chart_meta(manifest, chart)
+    results = {}
+    prefix = f"{chart}-"
+
+    gold_full = Image.open(gold_path).convert("RGB")
+    gold_content = crop_to_content(gold_full, bg_color(gold_full))
+
+    # ---- 100: covering grid, stitched, becomes the content anchor ----
+    f100 = [tuple(f) for f in tile_map["100"]]
+    tiles100, missing = load_tiles(ours_dir, chart, "100", f100)
+    if missing:
+        results[f"{prefix}100"] = {"mode": "fidelity", "pass": False, "error": f"missing {missing.name}"}
+        return results
+    bad = [msg for i, t in enumerate(tiles100) for msg in _capture_problems(t, view)]
+    if bad:
+        results[f"{prefix}100"] = {"mode": "fidelity", "pass": False, "error": "; ".join(sorted(set(bad))[:3])}
+        return results
+
+    stitched = Image.new("RGB", canvas, bg_color(tiles100[0]))
+    for (fx, fy), img in zip(f100, tiles100):
+        stitched.paste(img, (round(window_origin(canvas[0], view[0], fx)),
+                             round(window_origin(canvas[1], view[1], fy))))
+    ours_content = crop_to_content(stitched, bg_color(stitched))
+    if ours_content is None:
+        results[f"{prefix}100"] = {"mode": "fidelity", "pass": False, "error": "blank capture"}
+        return results
+    box = content_bbox(stitched, bg_color(stitched))
+    size = ours_content.size
+    offset = (box[0], box[1])
+
+    ratio_w = size[0] / gold_content.size[0]
+    ratio_h = size[1] / gold_content.size[1]
+    drift = (round(max(ratio_w, 1 / ratio_w), 4), round(max(ratio_h, 1 / ratio_h), 4))
+    # 1.0 == same size as the golden. The renderer picks its scale so one axis
+    # lines up; the other legitimately differs (Maradona's layout is not
+    # mermaid's) and is reported as drift.
+    binding = min(drift) - 1.0
+
+    def anchor_reference():
+        """Canvas-sized image: golden content at our measured content size/offset."""
+        ref = Image.new("RGB", canvas, WHITE)
+        ref.paste(gold_content.resize(size, Image.LANCZOS), offset)
+        return ref
+
+    def scale_reference():
+        """Canvas-sized image: our own 100% render (for zoom scale checks)."""
+        return stitched
+
+    # ---- every level ----
+    for level in LEVELS:
+        if level not in tile_map:
+            continue
+        fractions = [tuple(f) for f in tile_map[level]]
+        tiles, missing = load_tiles(ours_dir, chart, level, fractions)
+        entry = f"{prefix}{level}"
+        if missing:
+            results[entry] = {"mode": _mode(level), "pass": False, "error": f"missing {missing.name}"}
+            continue
+        problems = []
+        for tile in tiles:
+            problems += _capture_problems(tile, view)
+        ink = sum(ink_fraction(t, bg_color(t)) for t in tiles) / len(tiles)
+        if level != "min" and ink < MIN_INK:
+            problems.append("blank capture")
+        elif ink > MAX_INK:
+            problems.append(f"ink {ink:.3f} too high (not a diagram?)")
+        if problems:
+            results[entry] = {"mode": _mode(level), "pass": False,
+                              "error": "; ".join(sorted(set(problems))[:3])}
+            continue
+
+        z = LEVEL_SCALE[level]
+        src = scale_reference() if level == "max" else anchor_reference()
+        big = scaled(src, z)
+        o_imgs, ref_imgs, diff_imgs = [], [], []
+        mismatch = union = ours_ink = ref_ink = total = 0
+        for (fx, fy), ours in zip(fractions, tiles):
+            origin = (window_origin(big.size[0], view[0], fx), window_origin(big.size[1], view[1], fy))
+            ref = framed(big, origin, view)
+            f_ref = flatten_bg(ref, WHITE)
+            f_ours = flatten_bg(ours, bg_color(ours))
+            count, diff_img = diff_counts(f_ref, f_ours)
+            mismatch += count
+            r_ink, o_ink = _ink_pixels(f_ref), _ink_pixels(f_ours)
+            ours_ink += o_ink
+            ref_ink += r_ink
+            union += r_ink + o_ink
+            total += view[0] * view[1]
+            o_imgs.append(f_ours)
+            ref_imgs.append(f_ref)
+            diff_imgs.append(diff_img)
+
+        frac = mismatch / total if total else 1.0
+        # Share of the *drawing* that differs. Reported, not gated: our layout
+        # is not mermaid's (node widths differ), so thin lines land in
+        # different places and this number is large even for a faithful render.
+        ink_frac = mismatch / union if union else 1.0
+        # How much of the reference's drawing we actually drew. Catches a
+        # render that silently came out empty, which a fraction-of-viewport
+        # diff cannot see on a sparse 5x canvas.
+        ink_ratio = ours_ink / ref_ink if ref_ink else 1.0
+        # At 0.1x the drawing is sub-pixel, so ink counts say nothing; check
+        # instead that it is where the reference says it should be.
+        box_error = None
+        if level == "min":
+            ours_box = _faint_bbox(o_imgs[0])
+            ref_box = _faint_bbox(ref_imgs[0])
+            if ours_box is None or ref_box is None:
+                box_error = "nothing visible at 0.1x"
+            else:
+                off = max(abs((ours_box[0] + ours_box[2]) - (ref_box[0] + ref_box[2])),
+                          abs((ours_box[1] + ours_box[3]) - (ref_box[1] + ref_box[3]))) / 2
+                scale = max((ours_box[2] - ours_box[0]) / max(1, ref_box[2] - ref_box[0]),
+                            (ours_box[3] - ours_box[1]) / max(1, ref_box[3] - ref_box[1]))
+                if off > MIN_BOX_OFFSET * max(view) or not (MIN_BOX_SCALE <= scale <= 1 / MIN_BOX_SCALE):
+                    box_error = (f"0.1x drawing is misplaced (offset {off:.0f}px, size x{scale:.2f})")
+        budget = SCALE_MAX_MISMATCH if level == "max" else FIDELITY_MAX_MISMATCH
+        passed = frac <= budget
+        if level == "max" and not (INK_RATIO_MIN <= ink_ratio <= INK_RATIO_MAX):
+            passed = False
+        if box_error:
+            passed = False
+        if level == "100" and binding > AXIS_MATCH_TOLERANCE:
+            passed = False
+
+        name = f"{platform}-{chart}-{level}"
+        web_img.mkdir(parents=True, exist_ok=True)
+        display_asset(mosaic(ref_imgs, fractions)).save(web_img / f"{name}-gold.png")
+        display_asset(mosaic(o_imgs, fractions)).save(web_img / f"{name}-ours.png")
+        display_asset(mosaic(diff_imgs, fractions)).save(web_img / f"{name}-diff.png")
+        results[entry] = {
+            "mode": _mode(level),
+            "mismatch": round(frac, 4),
+            "inkMismatch": round(ink_frac, 4),
+            "inkRatio": round(ink_ratio, 3),
+            "budget": budget,
+            "tiles": len(fractions),
+            "pass": passed,
+            "driftW": drift[0],
+            "driftH": drift[1],
+            **({} if passed else {"error":
+                                  f"binding-axis size drift {binding:.3f} > {AXIS_MATCH_TOLERANCE}"
+                                  if level == "100" and binding > AXIS_MATCH_TOLERANCE
+                                  else box_error
+                                  if box_error
+                                  else f"ink ratio {ink_ratio:.2f} outside [{INK_RATIO_MIN}, {INK_RATIO_MAX}]"
+                                  if level == "max" and not (INK_RATIO_MIN <= ink_ratio <= INK_RATIO_MAX)
+                                  else f"mismatch {frac:.3f} > budget {budget}"}),
+            "images": {"gold": f"img/{name}-gold.png", "ours": f"img/{name}-ours.png",
+                       "diff": f"img/{name}-diff.png"},
+        }
+    return results
+
+
+def _mode(level):
+    return "scale" if level == "max" else "fidelity"
+
+
+def _ink_pixels(img, threshold=128):
+    """Drawn pixels (flattened images use white as background)."""
+    return sum(img.convert("L").point(lambda v: 255 if v < threshold else 0).histogram()[1:])
+
+
+def _faint_bbox(img, threshold=8):
+    """Bounding box of anything that is not background, using a low threshold.
+
+    At 0.1x a diagram's strokes are sub-pixel, so they never reach the ink
+    threshold; this still finds where the (faint) drawing is.
+    """
+    return img.convert("L").point(lambda v: 255 if v < 255 - threshold else 0).getbbox()
+
+
+def _capture_problems(tile, view):
+    """Per-tile sanity. Ink is checked per level: a 5x tile can legitimately be empty."""
+    problems = []
+    if tile.size != view:
+        problems.append(f"capture size {tile.size} != viewport {view}")
+        return problems
+    bg = bg_color(tile)
+    if sum(bg) / 3 < MIN_BG_BRIGHTNESS:
+        problems.append(f"background too dark {bg} (system UI or a dimmed screen on top?)")
+    return problems
+
+
+def main():
     platform = sys.argv[1] if len(sys.argv) > 1 else "desktop"
     gold_dir = ROOT / "goldens"
     ours_dir = ROOT / "out" / platform
     web_img = ROOT / "out" / "web" / "img"
-    report = {}
-    failures = 0
+    manifest = json.loads((ours_dir / "manifest.json").read_text())
+    report, failures = {}, 0
 
-    if MODES[platform] == "strict":
-        manifest = json.loads((ours_dir / "manifest.json").read_text())
-        charts = sorted({split_stem(p.stem)[0] for p in ours_dir.glob("*.png")})
-        for chart in charts:
-            failures += strict(platform, gold_dir / f"{chart}.png", manifest, chart, ours_dir, web_img, report)
-    else:
-        for ours in sorted(ours_dir.glob("*.png")):
-            chart, zoom = split_stem(ours.stem)
-            gold = gold_dir / f"{chart}.png"
-            if not gold.exists():
-                report[ours.stem] = {"pass": False, "error": f"missing golden {gold}"}
-                failures += 1
-                continue
-            if zoom in ("fit", "min"):
-                result = loose_compare(gold, ours, web_img, f"{platform}-{ours.stem}")
-            else:
-                result = smoke(ours)
-            report[ours.stem] = result
+    for chart in sorted(manifest["charts"]):
+        results = compare_chart(platform, chart, manifest, gold_dir / f"{chart}.png", ours_dir, web_img)
+        for entry, result in results.items():
+            report[entry] = result
             if not result["pass"]:
                 failures += 1
 
     for stem in sorted(report):
         r = report[stem]
-        status = "PASS" if r["pass"] else "FAIL"
-        detail = (r["error"] if "error" in r
-                  else f"mismatch={r['mismatch']}" if "mismatch" in r
-                  else f"ink={r['ink']}")
-        print(f"{status}  {platform}/{stem:28s} {r.get('mode', '?'):7s} {detail}")
+        detail = r.get("error") or (f"mismatch={r['mismatch']} "
+                                    f"drift={r['driftW']}/{r['driftH']}")
+        print(f"{'PASS' if r['pass'] else 'FAIL'}  {platform}/{stem:26s} {r.get('mode', '?'):8s} {detail}")
     out = ROOT / "out" / f"report-{platform}.json"
     out.write_text(json.dumps(report, indent=2))
     print(f"\n{platform}: {len(report) - failures}/{len(report)} passed -> {out}")
