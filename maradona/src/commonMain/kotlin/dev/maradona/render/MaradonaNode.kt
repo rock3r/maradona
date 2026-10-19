@@ -91,6 +91,7 @@ fun MaradonaNode(
             // sampled at fractional positions -> blurry borders when zoomed.
             .drawBehind {
                 val outline = shape.createOutline(size, layoutDirection, this)
+                // mermaid's node borders are 1 unit; 1dp is that at any density.
                 val strokeWidth = 1.dp.toPx()
                 val stroke = Stroke(width = strokeWidth)
                 when (outline) {

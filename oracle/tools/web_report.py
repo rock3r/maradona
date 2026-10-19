@@ -40,8 +40,17 @@ HTML = """<!DOCTYPE html>
   #tabs button { border: 1px solid #ccc6b2; background: #fbfaf4; border-radius: 6px; padding: 4px 12px; cursor: pointer; font: inherit; }
   #tabs button.sel { background: #3b3826; color: #fff; border-color: #3b3826; }
   #tabs .meta { margin-left: auto; color: #666; font-size: 12px; }
-  #stage { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; gap: 16px; }
-  .panel { text-align: center; }
+  /* Scrolls in both axes: these images are shown at their real pixel size, and a
+     wide chart is far wider than any window. */
+  #stage { flex: 1; overflow: auto; display: flex; align-items: flex-start; padding: 16px; gap: 16px; }
+  /* margin:auto centres without clipping the start of an overflowing row, which
+     justify-content: center does. */
+  .panel { text-align: center; flex: 0 0 auto; margin: auto 0; }
+  /* A very wide chart reads better stacked than side by side, where each half is
+     only as wide as half the window. */
+  #stage.stack { flex-direction: column; align-items: center; }
+  #stage.stack .panel { margin: 0; }
+  #zoom { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
   .panel .cap { font-size: 12px; color: #666; padding: 6px; }
   #stage img { background: #fff; border: 1px solid #ccc6b2; max-width: none; image-rendering: auto; }
   #onionWrap { position: relative; display: inline-block; }
@@ -69,6 +78,7 @@ HTML = """<!DOCTYPE html>
       <button data-view="onion">Onion skin</button>
       <button data-view="diff">Pixel diff</button>
       <span class="meta" id="meta"></span>
+      <span id="zoom"><button data-zoom="fit">Fit</button><button data-zoom="100">1:1</button></span>
     </div>
     <div id="stage"><div id="empty">Select a comparison on the left.</div></div>
     <div id="sliders" hidden>
@@ -86,10 +96,32 @@ const sliders = document.getElementById('sliders');
 const opacity = document.getElementById('opacity');
 const wipe = document.getElementById('wipe');
 
+let zoomMode = 'fit';
+
 function img(src, cls) {
   const i = document.createElement('img');
   i.src = src; if (cls) i.className = cls;
+  i.onload = () => applyZoom();
   return i;
+}
+
+/** Fit-to-window or real pixels; wide images stack so a fit still reads. */
+function applyZoom() {
+  const images = Array.from(stage.querySelectorAll('img'));
+  const widest = images.reduce((a, i) => Math.max(a, (i.naturalWidth || 0) / (i.naturalHeight || 1)), 0);
+  stage.classList.toggle('stack', zoomMode === 'fit' && widest > 2);
+  for (const i of images) {
+    if (zoomMode === 'fit') {
+      i.style.maxWidth = stage.classList.contains('stack') ? '100%' : '48vw';
+      i.style.maxHeight = '80vh';
+      i.style.width = 'auto';
+    } else {
+      i.style.maxWidth = 'none';
+      i.style.maxHeight = 'none';
+      i.style.width = 'auto';
+    }
+  }
+  document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('sel', b.dataset.zoom === zoomMode));
 }
 function applyOnion() {
   const top = stage.querySelector('.top');
@@ -175,6 +207,7 @@ function render() {
       const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
       p.appendChild(c); stage.appendChild(p);
     }
+    applyZoom();
   } else if (view === 'onion') {
     sliders.hidden = false;
     const w = document.createElement('div'); w.id = 'onionWrap';
@@ -182,12 +215,14 @@ function render() {
     w.appendChild(img(e.images.ours, 'top'));
     stage.appendChild(w);
     applyOnion();
+    applyZoom();
   } else {
     const p = document.createElement('div'); p.className = 'panel';
     p.appendChild(img(e.images.diff));
     const c = document.createElement('div'); c.className = 'cap';
     c.textContent = 'red = pixels beyond tolerance';
     p.appendChild(c); stage.appendChild(p);
+    applyZoom();
   }
 }
 function select(el, platform, key, data) {
@@ -222,6 +257,10 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   view = b.dataset.view;
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('sel', x === b));
   render();
+});
+document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
+  zoomMode = b.dataset.zoom;
+  applyZoom();
 });
 opacity.oninput = applyOnion;
 wipe.oninput = applyOnion;

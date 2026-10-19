@@ -14,7 +14,8 @@ import kotlin.math.min
 internal fun position(gOriginal: DagreGraph) {
     val g = gOriginal.asNonCompound()
     positionY(g)
-    for ((v, x) in positionX(g)) g.node(v).x = x
+    val xs = positionX(g)
+    for ((v, x) in xs) g.node(v).x = x
 }
 
 private fun positionY(g: DagreGraph) {

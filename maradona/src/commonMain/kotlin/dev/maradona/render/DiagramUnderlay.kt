@@ -30,13 +30,13 @@ fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
             color = theme.subgraphFill,
             topLeft = topLeft,
             size = size,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f * unit, 6f * unit),
         )
         drawRoundRect(
             color = theme.subgraphBorder,
             topLeft = topLeft,
             size = size,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx(), 6.dp.toPx()),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f * unit, 6f * unit),
             style = Stroke(width = 1.dp.toPx()),
         )
     }
@@ -48,10 +48,12 @@ fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
         // out of the arrowhead's sloped sides (or through a hollow circle).
         val linePts = trimPath(pts, startBy = headTrim(edge.startHead), endBy = headTrim(edge.endHead))
         if (linePts.size >= 2) {
-            val path = roundedPolyline(linePts, radius = 6.dp.toPx())
-            val width = if (edge.stroke == EdgeStroke.Thick) 2.5.dp.toPx() else 1.25.dp.toPx()
+            val path = roundedPolyline(linePts, radius = 6f * unit)
+            // mermaid's edge strokes are 1px and 3.5px in SVG user units, and a unit
+            // is one pixel here: dp would double them at density 2.
+            val width = (if (edge.stroke == EdgeStroke.Thick) 3.5f else 1f) * unit
             val effect = if (edge.stroke == EdgeStroke.Dotted) {
-                PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f)
+                PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)
             } else null
             drawPath(path, color = theme.edge, style = Stroke(width = width, pathEffect = effect))
         }
@@ -101,18 +103,31 @@ private fun distance(a: DiagramPoint, b: DiagramPoint): Float {
 private fun lerp(from: DiagramPoint, to: DiagramPoint, t: Float) =
     DiagramPoint(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
 
-private val ArrowLength = 10.dp
-private val CrossRadius = 5.dp
-private val CircleRadius = 4.5.dp
+// Marker geometry from mermaid's own SVG: the arrow is an 11.5x14 viewBox drawn
+// at markerWidth 10.5 (so 10.5 units long and 14 wide), the circle has r=5, and
+// the cross spans 13 units with a 1-unit stroke.
+//
+// These are layout UNITS, and one unit is `density` pixels in the render (the
+// layout is computed in px at the render density). Multiplying by `unit` is what
+// keeps a marker the same physical size as the diagram: drawing 5f raw pixels
+// made the circle half the size mermaid draws.
+private const val ArrowLengthUnits = 10.5f
+private const val ArrowHalfWidthUnits = 7f
+private const val CrossRadiusUnits = 6f
+private const val CrossStrokeUnits = 1f
+private const val CircleRadiusUnits = 5f
+
+/** Pixels per layout unit at the current render density. */
+private val DrawScope.unit: Float get() = density
 
 /** How far before the tip the line should stop to make room for this head. */
 private fun DrawScope.headTrim(head: ArrowHead): Float {
     // Overshoot 1dp into the head so rounding/AA can't leave a hairline gap.
     val overlap = 1.dp.toPx()
     return when (head) {
-        ArrowHead.Arrow -> ArrowLength.toPx() - overlap
-        ArrowHead.Circle -> CircleRadius.toPx() * 2 - overlap
-        ArrowHead.Cross -> CrossRadius.toPx() * 1.7f - overlap
+        ArrowHead.Arrow -> ArrowLengthUnits * unit - overlap
+        ArrowHead.Circle -> CircleRadiusUnits * 2 * unit - overlap
+        ArrowHead.Cross -> CrossRadiusUnits * 2 * unit - overlap
         ArrowHead.None -> 0f
     }
 }
@@ -183,8 +198,9 @@ private fun DrawScope.drawHead(
     val tipOffset = Offset(tip.x, tip.y)
     when (head) {
         ArrowHead.Arrow -> {
-            val length = ArrowLength.toPx()
-            val spread = 0.42f // ~24 degrees
+            val length = ArrowLengthUnits * unit
+            // Half-width from the marker's own geometry (14 wide for 10.5 long).
+            val spread = atan2(ArrowHalfWidthUnits * unit, length)
             val p1 = Offset(tip.x - length * cos(angle - spread), tip.y - length * sin(angle - spread))
             val p2 = Offset(tip.x - length * cos(angle + spread), tip.y - length * sin(angle + spread))
             val triangle = Path().apply {
@@ -193,19 +209,18 @@ private fun DrawScope.drawHead(
             drawPath(triangle, color = theme.edge)
         }
         ArrowHead.Cross -> {
-            val r = CrossRadius.toPx()
+            val r = CrossRadiusUnits * unit
             val ux = cos(angle); val uy = sin(angle)
             val px = -uy; val py = ux
             val center = Offset(tip.x - ux * r, tip.y - uy * r)
-            // mermaid's cross is a bold X about as wide as the circle head.
-            val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+            val stroke = Stroke(width = CrossStrokeUnits * unit, cap = StrokeCap.Round)
             val extent = 1f
             drawLine(theme.edge, Offset(center.x + (ux + px) * r * extent, center.y + (uy + py) * r * extent), Offset(center.x - (ux + px) * r * extent, center.y - (uy + py) * r * extent), stroke.width, cap = StrokeCap.Round)
             drawLine(theme.edge, Offset(center.x + (ux - px) * r * extent, center.y + (uy - py) * r * extent), Offset(center.x - (ux - px) * r * extent, center.y - (uy - py) * r * extent), stroke.width, cap = StrokeCap.Round)
         }
         ArrowHead.Circle -> {
             // mermaid draws `--o` as a solid dot, not a ring.
-            val r = CircleRadius.toPx()
+            val r = CircleRadiusUnits * unit
             val center = Offset(tip.x - r * cos(angle), tip.y - r * sin(angle))
             drawCircle(color = theme.edge, radius = r, center = center)
         }

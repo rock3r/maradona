@@ -74,22 +74,44 @@ private object CylinderShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
-        // mermaid's cylinder: a full ellipse as the cap (two arcs), straight
-        // sides down the body, and an arc bulging below the bottom edge. The
-        // drawn height is 2*ry + body, which is why the node box adds 3*ry.
-        val ry = (w / 2f) / (2.5f + w / 50f)
+        // mermaid: rx = w/2, ry = rx / (2.5 + w/50); the drawn height is the
+        // cap ellipse plus the body plus the bottom bulge.
+        val rx = w / 2f
+        val ry = rx / (2.5f + w / 50f)
         val body = maxOf(0f, h - ry * 2f)
-        val path = Path().apply {
-            // Compose angles: 0 = right, 90 = down, 180 = left, 270 = up.
-            moveTo(0f, ry)
-            arcTo(Rect(0f, 0f, w, ry * 2f), 180f, 180f, false)   // left → over the top → right
-            arcTo(Rect(0f, 0f, w, ry * 2f), 0f, 180f, false)     // right → under → left (cap closed)
-            lineTo(0f, ry + body)                                // left side
-            arcTo(Rect(0f, body, w, ry * 2f), 180f, 180f, false) // bulge under the bottom
-            lineTo(w, ry)                                        // right side
-            close()
-        }
+
+        val path = Path()
+        // The cap is a complete ellipse: mermaid strokes both its arcs.
+        path.addOval(Rect(0f, 0f, w, ry * 2f))
+        // Body sides and the bulge below the bottom edge, as exact half-ellipse
+        // cubics: arc sweeps were fragile to get right and silently produced an
+        // open outline.
+        path.moveTo(0f, ry)
+        path.lineTo(0f, ry + body)
+        halfEllipse(path, fromX = 0f, toX = w, y = ry + body, ry = ry, bulgeDown = true)
+        path.lineTo(w, ry)
         return Outline.Generic(path)
     }
+
+    /** Half an ellipse from (fromX,[y]) to (toX,[y]), bulging down or up. */
+    private fun halfEllipse(path: Path, fromX: Float, toX: Float, y: Float, ry: Float, bulgeDown: Boolean) {
+        val midX = (fromX + toX) / 2f
+        val rxHalf = (toX - fromX) / 2f
+        val k = 0.5523f
+        val direction = if (bulgeDown) 1f else -1f
+        // First quarter: to the lowest (or highest) point.
+        path.cubicTo(
+            fromX, y + direction * ry * k,
+            midX - rxHalf * k, y + direction * ry,
+            midX, y + direction * ry,
+        )
+        // Second quarter: back up (or down) to the far end.
+        path.cubicTo(
+            midX + rxHalf * k, y + direction * ry,
+            toX, y + direction * ry * k,
+            toX, y,
+        )
+    }
 }
+
 
