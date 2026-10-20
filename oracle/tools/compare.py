@@ -425,6 +425,12 @@ def main():
         else f"oracle/tools/capture_{'android' if platform == 'android' else 'ios'}.sh <device>"
     )
     if not require_fresh(ROOT / "out" / platform, hint):
+        # Remove the previous report: leaving it in place is how a stale result
+        # kept being displayed as if it came from the current renders.
+        stale_report = ROOT / "out" / f"report-{platform}.json"
+        if stale_report.exists():
+            stale_report.unlink()
+            print(f"removed {stale_report.name}: it describes renders that are gone or stale")
         return 2
     gold_dir = ROOT / "goldens"
     ours_dir = ROOT / "out" / platform

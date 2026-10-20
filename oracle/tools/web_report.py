@@ -335,6 +335,12 @@ def main() -> None:
         platform = report.stem.removeprefix("report-")
         if platform == "layout":
             continue
+        # A report whose renders have been wiped (a failed capture deletes them
+        # before taking new ones) describes images that no longer exist; showing
+        # it means showing stale results that look current.
+        if not any((ROOT / "out" / platform).glob("*.png")):
+            print(f"skipping report-{platform}.json: no renders in out/{platform}")
+            continue
         data[platform] = json.loads(report.read_text())
     OUT.mkdir(parents=True, exist_ok=True)
     html = HTML.replace("__DATA__", json.dumps(data))
