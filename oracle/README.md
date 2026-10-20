@@ -221,6 +221,16 @@ Three guards now prevent it:
 * `compare.py` and `compare_layout.py` refuse to run when any render is older
   than the newest source that can change it, and print the command to re-render.
 
+Two measurement details worth knowing, both found by looking at the stitched
+views rather than the numbers:
+
+* the viewer assets are the raw captures; background flattening is only applied
+  for the diff. Flattening the assets hid real content: mermaid's cluster fill is
+  only 24 away from the page background, so a 28 tolerance turned the cluster
+  boxes white.
+* `BG_TOLERANCE` is therefore 16 - loose enough for anti-aliasing, tight enough
+  to keep a cluster's fill distinct from the page.
+
 Device captures re-check window focus immediately before each screenshot and
 retry: on a shared device another app can take the foreground between the launch
 check and the capture, and be photographed instead of the diagram. Captures are

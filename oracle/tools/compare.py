@@ -49,7 +49,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # per-channel delta that still counts as equal
 PIXEL_TOLERANCE = 48
 # distance from the background colour treated as background
-BG_TOLERANCE = 28
+# Distance from the background that still counts as background. Kept
+# below 24: mermaid's cluster fill (#EAE6D8) is only 24 away from the page
+# background (#FFFCF0), and a looser tolerance flattened the cluster boxes
+# away - invisible in the diff and white in the stitched views.
+BG_TOLERANCE = 16
 # There is deliberately NO mismatch budget for the golden levels. A flowchart is
 # sparse line art: a 4px misalignment scores the same as a perfect render
 # (measured: 0.084 vs 0.085 of the canvas), so a fraction-of-canvas threshold
@@ -336,8 +340,10 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
             ref_ink += r_ink
             union += r_ink + o_ink
             total += view[0] * view[1]
-            o_imgs.append(f_ours)
-            ref_imgs.append(f_ref)
+            # The assets show the capture as rendered; flattening is only for the
+            # diff, so the viewer is not looking at a washed-out version of it.
+            o_imgs.append(ours)
+            ref_imgs.append(ref)
             diff_imgs.append(diff_img)
 
         frac = mismatch / total if total else 1.0
