@@ -32,7 +32,11 @@ SAMPLE_PER_AXIS = 3
 
 
 def level_mode(level):
-    return "cover" if level == "100" else "sample"
+    # Every level is captured as a *covering* grid: the tiles are windows into the
+    # zoomed canvas and get stitched back together, so they must leave no gaps.
+    # At 5x the canvas is several times the viewport, so a 3-per-axis sample would
+    # leave blank bands in the stitched image.
+    return "cover"
 
 
 def fractions(n):

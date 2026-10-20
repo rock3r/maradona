@@ -233,9 +233,10 @@ function render() {
   if (tileCount > 1) {
     const bar = document.createElement('div');
     bar.id = 'tiles';
+    // index 0 is the stitched canvas, 1..n the individual windows
     for (let i = 0; i < tileCount; i++) {
       const b = document.createElement('button');
-      b.textContent = String(i + 1);
+      b.textContent = i === 0 ? 'stitched' : String(i);
       b.className = i === Math.min(tileIndex, tileCount - 1) ? 'sel' : '';
       b.onclick = () => { tileIndex = i; render(); };
       bar.appendChild(b);

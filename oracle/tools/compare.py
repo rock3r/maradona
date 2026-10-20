@@ -162,6 +162,37 @@ def display_asset(img):
     return img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
 
 
+def stitch(tiles_imgs, fractions, canvas, view, zoom):
+    """Compose the tiles back into the whole zoomed canvas.
+
+    Each tile is a window into the zoomed canvas at a known pan fraction, so the
+    tiles are pasted at `window_origin` - their real place - rather than on a
+    grid. Overlapping windows agree, because they come from the same rendering,
+    so the result is the diagram as one image instead of nine fragments.
+    """
+    width = max(1, round(canvas[0] * zoom))
+    height = max(1, round(canvas[1] * zoom))
+    out = Image.new("RGB", (width, height), bg_color(tiles_imgs[0]))
+    for (fx, fy), tile in zip(fractions, tiles_imgs):
+        x = round(window_origin(width, view[0], fx))
+        y = round(window_origin(height, view[1], fy))
+        out.paste(tile, (x, y))
+    return out
+
+
+def centre_tile(tiles_imgs, total):
+    """The middle tile of a device capture: overlapping windows cannot be joined."""
+    return tiles_imgs[len(tiles_imgs) // 2]
+
+
+def display_asset(img):
+    w, h = img.size
+    if max(w, h) <= DISPLAY_MAX:
+        return img
+    s = DISPLAY_MAX / max(w, h)
+    return img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
+
+
 def mosaic(tiles_imgs, fractions):
     """Side-by-side montage of the tiles, for charts whose tiles form a cover grid.
 
@@ -352,9 +383,15 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
                 display_asset(imgs[0]).save(web_img / f"{name}-{key}.png")
                 images[key] = [f"img/{name}-{key}.png"]
         else:
-            # Several overlapping pan windows: keep them apart, one pair per tile,
-            # so each can be inspected at 1:1 with both sides showing the same
-            # region. Gluing them into a montage repeats content.
+            # Several overlapping pan windows: stitch them back into the whole
+            # zoomed canvas for the overview, and keep each tile for inspection.
+            z = LEVEL_SCALE[level]
+            display_asset(stitch(ref_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-gold.png")
+            display_asset(stitch(o_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-ours.png")
+            display_asset(stitch(diff_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-diff.png")
+            images["gold"].append(f"img/{name}-gold.png")
+            images["ours"].append(f"img/{name}-ours.png")
+            images["diff"].append(f"img/{name}-diff.png")
             for index, _ in enumerate(fractions):
                 suffix = f"{name}-t{index}"
                 display_asset(ref_imgs[index]).save(web_img / f"{suffix}-gold.png")

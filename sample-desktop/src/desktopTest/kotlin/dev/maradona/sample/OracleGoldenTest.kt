@@ -159,6 +159,12 @@ class OracleGoldenTest {
         """.trimIndent() + "\n"
     }
 
+    /** Pan fractions that cover `scaled` px in `view` px windows, capped like the tools. */
+    private fun coverFractions(scaled: Int, view: Int): List<Float> {
+        val n = if (scaled <= view) 1 else maxOf(2, minOf(8, kotlin.math.ceil(scaled / view.toDouble()).toInt()))
+        return if (n == 1) listOf(0.5f) else (0 until n).map { it.toFloat() / (n - 1) }
+    }
+
     @Test
     fun renderOracleCharts() {
         val charts = chartsDir.listFiles { f -> f.extension == "mmd" }!!.sortedBy { it.name }
@@ -206,13 +212,15 @@ class OracleGoldenTest {
             )
             File(outDir, "$id.layout.json").writeText(layoutJson(requireNotNull(layoutDump), density))
             File(outDir, "$id-min.png").writeBytes(renderPng(source, 0.1f, canvasW, canvasH, density))
-            val fractions = listOf(0f, 0.5f, 1f)
+            // The max tiles are windows into the 5x canvas and get stitched back
+            // together, so the grid has to *cover* it: at 5x the canvas is several
+            // times the viewport and a 3-per-axis sample would leave blank bands.
+            val xs = coverFractions(canvasW * 5, canvasW)
+            val ys = coverFractions(canvasH * 5, canvasH)
             val tiles = buildList {
-                for (fy in fractions) {
-                    for (fx in fractions) {
+                for ((i, fy) in ys.withIndex()) {
+                    for ((j, fx) in xs.withIndex()) {
                         add("[$fx, $fy]")
-                        val i = fractions.indexOf(fy)
-                        val j = fractions.indexOf(fx)
                         File(outDir, "$id-max-$i-$j.png").writeBytes(
                             renderPng(source, 5f, canvasW, canvasH, density, pan = Offset(fx, fy)),
                         )

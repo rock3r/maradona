@@ -226,6 +226,15 @@ retry: on a shared device another app can take the foreground between the launch
 check and the capture, and be photographed instead of the diagram. Captures are
 taken on the Android emulator and the iOS simulator - never on a personal phone.
 
+## Max zoom: a covering grid, stitched back together
+
+Every level is captured as a grid of pan windows that *covers* the diagram (at 5x
+the canvas is several times the viewport, so a 3-per-axis sample leaves blank
+bands). `compare.py` pastes the tiles back at `window_origin` - their real place
+in the zoomed canvas - rather than on a grid, so the viewer can show the whole
+zoomed diagram as one image. The individual windows stay available behind the
+tile selector for inspecting a detail at 1:1.
+
 ## Looking at the differences
 
 `tools/side_by_side.py` crops the same region of the golden and of our render and
