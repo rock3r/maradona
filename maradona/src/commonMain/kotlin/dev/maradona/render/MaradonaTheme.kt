@@ -59,11 +59,25 @@ data class MaradonaTheme(
     }
 }
 
-/** Parses `#RGB`, `#RRGGBB`, `#RRGGBBAA` and a few CSS colour names. */
+/** Parses `#RGB`, `#RRGGBB`, `#RRGGBBAA`, `rgb(...)`, `rgba(...)`, and CSS colour names. */
 fun parseCssColor(value: String?): Color? {
     if (value.isNullOrBlank()) return null
     val v = value.trim().lowercase()
     namedColors[v]?.let { return it }
+    if (v.startsWith("rgb(") || v.startsWith("rgba(")) {
+        val inside = v.substringAfter('(').substringBeforeLast(')', missingDelimiterValue = "")
+        val parts = inside.split(',').map { it.trim() }
+        if (parts.size == 3 || parts.size == 4) {
+            val r = parts[0].toIntOrNull()?.coerceIn(0, 255) ?: return null
+            val g = parts[1].toIntOrNull()?.coerceIn(0, 255) ?: return null
+            val b = parts[2].toIntOrNull()?.coerceIn(0, 255) ?: return null
+            val a = if (parts.size == 4) {
+                ((parts[3].toFloatOrNull()?.coerceIn(0f, 1f) ?: return null) * 255f).toInt()
+            } else 255
+            return Color(red = r, green = g, blue = b, alpha = a)
+        }
+        return null
+    }
     if (!v.startsWith("#")) return null
     val hex = v.removePrefix("#")
     return try {

@@ -105,4 +105,32 @@ class RenderScreenshotTest {
         """.trimIndent(),
         MaradonaTheme.light(),
     )
+
+    @Test
+    fun sequenceDiagram() = renderToPng(
+        "sequence",
+        """
+        sequenceDiagram
+          autonumber
+          actor User
+          participant UI as Compose UI
+          participant VM as ViewModel
+          participant API as Backend API
+          User->>UI: Open diagram
+          UI->>+VM: Parse source
+          loop Retry on transient failure
+            VM->>+API: Fetch config
+            alt Success
+              API-->>-VM: 200 OK
+            else Timeout
+              API--xVM: 504 Gateway Timeout
+            end
+          end
+          VM-->>-UI: Layout ready
+          Note over User,UI: Pan & pinch-zoom active
+        """.trimIndent(),
+        MaradonaTheme.light(),
+        width = 1000,
+        height = 800,
+    )
 }

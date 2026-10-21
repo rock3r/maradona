@@ -8,8 +8,8 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.1 supports flowcharts only (`graph` / `flowchart`).
-Other Mermaid diagram types are not supported yet.
+Version 0.2 supports flowcharts (`graph` / `flowchart`) and sequence diagrams
+(`sequenceDiagram`). Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
 
@@ -29,6 +29,21 @@ Supported in flowcharts:
 - Cycles and self-loops
 
 Accepted and ignored: `click` statements.
+
+Supported in sequence diagrams:
+
+- Participants: `participant` and `actor` (stick figure) with optional `as`
+  aliases, plus implicit participants from messages and notes, mirrored at top
+  and bottom of lifelines
+- Messages: `->>`, `-->>`, `->`, `-->`, `-x`, `--x`, `-)`, `--)`, `<<->>`,
+  `<<-->>`, and self-messages (`A->>A: text`)
+- Activations: `activate` / `deactivate` statements and `+` / `-` arrow
+  shorthands, including nested stacked activations
+- Notes: `Note left of`, `Note right of`, and `Note over` (single or spanning
+  participants)
+- Control blocks: `loop`, `alt`/`else`, `opt`, `par`/`and`, `critical`/`option`,
+  `break`, and `rect`
+- `autonumber` badges and `title`
 
 ## How it works
 
