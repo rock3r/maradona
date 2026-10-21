@@ -129,4 +129,45 @@ class FlowchartLayoutTest {
             assertTrue(r.x >= sg.x && r.y >= sg.y && r.right <= sg.right && r.bottom <= sg.bottom)
         }
     }
+
+    @Test
+    fun edgeIncidentOnSubgraphAttachesToClusterBoundary() {
+        val layout = layoutOf(
+            """
+            flowchart TD
+              Start --> g
+              subgraph g[Group]
+                A --> B
+              end
+              g --> End
+            """.trimIndent(),
+        )
+        val sg = layout.subgraphs.single().rect
+        val intoSg = layout.edges.first { it.edge.to == "g" }
+        val fromSg = layout.edges.first { it.edge.from == "g" }
+        assertEquals(sg.y, intoSg.points.last().y, 0.5f)
+        assertEquals(sg.bottom, fromSg.points.first().y, 0.5f)
+    }
+
+    @Test
+    fun emptySubgraphAndSelfLoopLabelFitWithinBounds() {
+        val emptySg = layoutOf(
+            """
+            flowchart TD
+              subgraph empty[Empty Group]
+              end
+            """.trimIndent(),
+        )
+        assertEquals(1, emptySg.subgraphs.size)
+        assertTrue(emptySg.width > 0f && emptySg.height > 0f)
+
+        val selfLoop = layoutOf(
+            """
+            flowchart TD
+              A[Node] -- loop label --> A
+            """.trimIndent(),
+        )
+        val label = selfLoop.edges.single().labelRect!!
+        assertTrue(label.right <= selfLoop.width && label.y >= 0f)
+    }
 }

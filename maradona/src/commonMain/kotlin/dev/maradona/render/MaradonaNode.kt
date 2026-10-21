@@ -2,6 +2,7 @@ package dev.maradona.render
 
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -117,31 +118,18 @@ fun MaradonaNode(
                 // Details a Shape outline cannot express.
                 when (node.shape) {
                     NodeShape.DoubleCircle -> {
-                        val inset = 4.dp.toPx()
+                        val inset = 5.dp.toPx()
                         drawOval(
                             color = borderColor,
                             topLeft = Offset(inset, inset),
                             size = Size(size.width - inset * 2, size.height - inset * 2),
-                            style = Stroke(width = 1.dp.toPx()),
+                            style = Stroke(width = strokeWidth),
                         )
                     }
                     NodeShape.Subroutine -> {
-                        val inset = 6.dp.toPx()
-                        val stroke = 1.dp.toPx()
-                        drawLine(borderColor, Offset(inset, 0f), Offset(inset, size.height), stroke)
-                        drawLine(borderColor, Offset(size.width - inset, 0f), Offset(size.width - inset, size.height), stroke)
-                    }
-                    NodeShape.Cylinder -> {
-                        val ry = minOf(size.height * 0.22f, 14.dp.toPx())
-                        drawArc(
-                            color = borderColor,
-                            startAngle = 0f,
-                            sweepAngle = 180f,
-                            useCenter = false,
-                            topLeft = Offset(0f, 0f),
-                            size = Size(size.width, ry * 2),
-                            style = Stroke(width = 1.dp.toPx()),
-                        )
+                        val inset = 8.dp.toPx()
+                        drawLine(borderColor, Offset(inset, 0f), Offset(inset, size.height), strokeWidth)
+                        drawLine(borderColor, Offset(size.width - inset, 0f), Offset(size.width - inset, size.height), strokeWidth)
                     }
                     else -> Unit
                 }
@@ -150,7 +138,16 @@ fun MaradonaNode(
             .semantics(mergeDescendants = true) { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        BasicText(text = wrappedLabel, style = textStyle)
+        val labelModifier = when (node.shape) {
+            NodeShape.Cylinder -> {
+                val rx = nodeBox.width / 2f
+                val ry = rx / (2.5f + nodeBox.width / 50f)
+                Modifier. offset(y = (ry * 0.75f).dp)
+            }
+            NodeShape.Asymmetric -> Modifier.offset(x = (nodeBox.height / 8f).dp)
+            else -> Modifier
+        }
+        BasicText(text = wrappedLabel, style = textStyle, modifier = labelModifier)
     }
 }
 

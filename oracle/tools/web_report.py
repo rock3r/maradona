@@ -47,28 +47,47 @@ HTML = """<!DOCTYPE html>
      row into unreachable negative space, so the left of a wide chart cannot be
      scrolled to. */
   #stage { flex: 1; overflow: auto; display: flex; flex-wrap: wrap; align-items: flex-start;
-           justify-content: safe center; padding: 16px; gap: 16px; }
+           justify-content: safe center; padding: 16px; gap: 16px; min-height: 0; }
   .panel { text-align: center; flex: 0 0 auto; }
+  /* In manual zoom, side-by-side panels each get their own scrollable viewport
+     and sync scroll position so scrolling either half scrolls the other in lockstep. */
+  #stage.split { flex-wrap: nowrap; overflow: hidden; align-items: stretch; }
+  #stage.split .panel { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  #stage.split .panel .scroll { flex: 1 1 0; overflow: auto; display: flex;
+                                background: #fff; border: 1px solid #ccc6b2; }
+  #stage.split .panel img { border: none; flex: 0 0 auto; margin: auto; display: block; }
   /* A very wide chart reads better stacked than side by side, where each half is
      only as wide as half the window. */
   #stage.stack { flex-direction: column; align-items: safe center; justify-content: flex-start; }
+  #stage.split.stack { align-items: stretch; }
   #zoom { display: flex; align-items: center; gap: 6px; margin-left: 12px; }
+  #zoom button { border: 1px solid #ccc6b2; background: #fbfaf4; border-radius: 6px; padding: 3px 9px; cursor: pointer; font: inherit; font-size: 12px; }
+  #zoom button.sel { background: #3b3826; color: #fff; border-color: #3b3826; }
   #zoom input { width: 130px; }
-  #tiles { flex: 0 0 100%; display: flex; gap: 4px; justify-content: center; }
+  #tiles { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; padding: 6px 14px;
+           background: var(--panel); border-bottom: 1px solid #ddd8c8; }
+  #tiles[hidden] { display: none; }
   #tiles button { border: 1px solid #ccc6b2; background: #fbfaf4; border-radius: 4px;
                   padding: 2px 8px; cursor: pointer; font: inherit; font-size: 12px; }
   #tiles button.sel { background: #3b3826; color: #fff; border-color: #3b3826; }
   #zoom .pct { font-size: 12px; color: #666; min-width: 38px; text-align: right; }
-  .panel .cap { font-size: 12px; color: #666; padding: 6px; }
+  .panel .cap { font-size: 12px; color: #666; padding: 6px; flex: 0 0 auto; }
   #stage img { background: #fff; border: 1px solid #ccc6b2; max-width: none; image-rendering: auto; }
   #onionWrap { position: relative; display: inline-block; }
   #onionWrap img { display: block; }
   #onionWrap .top { position: absolute; inset: 0; }
   #sliders { display: flex; gap: 24px; justify-content: center; padding: 8px; background: var(--panel); border-top: 1px solid #ddd8c8; }
+  #sliders[hidden] { display: none; }
   #sliders label { display: flex; gap: 8px; align-items: center; font-size: 12px; color: #444; }
   #empty { margin: auto; color: #888; }
-  #stage.flow { display: block; }
-  .row { display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
+  #stage.flow { display: block; overflow: auto; }
+  .row { display: flex; gap: 16px; justify-content: safe center; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
+  .row.stack { flex-direction: column; align-items: safe center; }
+  .row.split { overflow: hidden; }
+  .row.split .panel { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+  .row.split .panel .scroll { overflow: auto; max-height: 55vh; display: flex;
+                              background: #fff; border: 1px solid #ccc6b2; }
+  .row.split .panel img { border: none; flex: 0 0 auto; margin: auto; display: block; }
   .report { margin: 0 auto; max-width: 1000px; }
   .report h3 { font-size: 13px; margin: 14px 0 4px; }
   .report table { border-collapse: collapse; font-size: 12px; }
@@ -88,10 +107,12 @@ HTML = """<!DOCTYPE html>
       <span class="meta" id="meta"></span>
       <span id="zoom">
         <button data-zoom="fit">Fit</button>
+        <button data-zoom="100">100%</button>
         <input id="zoomRange" type="range" min="10" max="200" step="10" value="100">
         <span class="pct" id="zoomPct"></span>
       </span>
     </div>
+    <div id="tiles" hidden></div>
     <div id="stage"><div id="empty">Select a comparison on the left.</div></div>
     <div id="sliders" hidden>
       <label>opacity <input id="opacity" type="range" min="0" max="100" value="50"></label>
@@ -103,6 +124,7 @@ HTML = """<!DOCTYPE html>
 const DATA = __DATA__;
 let sel = null, view = 'side';
 const stage = document.getElementById('stage');
+const tilesBar = document.getElementById('tiles');
 const meta = document.getElementById('meta');
 const sliders = document.getElementById('sliders');
 const opacity = document.getElementById('opacity');
@@ -124,6 +146,8 @@ function pick(images, key) {
   return list[Math.min(tileIndex, list.length - 1)] || list[0];
 }
 
+let needsInitialScroll = false;
+
 function img(src, cls) {
   const i = document.createElement('img');
   i.src = src; if (cls) i.className = cls;
@@ -131,19 +155,50 @@ function img(src, cls) {
   return i;
 }
 
+function syncScrolls(containers) {
+  let syncing = false;
+  for (const c of containers) {
+    c.onscroll = () => {
+      if (syncing) return;
+      syncing = true;
+      const rx = c.scrollWidth > c.clientWidth ? c.scrollLeft / (c.scrollWidth - c.clientWidth) : 0;
+      const ry = c.scrollHeight > c.clientHeight ? c.scrollTop / (c.scrollHeight - c.clientHeight) : 0;
+      for (const other of containers) {
+        if (other === c) continue;
+        if (Math.abs(other.scrollWidth - c.scrollWidth) <= 4 && Math.abs(other.scrollHeight - c.scrollHeight) <= 4) {
+          other.scrollLeft = c.scrollLeft;
+          other.scrollTop = c.scrollTop;
+        } else {
+          other.scrollLeft = rx * Math.max(0, other.scrollWidth - other.clientWidth);
+          other.scrollTop = ry * Math.max(0, other.scrollHeight - other.clientHeight);
+        }
+      }
+      syncing = false;
+    };
+  }
+}
+
 /** Fit-to-window or real pixels; wide images stack so a fit still reads. */
 function applyZoom() {
   const images = Array.from(stage.querySelectorAll('img'));
   const widest = images.reduce((a, i) => Math.max(a, (i.naturalWidth || 0) / (i.naturalHeight || 1)), 0);
   const fitting = zoomMode === 'fit';
+  const isSide = sel && sel.data && sel.data.kind !== 'layout' && view === 'side';
+  const row = stage.querySelector('.row');
   // Wide charts stay stacked at any zoom: stacked panels share the horizontal
   // scroll, so the same region of both is on screen and a single node can be
   // compared directly.
-  stage.classList.toggle('stack', widest > 2);
+  stage.classList.toggle('stack', widest > 2 && !row);
+  stage.classList.toggle('split', !fitting && isSide);
+  if (row) {
+    row.classList.toggle('stack', widest > 2);
+    row.classList.toggle('split', !fitting);
+  }
+  const stacked = stage.classList.contains('stack') || (row && row.classList.contains('stack'));
   for (const i of images) {
     if (fitting) {
-      i.style.maxWidth = stage.classList.contains('stack') ? '100%' : '48vw';
-      i.style.maxHeight = '80vh';
+      i.style.maxWidth = stacked ? '100%' : '46vw';
+      i.style.maxHeight = row ? '55vh' : '78vh';
       i.style.width = 'auto';
     } else {
       i.style.maxWidth = 'none';
@@ -154,10 +209,25 @@ function applyZoom() {
   }
   const shown = fitting ? 'fit' : `${zoomPercent}%`;
   document.getElementById('zoomPct').textContent = shown;
-  document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('sel', fitting && b.dataset.zoom === 'fit'));
+  document.querySelectorAll('#zoom button').forEach(b => {
+    const z = b.dataset.zoom;
+    b.classList.toggle('sel', (z === 'fit' && fitting) || (z === '100' && !fitting && zoomPercent === 100));
+  });
   const slider = document.getElementById('zoomRange');
-  slider.disabled = fitting;
   slider.value = zoomPercent;
+  if (!fitting && needsInitialScroll && images.every(i => i.complete && i.naturalWidth > 0)) {
+    needsInitialScroll = false;
+    const scrolls = Array.from(stage.querySelectorAll('.scroll'));
+    for (const s of scrolls) {
+      if (widest > 2) {
+        s.scrollLeft = 0;
+        s.scrollTop = Math.max(0, Math.round((s.scrollHeight - s.clientHeight) / 2));
+      } else {
+        s.scrollLeft = Math.max(0, Math.round((s.scrollWidth - s.clientWidth) / 2));
+        s.scrollTop = 0;
+      }
+    }
+  }
 }
 function applyOnion() {
   const top = stage.querySelector('.top');
@@ -173,19 +243,29 @@ function table(e) {
   const w = e.worst;
   const sum = document.createElement('p'); sum.className = 'cap';
   sum.textContent = `worst: box size ${(w.size * 100).toFixed(1)}%  centre ${(w.centre * 100).toFixed(1)}% of diagonal  `
-    + `edge label ${(w.label * 100).toFixed(1)}%  padding ${w.pad.toFixed(0)}px  missing ${w.missing}`;
+    + `edge label ${(w.label * 100).toFixed(1)}%  edges ${(w.edges * 100).toFixed(1)}%  `
+    + `render-vs-IL ${w.render.toFixed(0)}px  missing ${w.missing}`;
   wrap.appendChild(sum);
   const t = document.createElement('table');
-  t.innerHTML = '<tr><th>node</th><th>mermaid</th><th>maradona</th><th>delta w/h</th><th>centre</th><th>padding</th></tr>';
-  const pads = Object.fromEntries(e.pads.map(p => [p[0], p[1]]));
+  t.innerHTML = '<tr><th>node</th><th>mermaid</th><th>maradona</th><th>delta w/h</th><th>centre</th><th>text w</th></tr>';
   for (const r of e.rows) {
     const tr = document.createElement('tr');
-    const pad = pads[r[0]] || '';
     tr.innerHTML = `<td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td>`
-      + `<td class="pad">${pad}</td>`;
+      + `<td class="pad">${r[5] || ''}</td>`;
     t.appendChild(tr);
   }
   wrap.appendChild(t);
+  if (e.edges && e.edges.length) {
+    const et = document.createElement('table');
+    et.style.marginTop = '10px';
+    et.innerHTML = '<tr><th>edge</th><th>start/end offset</th><th>mermaid pts</th><th>maradona pts</th></tr>';
+    for (const er of e.edges) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${er[0]}</td><td>${er[1]}</td><td>${er[2]}</td><td>${er[3]}</td>`;
+      et.appendChild(tr);
+    }
+    wrap.appendChild(et);
+  }
   for (const l of e.labels) {
     const p = document.createElement('p'); p.className = 'cap';
     p.textContent = `edge label ${JSON.stringify(l[0])}: centre off by ${l[1]} (${l[2]})`;
@@ -199,27 +279,46 @@ function table(e) {
   return wrap;
 }
 
+function makePanel(src, cap) {
+  const p = document.createElement('div'); p.className = 'panel';
+  const s = document.createElement('div'); s.className = 'scroll';
+  s.appendChild(img(src));
+  p.appendChild(s);
+  const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
+  p.appendChild(c);
+  return { panel: p, scroll: s };
+}
+
 function render() {
   stage.textContent = '';
+  tilesBar.textContent = '';
+  tilesBar.hidden = true;
+  needsInitialScroll = true;
   if (!sel) { stage.innerHTML = '<div id="empty">Select a comparison on the left.</div>'; return; }
   const e = sel.data;
   if (e.kind === 'layout') {
     sliders.hidden = true;
     stage.classList.add('flow');
+    stage.classList.remove('split', 'stack');
     document.querySelectorAll('#tabs button').forEach(b => b.disabled = true);
+    const w = e.worst;
+    meta.textContent = `layout · ${sel.key} · scale ×${e.scale.toFixed(3)} · size ${(w.size * 100).toFixed(1)}% · centre ${(w.centre * 100).toFixed(1)}% · edges ${(w.edges * 100).toFixed(1)}%`;
     if (e.images) {
       const row = document.createElement('div'); row.className = 'row';
+      const scrolls = [];
       for (const [src, cap] of [[pick(e.images, 'gold'), 'mermaid golden'], [pick(e.images, 'ours'), 'maradona']]) {
-        const p = document.createElement('div'); p.className = 'panel';
-        p.appendChild(img(src));
-        const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
-        p.appendChild(c); row.appendChild(p);
+        const { panel, scroll } = makePanel(src, cap);
+        row.appendChild(panel);
+        scrolls.push(scroll);
       }
+      syncScrolls(scrolls);
       stage.appendChild(row);
     }
     stage.appendChild(table(e));
+    applyZoom();
     return;
   }
+  document.querySelectorAll('#tabs button').forEach(b => b.disabled = false);
   meta.textContent = `${sel.platform} · ${sel.key} · ${e.mode}` +
     ('mismatch' in e ? ` · pixel diff ${(e.mismatch * 100).toFixed(2)}% (visual only)` : '') +
     ('driftW' in e ? ` · size vs golden W x${e.driftW.toFixed(2)} H x${e.driftH.toFixed(2)}` : '') +
@@ -231,17 +330,15 @@ function render() {
   // switches which window is shown, so both sides always show the same region.
   const tileCount = Array.isArray(e.images?.ours) ? e.images.ours.length : 1;
   if (tileCount > 1) {
-    const bar = document.createElement('div');
-    bar.id = 'tiles';
+    tilesBar.hidden = false;
     // index 0 is the stitched canvas, 1..n the individual windows
     for (let i = 0; i < tileCount; i++) {
       const b = document.createElement('button');
       b.textContent = i === 0 ? 'stitched' : String(i);
       b.className = i === Math.min(tileIndex, tileCount - 1) ? 'sel' : '';
       b.onclick = () => { tileIndex = i; render(); };
-      bar.appendChild(b);
+      tilesBar.appendChild(b);
     }
-    stage.appendChild(bar);
   }
   if (e.error || !e.images) {
     const d = document.createElement('div'); d.id = 'empty';
@@ -253,12 +350,13 @@ function render() {
     const goldCap = e.mode === 'scale'
       ? 'maradona 100%, upscaled ×5 (the scale reference)'
       : (sel.key.endsWith('-min') ? 'mermaid golden ×0.1' : 'mermaid golden');
+    const scrolls = [];
     for (const [src, cap] of [[pick(e.images, 'gold'), goldCap], [pick(e.images, 'ours'), 'maradona capture']]) {
-      const p = document.createElement('div'); p.className = 'panel';
-      p.appendChild(img(src));
-      const c = document.createElement('div'); c.className = 'cap'; c.textContent = cap;
-      p.appendChild(c); stage.appendChild(p);
+      const { panel, scroll } = makePanel(src, cap);
+      stage.appendChild(panel);
+      scrolls.push(scroll);
     }
+    syncScrolls(scrolls);
     applyZoom();
   } else if (view === 'onion') {
     sliders.hidden = false;
@@ -277,10 +375,25 @@ function render() {
     applyZoom();
   }
 }
+let userExplicitZoom = false;
+
 function select(el, platform, key, data) {
   document.querySelectorAll('.item.sel').forEach(x => x.classList.remove('sel'));
   el.classList.add('sel');
+  const prevWasMax = sel && sel.key && sel.key.endsWith('-max');
+  const nextIsMax = key.endsWith('-max');
   sel = { platform, key, data };
+  tileIndex = 0;
+  // Max-zoom captures exist to be inspected at 1:1 of the zoomed-in size, with
+  // synchronized scrolling across both sides.
+  if (!userExplicitZoom) {
+    if (nextIsMax) {
+      zoomMode = 'manual';
+      zoomPercent = 100;
+    } else if (prevWasMax) {
+      zoomMode = 'fit';
+    }
+  }
   render();
 }
 const side = document.getElementById('side');
@@ -301,26 +414,37 @@ for (const [platform, entries] of Object.entries(DATA)) {
     side.appendChild(d);
   }
 }
-if (location.hash.length > 1) {
-  const el = document.querySelector(`[data-id="${location.hash.slice(1)}"]`);
-  if (el) el.click();
-}
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   view = b.dataset.view;
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('sel', x === b));
   render();
 });
 document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
-  zoomMode = 'fit';
+  userExplicitZoom = true;
+  if (b.dataset.zoom === 'fit') {
+    zoomMode = 'fit';
+  } else {
+    zoomMode = 'manual';
+    zoomPercent = Number(b.dataset.zoom) || 100;
+  }
   applyZoom();
 });
 document.getElementById('zoomRange').oninput = (e) => {
+  userExplicitZoom = true;
   zoomMode = 'manual';
   zoomPercent = Number(e.target.value);
   applyZoom();
 };
 opacity.oninput = applyOnion;
 wipe.oninput = applyOnion;
+function selectFromHash() {
+  if (location.hash.length > 1) {
+    const el = document.querySelector(`[data-id="${location.hash.slice(1)}"]`);
+    if (el) el.click();
+  }
+}
+window.addEventListener('hashchange', selectFromHash);
+selectFromHash();
 </script>
 </body>
 </html>

@@ -116,15 +116,6 @@ def compare_chart(chart):
     offset = ((view[0] - canvas[0]) / 2, (view[1] - canvas[1]) / 2)
     render = Image.open(OUT / f"{chart}-100.png")
     rendered = node_shapes(render)
-    # Compare relative geometry: the frame offset between the capture and the
-    # IL (centring) is not a renderer property.
-    if rendered:
-        rx = min(s["bbox"][0] for s in rendered)
-        ry = min(s["bbox"][1] for s in rendered)
-        il_x = min(n["rect"][0] for n in ours["nodes"])
-        il_y = min(n["rect"][1] for n in ours["nodes"])
-    else:
-        rx = ry = il_x = il_y = 0.0
     render_rows, pad_rows = [], []
     for gn in golden["nodes"]:
         on = our_nodes.get(gn["id"])
@@ -145,7 +136,7 @@ def compare_chart(chart):
         # The renderer must reproduce the IL box. The fill sits inside the
         # node's 1dp border, so compare in canvas space and allow that inset
         # (plus anti-aliasing) - see MAX_RENDER_ERR.
-        drawn = [best["bbox"][0] - rx + il_x, best["bbox"][1] - ry + il_y,
+        drawn = [best["bbox"][0] - offset[0], best["bbox"][1] - offset[1],
                  best["bbox"][2], best["bbox"][3]]
         dr = max(abs(drawn[0] - on["rect"][0]), abs(drawn[1] - on["rect"][1]),
                  abs(drawn[2] - on["rect"][2]), abs(drawn[3] - on["rect"][3]))

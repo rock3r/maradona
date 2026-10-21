@@ -48,17 +48,17 @@ fun nodeShape(shape: NodeShape, cornerRadius: Dp = 5.dp): Shape = when (shape) {
     }
     NodeShape.Trapezoid -> PolygonShape { w, h ->
         val m = h / 2f
-        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w - m, h); lineTo(m, h); close()
+        moveTo(m, 0f); lineTo(w - m, 0f); lineTo(w, h); lineTo(0f, h); close()
     }
     NodeShape.TrapezoidAlt -> PolygonShape { w, h ->
         val m = h / 2f
-        moveTo(m, 0f); lineTo(w - m, 0f); lineTo(w, h); lineTo(0f, h); close()
+        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w - m, h); lineTo(m, h); close()
     }
-    // a notch of h/4, which pokes out past the left edge (mermaid draws the
-    // notch point outside the label box, so the drawn shape is wider than it).
+    // an inward notch of h/4 on the left edge (mermaid draws the chevron
+    // pointing into the box from x=0 to x=m at y=h/2).
     NodeShape.Asymmetric -> PolygonShape { w, h ->
         val m = h / 4f
-        moveTo(m, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(m, h); lineTo(0f, h / 2f); close()
+        moveTo(0f, 0f); lineTo(w, 0f); lineTo(w, h); lineTo(0f, h); lineTo(m, h / 2f); close()
     }
     NodeShape.Cylinder -> CylinderShape
 }
@@ -74,10 +74,11 @@ private object CylinderShape : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val w = size.width
         val h = size.height
-        // mermaid: rx = w/2, ry = rx / (2.5 + w/50); the drawn height is the
-        // cap ellipse plus the body plus the bottom bulge.
+        // mermaid: rx = w/2, ry = rx / (2.5 + w/50) where w is in layout units (dp);
+        // the drawn height is the cap ellipse plus the body plus the bottom bulge.
         val rx = w / 2f
-        val ry = rx / (2.5f + w / 50f)
+        val wDp = w / density.density
+        val ry = rx / (2.5f + wDp / 50f)
         val body = maxOf(0f, h - ry * 2f)
 
         val path = Path()

@@ -14,14 +14,39 @@ enum class EdgeStroke { Solid, Dotted, Thick, Invisible }
 
 enum class ArrowHead { None, Arrow, Cross, Circle }
 
-/** Raw CSS-like colours from a `style` statement, kept as hex strings. */
+/** Raw CSS-like colours from a `style` or `classDef` statement, kept as hex/named strings. */
 data class NodeStyle(
     val fill: String? = null,
     val stroke: String? = null,
     val textColor: String? = null,
-    /** `stroke-width` from a `style` statement, e.g. "2px" or "2". */
+    /** `stroke-width` from a `style` or `classDef` statement, e.g. "2px" or "2". */
     val strokeWidth: String? = null,
-)
+) {
+    /** Merges [override] on top of this style. */
+    fun merge(override: NodeStyle?): NodeStyle {
+        if (override == null) return this
+        return NodeStyle(
+            fill = override.fill ?: fill,
+            stroke = override.stroke ?: stroke,
+            textColor = override.textColor ?: textColor,
+            strokeWidth = override.strokeWidth ?: strokeWidth,
+        )
+    }
+}
+
+/** Raw CSS-like properties from a `linkStyle` statement. */
+data class EdgeStyle(
+    val stroke: String? = null,
+    val strokeWidth: String? = null,
+) {
+    fun merge(override: EdgeStyle?): EdgeStyle {
+        if (override == null) return this
+        return EdgeStyle(
+            stroke = override.stroke ?: stroke,
+            strokeWidth = override.strokeWidth ?: strokeWidth,
+        )
+    }
+}
 
 data class FlowNode(
     val id: String,
@@ -38,6 +63,7 @@ data class FlowEdge(
     val stroke: EdgeStroke = EdgeStroke.Solid,
     val startHead: ArrowHead = ArrowHead.None,
     val endHead: ArrowHead = ArrowHead.Arrow,
+    val style: EdgeStyle? = null,
 )
 
 data class Subgraph(

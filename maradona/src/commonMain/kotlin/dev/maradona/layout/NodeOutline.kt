@@ -18,7 +18,12 @@ import kotlin.math.sqrt
  */
 internal object NodeOutline {
 
-    fun intersect(shape: NodeShape, rect: DiagramRect, target: DiagramPoint): DiagramPoint {
+    fun intersect(
+        shape: NodeShape,
+        rect: DiagramRect,
+        target: DiagramPoint,
+        density: Float = 1f,
+    ): DiagramPoint {
         val centre = DiagramPoint(rect.centerX, rect.centerY)
         val dx = target.x - centre.x
         val dy = target.y - centre.y
@@ -26,6 +31,7 @@ internal object NodeOutline {
 
         return when (shape) {
             NodeShape.Circle, NodeShape.DoubleCircle -> ellipse(centre, rect.width / 2f, rect.height / 2f, dx, dy)
+            NodeShape.Cylinder -> cylinder(rect, dx, dy, density)
             NodeShape.Diamond,
             NodeShape.Hexagon,
             NodeShape.Parallelogram,
@@ -36,6 +42,32 @@ internal object NodeOutline {
             -> polygon(rect, polygonPoints(shape, rect), dx, dy)
             else -> box(rect, dx, dy)
         }
+    }
+
+    private fun cylinder(rect: DiagramRect, dx: Float, dy: Float, density: Float): DiagramPoint {
+        val rx = rect.width / 2f
+        val halfH = rect.height / 2f
+        if (rx <= 0f || halfH <= 0f) return DiagramPoint(rect.centerX, rect.centerY)
+        val wDp = rect.width / density.coerceAtLeast(0.01f)
+        val ry = (rx / (2.5f + wDp / 50f)).coerceAtMost(halfH * 0.5f)
+        val bodyHalf = halfH - ry
+        if (dx != 0f) {
+            val tx = rx / abs(dx)
+            val yOff = tx * dy
+            if (abs(yOff) <= bodyHalf) {
+                return DiagramPoint(rect.centerX + tx * dx, rect.centerY + yOff)
+            }
+        }
+        // Intersect ray (t*dx, t*dy) with top or bottom cap ellipse centered at (0, capCy)
+        val capCy = if (dy < 0f) -bodyHalf else bodyHalf
+        val a = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+        val b = -2f * dy * capCy / (ry * ry)
+        val c = (capCy * capCy) / (ry * ry) - 1f
+        val disc = b * b - 4f * a * c
+        if (a <= 0f || disc < 0f) return box(rect, dx, dy)
+        val t = (-b + sqrt(disc)) / (2f * a)
+        if (t <= 0f) return box(rect, dx, dy)
+        return DiagramPoint(rect.centerX + t * dx, rect.centerY + t * dy)
     }
 
     /** The outline's points in box space, matching the renderer's shapes. */
@@ -60,15 +92,15 @@ internal object NodeOutline {
             }
             NodeShape.Trapezoid -> {
                 val m = h / 2f
-                listOf(0f to 0f, w to 0f, w - m to h, m to h)
+                listOf(m to 0f, w - m to 0f, w to h, 0f to h)
             }
             NodeShape.TrapezoidAlt -> {
                 val m = h / 2f
-                listOf(m to 0f, w - m to 0f, w to h, 0f to h)
+                listOf(0f to 0f, w to 0f, w - m to h, m to h)
             }
             NodeShape.Asymmetric -> {
                 val m = h / 4f
-                listOf(m to 0f, w to 0f, w to h, m to h, 0f to h / 2f)
+                listOf(0f to 0f, w to 0f, w to h, 0f to h, m to h / 2f)
             }
             else -> listOf(0f to 0f, w to 0f, w to h, 0f to h)
         }

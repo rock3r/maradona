@@ -23,11 +23,19 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-# Both renderers are configured with Maradona's palette (see mermaid-config.json).
+# Both renderers are configured with Maradona's palette (see mermaid-config.json),
+# plus the custom node fills used in styling.mmd and subgraphs.mmd.
 NODE_FILL = (242, 240, 229)
+STYLED_NODE_FILLS = (
+    (255, 204, 204),  # #ffcccc
+    (255, 255, 204),  # #ffffcc
+    (211, 229, 245),  # #d3e5f5
+)
 FILL_TOLERANCE = 12
+STYLED_FILL_TOLERANCE = 3
 TEXT_MAX = 140          # luminance below this is text/stroke ink
 MIN_NODE_AREA = 200     # px; smaller components are anti-aliasing debris
+MIN_NODE_DIM = 16       # px; 1px anti-aliased border strips are not nodes
 MAX_NODE_AREA_SHARE = 0.6
 
 
@@ -40,9 +48,11 @@ def node_shapes(img):
     """Filled node shapes: bbox, area, text bbox and label padding."""
     w, h = img.size
     fill = _mask_near(img, NODE_FILL, FILL_TOLERANCE)
+    for colour in STYLED_NODE_FILLS:
+        fill |= _mask_near(img, colour, STYLED_FILL_TOLERANCE)
     grey = np.asarray(img.convert("L"), dtype=np.int16)
     labels, count = ndimage.label(fill)
-    out = []
+    raw = []
     for index in range(1, count + 1):
         ys, xs = np.nonzero(labels == index)
         area = len(ys)
@@ -50,10 +60,42 @@ def node_shapes(img):
             continue
         x0, x1 = int(xs.min()), int(xs.max())
         y0, y1 = int(ys.min()), int(ys.max())
+        bw, bh = x1 - x0 + 1, y1 - y0 + 1
+        if bw < 4 or bh < 4:
+            continue
+        raw.append([x0, y0, x1, y1, area, [index]])
+
+    # A cylinder's cap arc or a subroutine's side bars split one node's fill into
+    # compartments that share the exact same width (cylinder) or height (subroutine)
+    # separated only by the 1dp stroke. Merge compartments that form one box.
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(raw)):
+            for j in range(i + 1, len(raw)):
+                ax0, ay0, ax1, ay1, aa, ai = raw[i]
+                bx0, by0, bx1, by1, ba, bi = raw[j]
+                same_x = abs(ax0 - bx0) <= 4 and abs(ax1 - bx1) <= 4
+                v_gap = max(0, max(ay0, by0) - min(ay1, by1))
+                same_y = abs(ay0 - by0) <= 4 and abs(ay1 - by1) <= 4
+                h_gap = max(0, max(ax0, bx0) - min(ax1, bx1))
+                if (same_x and v_gap <= 6) or (same_y and h_gap <= 6):
+                    raw[i] = [min(ax0, bx0), min(ay0, by0), max(ax1, bx1), max(ay1, by1), aa + ba, ai + bi]
+                    raw.pop(j)
+                    merged = True
+                    break
+            if merged:
+                break
+
+    out = []
+    for x0, y0, x1, y1, area, indices in raw:
+        if (x1 - x0 + 1) < MIN_NODE_DIM or (y1 - y0 + 1) < MIN_NODE_DIM:
+            continue
         # Text is measured inside the shape's own interior: fill the label
         # holes first, then erode, so the shape's stroke (which sits on the
         # bbox edge) cannot be mistaken for the label.
-        shape_mask = ndimage.binary_fill_holes(labels == index)
+        comp = np.isin(labels, indices)
+        shape_mask = ndimage.binary_fill_holes(comp)
         interior = ndimage.binary_erosion(shape_mask, np.ones((5, 5), bool))
         text = (grey < TEXT_MAX) & interior
         if text.any():

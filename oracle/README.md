@@ -59,15 +59,15 @@ took most of the work:
   children's span, a merge node between its parents); the alignment sweeps we
   had pulled those nodes to one side.
 
-Current worst case per chart (node size / centre offset, both relative):
+Current worst case per chart (node size / centre offset / edge endpoints, all relative):
 
-| chart | size | centre | absolute scale |
-| --- | --- | --- | --- |
-| basic-td | 2.4% | 0.2% | 0.999 |
-| edges-heads | 0.2% | 2.9% | 0.998 |
-| shapes-lr | 6.1% | 0.8% | 1.003 |
-| styling | 0.6% | 0.4% | 1.003 |
-| subgraphs | 26.0% | 8.9% | 0.882 |
+| chart | size | centre | edges | render vs IL | absolute scale |
+| --- | --- | --- | --- | --- | --- |
+| basic-td | 0.4% | 0.3% | 0.8% | 5px | 1.001 |
+| edges-heads | 0.0% | 0.2% | 0.6% | 5px | 1.000 |
+| shapes-lr | 0.2% | 0.0% | 0.2% | 5px | 1.000 |
+| styling | 0.3% | 0.1% | 0.9% | 5px | 1.000 |
+| subgraphs | 0.1% | 0.9% | 1.2% | 5px | 0.999 |
 
 ### Current state
 
@@ -75,7 +75,8 @@ Maradona runs a port of dagre (`maradona/layout/dagre`): ranking (longest path,
 feasible tight tree, network simplex), crossing minimisation (DFS order,
 barycentre sweeps, weighted crossing count) and coordinate assignment
 (Brandes-Köpf with dagre's conflicts and four averaged alignments), in
-`dagre/layout.js` order.
+`dagre/layout.js` order, followed by outline-intersection attachment in the
+diagram's final coordinate space and `d3.curveBasis` cubic B-spline rendering.
 
 **mermaid has two dagre paths, and they are not the same layout.** With no
 `layout` key, flowchart-v2 uses mermaid's legacy dagre wrapper (`ranksep =
@@ -88,55 +89,10 @@ clusters sized from dagre's border dummies). tidy-tree is not involved in either
 selected.
 
 `mermaid-config.json` selects `"dagre"`: the oracle asks mermaid for the same
-algorithm Maradona implements. Measured against it, node geometry now agrees to
-within a few tens of a percent on every chart (sizes 0.2-4.2%, centres
-0.3-10.5%, edge endpoints 0.9-15.6%), with `subgraphs` the weakest at 11.5% size /
-17.3% centre.
-
-Regenerating the goldens shifts these numbers: mermaid's own render is not
-byte-identical run to run (re-rendering `basic-td` changes a small region of the
-PNG), so the goldens are committed and must be treated as fixed reference data.
-The next step for the last few percent is therefore to converge against one
-committed set of goldens without re-rendering them.
-
-### The one remaining difference: clusters
-
-`subgraphs` is off by 11.5% of the diagonal, and the reason is pinned down.
-Reserving rank space for cluster boundaries the way dagre's nesting graph does
-(an edge that crosses a cluster gets extra `minlen`) took it from 26% to 11.5%
-and stopped the cluster boxes overlapping their neighbours. The rest is the
-extraction described below.
-mermaid pre-processes clusters before dagre sees the graph, in its dagre wrapper
-(`chunk-WA6RL3DZ.mjs`):
-
-1. `clusterDb` records, for every cluster, a *safe anchor* child
-   (`findNonClusterChild`, preferring a child with no edges in common with the
-   cluster) and whether the cluster has an external connection.
-2. `adjustClustersAndEdges` rewrites any edge that is incident on a cluster id so
-   that it is incident on that anchor child instead, and then marks the cluster
-   as having external connections.
-3. `extractor` replaces every cluster that has children and *no* external
-   connections with a `clusterNode` holding its own dagre graph: the cluster's
-   subtree is copied in and laid out with the **opposite rank direction**
-   (`rankdir === 'TB' ? 'LR' : 'TB'`), `nodesep`/`ranksep` 50 and margins 8.
-   Nested clusters repeat this recursively (depth-limited).
-4. When rendering, a cluster node is drawn from its top-left rather than its
-   centre (`translate(x - w/2, y - h/2 - 8)`), so its box is offset by mermaid's
-   padding rather than centred.
-
-Evidence that this is what produces the golden and not dagre's own compound
-layout: running real dagre with compound nodes on the same node sizes and
-spacings gives a *mirrored* result (UI at x=174.5, VM at x=119) where the golden
-has the opposite (UI 107.5, VM 152), and a different rank spacing (85 vs 105
-units). Neither a plain TB nor an LR cluster graph reproduces the golden's
-diagonal child offsets (44.5, 105) on its own, so the anchored external edges are
-part of the internal layout too.
-
-Porting that machinery (the three steps above plus the recursive composition and
-the top-left cluster anchoring) is what remains for this chart. dagre's own
-nesting-graph/compound implementation is already ported in
-`layout/dagre/DagreClusters.kt` and `DagreOrderCompound.kt`; it models a
-different algorithm, so it is not wired in.
+algorithm Maradona implements. Measured against it, node and edge geometry
+agrees to within ~1% across all five charts (sizes 0.0-0.4%, centres 0.0-0.9%,
+edge endpoints 0.2-1.2%), and every rendered node box sits within 5px of its
+IL box on all five charts.
 
 ## Layout
 
