@@ -47,7 +47,10 @@ fi
 log() { printf '\033[2m%s\033[0m\n' "$*"; }
 
 log "preparing $SERIAL"
+adb -s "$SERIAL" </dev/null shell settings put global hide_error_dialogs 1 >/dev/null 2>&1 || true
+adb -s "$SERIAL" </dev/null shell svc power stayon true >/dev/null 2>&1 || true
 adb -s "$SERIAL" </dev/null shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+adb -s "$SERIAL" </dev/null shell input keyevent 82 >/dev/null 2>&1 || true
 adb -s "$SERIAL" </dev/null shell wm dismiss-keyguard >/dev/null 2>&1 || true
 # Deterministic text metrics and no animations mid-capture.
 adb -s "$SERIAL" </dev/null shell settings put system font_scale 1.0 >/dev/null
@@ -87,8 +90,16 @@ launch() { # chart zoom fx fy density
     focus=$(adb -s "$SERIAL" </dev/null shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus || true)
     case "$focus" in
       *"$PKG"*) return 0 ;;
+      *"Application Not Responding"*|*"Application Error"*)
+        adb -s "$SERIAL" </dev/null shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+        adb -s "$SERIAL" </dev/null shell input keyevent KEYCODE_ENTER >/dev/null 2>&1 || true
+        adb -s "$SERIAL" </dev/null shell am start -n "$PKG/.MainActivity" \
+          --es oracleChart "$1" --es oracleZoom "$2" \
+          --ef oraclePanX "$3" --ef oraclePanY "$4" --ei oracleSeq "$SEQ" \
+          ${extra[@]+"${extra[@]}"} </dev/null >/dev/null 2>&1
+        ;;
     esac
-    sleep 0.5
+    sleep 0.3
   done
   echo "ERROR: $PKG did not reach the foreground" >&2
   echo "  focused window: $focus" >&2
@@ -106,28 +117,40 @@ get_field() { # field zoom panx pany [density] - retries while the app settles
   # are formatted differently by the app than by the shell).
   filter="zoom=$2.*seq=$SEQ"
   [ -n "${5:-}" ] && filter="$filter.*density=$5"
-  for i in $(seq 1 90); do
+  for i in $(seq 1 180); do
     v=$(render_log | grep -E "$filter" | grep -o "$1=[0-9.x]*" | tail -1 | cut -d= -f2 || true)
     if [ -n "$v" ]; then echo "$v"; return 0; fi
-    sleep 1
+    sleep 0.25
   done
   return 1
 }
 
 shot() { # chart level fx level fx fy index density
-  # Clearing the log first makes the wait below unambiguous: the matching line
-  # can only come from the render we just asked for.
-  adb -s "$SERIAL" logcat -c </dev/null >/dev/null 2>&1 || true
-  launch "$1" "$2" "$3" "$4" "$6"
-  # Wait for this launch's own log line: proves the new render has been laid
-  # out, so the screenshot cannot show the previous one.
-  get_field canvas "$2" "$3" "$4" >/dev/null || true
-  sleep 1.5
+  local out_file
   if [ -n "${5:-}" ]; then
-    adb -s "$SERIAL" exec-out screencap -p </dev/null > "$OUT/$1-$2-$5.png"
+    out_file="$OUT/$1-$2-$5.png"
   else
-    adb -s "$SERIAL" exec-out screencap -p </dev/null > "$OUT/$1-$2.png"
+    out_file="$OUT/$1-$2.png"
   fi
+  local attempt focus
+  for attempt in 1 2 3; do
+    # Clearing the log first makes the wait below unambiguous: the matching line
+    # can only come from the render we just asked for.
+    adb -s "$SERIAL" logcat -c </dev/null >/dev/null 2>&1 || true
+    launch "$1" "$2" "$3" "$4" "$6"
+    # Wait for this launch's own log line: proves the new render has been laid
+    # out, so the screenshot cannot show the previous one.
+    get_field canvas "$2" "$3" "$4" >/dev/null || true
+    sleep 0.5
+    focus=$(adb -s "$SERIAL" </dev/null shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus || true)
+    case "$focus" in
+      *"$PKG"*)
+        adb -s "$SERIAL" exec-out screencap -p </dev/null > "$out_file"
+        return 0
+        ;;
+    esac
+  done
+  adb -s "$SERIAL" exec-out screencap -p </dev/null > "$out_file"
 }
 
 # Screen (viewport) size, from one throwaway capture.

@@ -16,16 +16,19 @@ Supported in flowcharts:
 - Directions: `TB`/`TD`, `BT`, `LR`, `RL`
 - Node shapes: rect, rounded, stadium, subroutine, cylinder, circle,
   double circle, diamond, hexagon, parallelogram, trapezoid, asymmetric
-- Edges: solid, dotted, thick, invisible; arrow, cross, and circle heads;
-  bidirectional edges; chained edges (`A --> B --> C`); grouped edges (`A & B --> C`)
+  (classic bracket syntax and Mermaid v2 `@{ shape: ..., label: "..." }` metadata)
+- Edges: solid, dotted, thick, invisible; arrow, cross, and circle start/end heads;
+  bidirectional edges (`<-->`, `o--o`, `x--x`); chained edges (`A --> B --> C`);
+  grouped edges (`A & B --> C`); edge IDs (`e1@-->`)
 - Edge labels: pipe (`-->|text|`) and inline (`-- text -->`)
-- Subgraphs, including nesting (drawn as a labelled box around their nodes)
-- `style` statements (`fill`, `stroke`, `color`)
+- Subgraphs, including nesting and edges incident on subgraph IDs
+- Styling: `style` (`fill`, `stroke`, `color`, `stroke-width`), `classDef`,
+  `class`, inline `:::className`, and `linkStyle` (`stroke`, `stroke-width`)
+- Frontmatter (`--- ... ---`) and `%%{init}%%` directives
 - Label markup: `<br>`, `<b>`, `<i>` become `AnnotatedString` spans
 - Cycles and self-loops
 
-Accepted but ignored: `classDef`, `class`, `click`, `linkStyle`,
-and `%%{init}%%` directives.
+Accepted and ignored: `click` statements.
 
 ## How it works
 
@@ -34,15 +37,17 @@ Three layers, each usable on its own:
 1. **Parser** (`dev.maradona.parse.FlowchartParser`) — pure Kotlin.
    Turns Mermaid text into a `Flowchart` model. No Compose types.
 2. **Layout** (`dev.maradona.layout.FlowchartLayout`) — pure Kotlin.
-   A Sugiyama layered layout: cycle breaking, longest-path layering,
-   dummy nodes for long edges, barycentre crossing reduction, then
-   orthogonal edge routing. It takes node sizes as input and returns
-   positioned nodes, edge polylines, and subgraph boxes.
+   A multiplatform port of dagre (`dev.maradona.layout.dagre`): DFS feedback
+   arc cycle breaking, network-simplex ranking, label dummy ranks, barycentre
+   crossing reduction, Brandes–Köpf coordinate assignment, and shape-outline
+   edge attachment (`NodeOutline`). It takes node sizes as input and returns
+   positioned nodes, edge waypoints, and subgraph boxes.
 3. **Composables** (`dev.maradona.render`) — `commonMain` Compose.
    `MaradonaLayout` is a custom `Layout`. It measures one `MaradonaNode`
    composable per node, feeds the measured sizes to the layout engine,
-   and places the nodes. Edge lines are drawn on one canvas layer behind
-   the nodes. Edge labels and subgraph labels are composables too.
+   and places the nodes. Edge splines (`d3.curveBasis`) and subgraph boxes are
+   drawn on one canvas layer behind the nodes. Edge labels and subgraph labels
+   are composables too.
 
 Because nodes are real composables, each node has semantics, can take
 focus, and uses the platform text renderer. A screen reader can walk

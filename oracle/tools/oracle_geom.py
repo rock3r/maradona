@@ -24,10 +24,9 @@ import sys
 MIN_ZOOM, MAX_ZOOM = 0.1, 5.0
 LEVELS = ("100", "min", "max")
 LEVEL_SCALE = {"100": 1.0, "min": MIN_ZOOM, "max": MAX_ZOOM}
-# "100" is compared against the golden, so its grid must COVER the canvas
-# without gaps. "min"/"max" are scale checks: a 3-per-axis sample is enough
-# and keeps the device capture runs (each tile is a launch) bounded.
-MAX_TILES_PER_AXIS = 8
+# Every level is captured as a covering grid without gaps; cap only as a
+# runaway guard well above the 38 tiles a 5x wide chart needs on a phone.
+MAX_TILES_PER_AXIS = 64
 SAMPLE_PER_AXIS = 3
 
 
@@ -48,8 +47,9 @@ def fractions(n):
 def axis_count(scaled, view, mode):
     if scaled <= view:
         return 1
-    want = math.ceil(scaled / view) if mode == "cover" else SAMPLE_PER_AXIS
-    return max(2, min(MAX_TILES_PER_AXIS, want))
+    if mode == "cover":
+        return max(2, math.ceil(scaled / view))
+    return max(2, min(MAX_TILES_PER_AXIS, SAMPLE_PER_AXIS))
 
 
 def tiles(canvas, view, level, mode=None):

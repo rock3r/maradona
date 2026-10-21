@@ -26,82 +26,82 @@ fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
         val r = sg.rect
         val topLeft = Offset(r.x, r.y)
         val size = androidx.compose.ui.geometry.Size(r.width, r.height)
-        drawRoundRect(
+        drawRect(
             color = theme.subgraphFill,
             topLeft = topLeft,
             size = size,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f * unit, 6f * unit),
         )
-        drawRoundRect(
+        drawRect(
             color = theme.subgraphBorder,
             topLeft = topLeft,
             size = size,
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f * unit, 6f * unit),
-            style = Stroke(width = 1.dp.toPx()),
+            style = Stroke(width = 1f * unit),
         )
     }
     for (positioned in layout.edges) {
         val edge = positioned.edge
         if (edge.stroke == EdgeStroke.Invisible || positioned.points.size < 2) continue
         val pts = positioned.points
+        val edgeColor = parseCssColor(edge.style?.stroke) ?: theme.edge
         // Stop the line where the head starts so the stroke end doesn't poke
         // out of the arrowhead's sloped sides (or through a hollow circle).
         val linePts = trimPath(pts, startBy = headTrim(edge.startHead), endBy = headTrim(edge.endHead))
         if (linePts.size >= 2) {
-            val path = roundedPolyline(linePts, radius = 6f * unit)
+            val path = basisSpline(linePts)
             // mermaid's edge strokes are 1px and 3.5px in SVG user units, and a unit
             // is one pixel here: dp would double them at density 2.
-            val width = (if (edge.stroke == EdgeStroke.Thick) 3.5f else 1f) * unit
+            val customWidth = edge.style?.strokeWidth
+                ?.removeSuffix("px")?.trim()?.toFloatOrNull()
+            val width = (customWidth ?: if (edge.stroke == EdgeStroke.Thick) 3.5f else 1f) * unit
             val effect = if (edge.stroke == EdgeStroke.Dotted) {
                 PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)
             } else null
-            drawPath(path, color = theme.edge, style = Stroke(width = width, pathEffect = effect))
+            drawPath(path, color = edgeColor, style = Stroke(width = width, pathEffect = effect))
         }
 
-        drawHead(edge.endHead, tip = pts.last(), from = pts[pts.size - 2], theme = theme)
-        drawHead(edge.startHead, tip = pts.first(), from = pts[1], theme = theme)
+        drawHead(edge.endHead, tip = pts.last(), from = pts[pts.size - 2], color = edgeColor)
+        drawHead(edge.startHead, tip = pts.first(), from = pts[1], color = edgeColor)
     }
 }
 
 /**
- * The polyline with its corners rounded, which is what mermaid draws: its edges
- * are `curve: basis` splines, so a right-angle turn is a smooth bend rather than
- * a hard corner. The radius is clamped to half of each adjacent segment so short
- * hops cannot overshoot.
+ * Uniform cubic B-spline (`d3.curveBasis`) through [points], matching the exact
+ * SVG path `d` commands mermaid emits for flowchart edges.
  */
-private fun roundedPolyline(points: List<DiagramPoint>, radius: Float): Path {
+private fun basisSpline(points: List<DiagramPoint>): Path {
     val path = Path()
-    path.moveTo(points[0].x, points[0].y)
-    for (i in 1 until points.lastIndex) {
-        val previous = points[i - 1]
-        val corner = points[i]
-        val next = points[i + 1]
-        val inLength = distance(previous, corner)
-        val outLength = distance(corner, next)
-        val r = minOf(radius, inLength / 2f, outLength / 2f)
-        if (r <= 0.01f) {
-            path.lineTo(corner.x, corner.y)
-            continue
-        }
-        val start = lerp(corner, previous, r / inLength)
-        val end = lerp(corner, next, r / outLength)
-        path.lineTo(start.x, start.y)
-        // A quadratic through the corner is the cheapest smooth join.
-        path.quadraticTo(corner.x, corner.y, end.x, end.y)
+    val n = points.size
+    if (n == 0) return path
+    val p0 = points[0]
+    path.moveTo(p0.x, p0.y)
+    if (n == 1) return path
+    if (n == 2) {
+        val p1 = points[1]
+        path.lineTo(p1.x, p1.y)
+        return path
     }
-    val last = points.last()
+    val p1 = points[1]
+    path.lineTo((5f * p0.x + p1.x) / 6f, (5f * p0.y + p1.y) / 6f)
+    for (i in 1 until n - 1) {
+        val a = points[i - 1]
+        val b = points[i]
+        val c = points[i + 1]
+        path.cubicTo(
+            (2f * a.x + b.x) / 3f, (2f * a.y + b.y) / 3f,
+            (a.x + 2f * b.x) / 3f, (a.y + 2f * b.y) / 3f,
+            (a.x + 4f * b.x + c.x) / 6f, (a.y + 4f * b.y + c.y) / 6f,
+        )
+    }
+    val prev = points[n - 2]
+    val last = points[n - 1]
+    path.cubicTo(
+        (2f * prev.x + last.x) / 3f, (2f * prev.y + last.y) / 3f,
+        (prev.x + 2f * last.x) / 3f, (prev.y + 2f * last.y) / 3f,
+        (prev.x + 5f * last.x) / 6f, (prev.y + 5f * last.y) / 6f,
+    )
     path.lineTo(last.x, last.y)
     return path
 }
-
-private fun distance(a: DiagramPoint, b: DiagramPoint): Float {
-    val dx = b.x - a.x
-    val dy = b.y - a.y
-    return kotlin.math.sqrt(dx * dx + dy * dy)
-}
-
-private fun lerp(from: DiagramPoint, to: DiagramPoint, t: Float) =
-    DiagramPoint(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
 
 // Marker geometry from mermaid's own SVG: the arrow is an 11.5x14 viewBox drawn
 // at markerWidth 10.5 (so 10.5 units long and 14 wide), the circle has r=5, and
@@ -192,11 +192,10 @@ private fun DrawScope.drawHead(
     head: ArrowHead,
     tip: DiagramPoint,
     from: DiagramPoint,
-    theme: MaradonaTheme,
+    color: androidx.compose.ui.graphics.Color,
 ) {
     if (head == ArrowHead.None) return
     val angle = atan2(tip.y - from.y, tip.x - from.x)
-    val tipOffset = Offset(tip.x, tip.y)
     when (head) {
         ArrowHead.Arrow -> {
             val length = ArrowLengthUnits * unit
@@ -207,7 +206,7 @@ private fun DrawScope.drawHead(
             val triangle = Path().apply {
                 moveTo(tip.x, tip.y); lineTo(p1.x, p1.y); lineTo(p2.x, p2.y); close()
             }
-            drawPath(triangle, color = theme.edge)
+            drawPath(triangle, color = color)
         }
         ArrowHead.Cross -> {
             val r = CrossRadiusUnits * unit
@@ -216,14 +215,14 @@ private fun DrawScope.drawHead(
             val center = Offset(tip.x - ux * r, tip.y - uy * r)
             val stroke = Stroke(width = CrossStrokeUnits * unit, cap = StrokeCap.Round)
             val extent = 1f
-            drawLine(theme.edge, Offset(center.x + (ux + px) * r * extent, center.y + (uy + py) * r * extent), Offset(center.x - (ux + px) * r * extent, center.y - (uy + py) * r * extent), stroke.width, cap = StrokeCap.Round)
-            drawLine(theme.edge, Offset(center.x + (ux - px) * r * extent, center.y + (uy - py) * r * extent), Offset(center.x - (ux - px) * r * extent, center.y - (uy - py) * r * extent), stroke.width, cap = StrokeCap.Round)
+            drawLine(color, Offset(center.x + (ux + px) * r * extent, center.y + (uy + py) * r * extent), Offset(center.x - (ux + px) * r * extent, center.y - (uy + py) * r * extent), stroke.width, cap = StrokeCap.Round)
+            drawLine(color, Offset(center.x + (ux - px) * r * extent, center.y + (uy - py) * r * extent), Offset(center.x - (ux - px) * r * extent, center.y - (uy - py) * r * extent), stroke.width, cap = StrokeCap.Round)
         }
         ArrowHead.Circle -> {
             // mermaid draws `--o` as a solid dot, not a ring.
             val r = CircleRadiusUnits * unit
             val center = Offset(tip.x - r * cos(angle), tip.y - r * sin(angle))
-            drawCircle(color = theme.edge, radius = r, center = center)
+            drawCircle(color = color, radius = r, center = center)
         }
         ArrowHead.None -> Unit
     }

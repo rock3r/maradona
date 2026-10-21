@@ -146,4 +146,95 @@ class FlowchartParserTest {
             FlowchartParser.parse("sequenceDiagram\n  A->>B: hi")
         }
     }
+
+    @Test
+    fun classDefAndInlineClass() {
+        val chart = FlowchartParser.parse(
+            """
+            flowchart LR
+              A[First]:::hot --> B[Second] --> C[Third]
+              classDef default fill:#eeeeee,stroke:#444444
+              classDef hot fill:#ff0000,stroke:#990000,stroke-width:3px
+              classDef cool fill:#00ff00,color:#003300
+              class B cool
+              style A fill:#ffcccc
+            """.trimIndent(),
+        )
+        val a = chart.nodes.first { it.id == "A" }
+        val b = chart.nodes.first { it.id == "B" }
+        val c = chart.nodes.first { it.id == "C" }
+        // Explicit style overrides classDef fill, while keeping classDef stroke & strokeWidth
+        assertEquals("#ffcccc", a.style?.fill)
+        assertEquals("#990000", a.style?.stroke)
+        assertEquals("3px", a.style?.strokeWidth)
+        assertEquals("#00ff00", b.style?.fill)
+        assertEquals("#444444", b.style?.stroke)
+        assertEquals("#003300", b.style?.textColor)
+        assertEquals("#eeeeee", c.style?.fill)
+        assertEquals("#444444", c.style?.stroke)
+    }
+
+    @Test
+    fun linkStyleAndBidirectionalHeads() {
+        val chart = FlowchartParser.parse(
+            """
+            flowchart LR
+              A o--o B
+              B x--x C
+              linkStyle default stroke:#888888,stroke-width:2px
+              linkStyle 1 stroke:#ff0000
+            """.trimIndent(),
+        )
+        assertEquals(ArrowHead.Circle, chart.edges[0].startHead)
+        assertEquals(ArrowHead.Circle, chart.edges[0].endHead)
+        assertEquals("#888888", chart.edges[0].style?.stroke)
+        assertEquals("2px", chart.edges[0].style?.strokeWidth)
+        assertEquals(ArrowHead.Cross, chart.edges[1].startHead)
+        assertEquals(ArrowHead.Cross, chart.edges[1].endHead)
+        assertEquals("#ff0000", chart.edges[1].style?.stroke)
+        assertEquals("2px", chart.edges[1].style?.strokeWidth)
+    }
+
+    @Test
+    fun frontmatterInitDirectiveAndV2ShapeMetadata() {
+        val chart = FlowchartParser.parse(
+            """
+            ---
+            title: Example
+            config:
+              layout: dagre
+            ---
+            %%{init: {
+              'theme': 'default'
+            }}%%
+            flowchart TD
+              A@{ shape: cyl, label: "Orders DB" } e1@--> B@{ shape: hex, label: 'Gateway } 100%%' }
+              e1@{ animate: true }
+            """.trimIndent(),
+        )
+        assertEquals(2, chart.nodes.size)
+        val a = chart.nodes.first { it.id == "A" }
+        val b = chart.nodes.first { it.id == "B" }
+        assertEquals(NodeShape.Cylinder, a.shape)
+        assertEquals("Orders DB", a.label)
+        assertEquals(NodeShape.Hexagon, b.shape)
+        assertEquals("Gateway } 100%%", b.label)
+    }
+
+    @Test
+    fun edgeIncidentOnSubgraphIdPreservesSubgraphTarget() {
+        val chart = FlowchartParser.parse(
+            """
+            flowchart TD
+              subgraph one[Group One]
+                A[First] --> B[Second]
+              end
+              Start --> one
+            """.trimIndent(),
+        )
+        assertEquals(listOf("A", "B", "Start"), chart.nodes.map { it.id })
+        val incoming = chart.edges.last()
+        assertEquals("Start", incoming.from)
+        assertEquals("one", incoming.to)
+    }
 }

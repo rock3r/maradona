@@ -74,7 +74,8 @@ get_field() { # field zoom panx pany [density] - retries while the app settles
 
 shot() { # chart level fx fy index density
   launch "$1" "$2" "$3" "$4" "$6"
-  sleep 3
+  get_field canvas "$2" "$3" "$4" >/dev/null || true
+  sleep 0.5
   if [ -n "${5:-}" ]; then
     xcrun simctl </dev/null io "$SIM" screenshot "$OUT/$1-$2-$5.png" >/dev/null 2>&1
   else

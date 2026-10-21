@@ -3,6 +3,7 @@ package dev.maradona.parse
 import dev.maradona.model.ArrowHead
 import dev.maradona.model.Direction
 import dev.maradona.model.EdgeStroke
+import dev.maradona.model.EdgeStyle
 import dev.maradona.model.FlowEdge
 import dev.maradona.model.FlowNode
 import dev.maradona.model.Flowchart
@@ -13,10 +14,11 @@ import dev.maradona.model.Subgraph
 /**
  * Parser for the Mermaid flowchart grammar (`graph` / `flowchart`).
  *
- * Supported: directions, node shapes, chained and grouped (`&`) edges,
- * pipe and inline edge labels, arrow/cross/circle heads, subgraphs,
- * `style` statements. `classDef`/`class`/`click`/`linkStyle` and
- * `%%{init}%%` directives are accepted and ignored in v1.
+ * Supported: directions, node shapes (classic brackets and `@{ shape: ... }`),
+ * chained and grouped (`&`) edges, pipe and inline edge labels,
+ * arrow/cross/circle start and end heads, subgraphs (including edges incident
+ * on subgraph ids), `style`, `classDef`, `class`, `:::class` and `linkStyle`
+ * statements, YAML frontmatter (`--- ... ---`), and `%%{init}%%` directives.
  */
 object FlowchartParser {
 
@@ -29,10 +31,22 @@ object FlowchartParser {
             throw MaradonaParseException(1, "Source exceeds $MAX_SOURCE_LENGTH characters")
         }
         val state = State()
-        val lines = source.lines()
+        val lines = stripDirectives(source).lines()
         var headerSeen = false
+        var inFrontmatter = false
         for ((index, rawLine) in lines.withIndex()) {
             val lineNo = index + 1
+            val trimmedRaw = rawLine.trim()
+            if (!headerSeen) {
+                if (inFrontmatter) {
+                    if (trimmedRaw == "---" || trimmedRaw == "...") inFrontmatter = false
+                    continue
+                }
+                if (trimmedRaw == "---") {
+                    inFrontmatter = true
+                    continue
+                }
+            }
             var line = stripComment(rawLine).trim()
             if (line.isEmpty()) continue
             if (!headerSeen) {
@@ -48,7 +62,15 @@ object FlowchartParser {
         if (!headerSeen) throw MaradonaParseException(1, "Expected 'flowchart' or 'graph'")
         if (state.nodes.size > MAX_NODES) throw MaradonaParseException(1, "Too many nodes")
         if (state.edges.size > MAX_EDGES) throw MaradonaParseException(1, "Too many edges")
-        return Flowchart(state.direction, state.nodes.values.toList(), state.edges, state.subgraphs)
+        return state.build()
+    }
+
+    /** Strips `%%{ ... }%%` directive blocks (which may span multiple lines), preserving line count. */
+    private fun stripDirectives(source: String): String {
+        if (!source.contains("%%{")) return source
+        return source.replace(Regex("%%\\{[\\s\\S]*?\\}%%")) { match ->
+            "\n".repeat(match.value.count { it == '\n' })
+        }
     }
 
     private fun consumeHeader(line: String, lineNo: Int, state: State): String {
@@ -74,12 +96,13 @@ object FlowchartParser {
     }
 
     private fun stripComment(line: String): String {
-        var inQuote = false
+        var quoteChar: Char? = null
         var i = 0
         while (i < line.length - 1) {
             val c = line[i]
-            if (c == '"') inQuote = !inQuote
-            if (!inQuote && c == '%' && line[i + 1] == '%') return line.substring(0, i)
+            if (quoteChar == null && (c == '"' || c == '\'')) quoteChar = c
+            else if (quoteChar == c) quoteChar = null
+            if (quoteChar == null && c == '%' && line[i + 1] == '%') return line.substring(0, i)
             i++
         }
         return line
@@ -89,18 +112,23 @@ object FlowchartParser {
     private fun splitStatements(line: String): List<String> {
         val out = mutableListOf<String>()
         var depth = 0
-        var inQuote = false
+        var quoteChar: Char? = null
         var start = 0
         for (i in line.indices) {
-            when (val c = line[i]) {
-                '"' -> inQuote = !inQuote
-                '[', '(', '{' -> if (!inQuote) depth++
-                ']', ')', '}' -> if (!inQuote && depth > 0) depth--
-                ';' -> if (!inQuote && depth == 0) {
-                    out += line.substring(start, i)
-                    start = i + 1
+            val c = line[i]
+            if (quoteChar == null && (c == '"' || c == '\'')) {
+                quoteChar = c
+            } else if (quoteChar == c) {
+                quoteChar = null
+            } else if (quoteChar == null) {
+                when (c) {
+                    '[', '(', '{' -> depth++
+                    ']', ')', '}' -> if (depth > 0) depth--
+                    ';' -> if (depth == 0) {
+                        out += line.substring(start, i)
+                        start = i + 1
+                    }
                 }
-                else -> Unit
             }
         }
         out += line.substring(start)
@@ -110,9 +138,16 @@ object FlowchartParser {
     private class State {
         var direction: Direction = Direction.TB
         val nodes = LinkedHashMap<String, FlowNode>()
+        val explicitNodeIds = HashSet<String>()
         val edges = mutableListOf<FlowEdge>()
         val subgraphs = mutableListOf<Subgraph>()
         private val subgraphStack = ArrayDeque<String>()
+        private val classDefs = HashMap<String, NodeStyle>()
+        private val nodeClasses = HashMap<String, MutableList<String>>()
+        private val explicitNodeStyles = HashMap<String, NodeStyle>()
+        private var defaultLinkStyle: EdgeStyle? = null
+        private val linkStyles = HashMap<Int, EdgeStyle>()
+        private val edgeIds = HashSet<String>()
 
         fun statement(stmt: String, lineNo: Int) {
             val lower = stmt.lowercase()
@@ -123,11 +158,46 @@ object FlowchartParser {
                 }
                 lower.startsWith("subgraph") -> subgraph(stmt.substring("subgraph".length).trim(), lineNo)
                 lower.startsWith("direction") -> direction(stmt.substring("direction".length).trim(), lineNo)
-                lower.startsWith("classdef") || lower.startsWith("class ") ||
-                    lower.startsWith("click") || lower.startsWith("linkstyle") -> Unit // accepted, ignored in v1
+                lower.startsWith("classdef ") -> classDef(stmt.substring("classdef ".length).trim(), lineNo)
+                lower.startsWith("class ") -> classAssign(stmt.substring("class ".length).trim())
+                lower.startsWith("linkstyle ") -> linkStyle(stmt.substring("linkstyle ".length).trim())
+                lower.startsWith("click ") || lower.startsWith("click\t") -> Unit
                 lower.startsWith("style ") -> style(stmt.substring("style ".length).trim(), lineNo)
                 else -> chain(stmt, lineNo)
             }
+        }
+
+        fun build(): Flowchart {
+            val subgraphIds = subgraphs.map { it.id }.toSet()
+            // If an edge references a subgraph id directly (e.g. `outside --> sg1`) and
+            // `sg1` was never declared as a real node with its own label/shape, drop the
+            // synthetic node entry and keep the subgraph id on the edge so layout can
+            // route and attach the edge to the subgraph boundary box.
+            val pureSubgraphs = subgraphIds.filter { it !in explicitNodeIds }.toSet()
+            for (sgId in pureSubgraphs) {
+                nodes.remove(sgId)
+            }
+            for (eid in edgeIds) {
+                if (eid !in explicitNodeIds) nodes.remove(eid)
+            }
+            val defaultClassStyle = classDefs["default"]
+            val resolvedNodes = nodes.values.map { node ->
+                var merged: NodeStyle? = defaultClassStyle
+                for (cls in nodeClasses[node.id].orEmpty()) {
+                    val def = classDefs[cls] ?: continue
+                    merged = merged?.merge(def) ?: def
+                }
+                val explicit = explicitNodeStyles[node.id]
+                if (explicit != null) {
+                    merged = merged?.merge(explicit) ?: explicit
+                }
+                if (merged != null) node.copy(style = merged) else node
+            }
+            val resolvedEdges = edges.mapIndexed { index, edge ->
+                val style = defaultLinkStyle?.merge(linkStyles[index]) ?: linkStyles[index]
+                edge.copy(style = style)
+            }
+            return Flowchart(direction, resolvedNodes, resolvedEdges, subgraphs)
         }
 
         private fun subgraph(rest: String, lineNo: Int) {
@@ -159,16 +229,13 @@ object FlowchartParser {
             }
         }
 
-        private fun style(rest: String, lineNo: Int) {
-            val space = rest.indexOf(' ')
-            if (space < 0) throw MaradonaParseException(lineNo, "Malformed style statement")
-            val id = rest.substring(0, space).trim()
+        private fun parseNodeStyle(rawProps: String): NodeStyle {
             var style = NodeStyle()
-            for (part in rest.substring(space + 1).split(',')) {
+            for (part in rawProps.split(',')) {
                 val kv = part.split(':', limit = 2)
                 if (kv.size != 2) continue
                 val key = kv[0].trim().lowercase()
-                val value = kv[1].trim()
+                val value = kv[1].trim().removeSuffix(";")
                 style = when (key) {
                     "fill" -> style.copy(fill = value)
                     "stroke" -> style.copy(stroke = value)
@@ -177,8 +244,67 @@ object FlowchartParser {
                     else -> style
                 }
             }
-            val node = register(NodeRef(id, null, null))
-            nodes[id] = node.copy(style = style)
+            return style
+        }
+
+        private fun classDef(rest: String, lineNo: Int) {
+            val space = rest.indexOfFirst { it.isWhitespace() }
+            if (space < 0) throw MaradonaParseException(lineNo, "Malformed classDef statement")
+            val names = rest.substring(0, space).split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            val style = parseNodeStyle(rest.substring(space + 1))
+            for (name in names) {
+                classDefs[name] = classDefs[name]?.merge(style) ?: style
+            }
+        }
+
+        private fun classAssign(rest: String) {
+            val space = rest.indexOfFirst { it.isWhitespace() }
+            if (space < 0) return
+            val nodeIds = rest.substring(0, space).split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            val classNames = rest.substring(space + 1).removeSuffix(";").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            for (id in nodeIds) {
+                val list = nodeClasses.getOrPut(id) { mutableListOf() }
+                for (cls in classNames) if (cls !in list) list += cls
+            }
+        }
+
+        private fun linkStyle(rest: String) {
+            val space = rest.indexOfFirst { it.isWhitespace() }
+            if (space < 0) return
+            val targets = rest.substring(0, space).split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            var style = EdgeStyle()
+            for (part in rest.substring(space + 1).split(',')) {
+                val kv = part.split(':', limit = 2)
+                if (kv.size != 2) continue
+                val key = kv[0].trim().lowercase()
+                val value = kv[1].trim().removeSuffix(";")
+                style = when (key) {
+                    "stroke" -> style.copy(stroke = value)
+                    "stroke-width" -> style.copy(strokeWidth = value)
+                    else -> style
+                }
+            }
+            for (t in targets) {
+                if (t.equals("default", ignoreCase = true)) {
+                    defaultLinkStyle = defaultLinkStyle?.merge(style) ?: style
+                } else {
+                    val idx = t.toIntOrNull() ?: continue
+                    linkStyles[idx] = linkStyles[idx]?.merge(style) ?: style
+                }
+            }
+        }
+
+        private fun style(rest: String, lineNo: Int) {
+            val space = rest.indexOfFirst { it.isWhitespace() }
+            if (space < 0) throw MaradonaParseException(lineNo, "Malformed style statement")
+            val ids = rest.substring(0, space).split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            val style = parseNodeStyle(rest.substring(space + 1))
+            for (id in ids) {
+                if (id !in subgraphs.map { it.id }) {
+                    register(NodeRef(id, null, null))
+                }
+                explicitNodeStyles[id] = explicitNodeStyles[id]?.merge(style) ?: style
+            }
         }
 
         /** Parses `A & B --> C --> D & E` style chains, or a lone node. */
@@ -190,6 +316,7 @@ object FlowchartParser {
                 if (pos >= stmt.length) break
                 val edge = EdgeReader.read(stmt, pos, lineNo)
                     ?: throw MaradonaParseException(lineNo, "Expected an edge at: ${stmt.substring(pos)}")
+                edge.edgeId?.let { edgeIds += it }
                 pos = edge.endPos
                 val group = readGroup(stmt, pos, lineNo)
                 pos = group.second
@@ -216,6 +343,18 @@ object FlowchartParser {
         }
 
         private fun register(ref: NodeRef): FlowNode {
+            if (ref.id in edgeIds && ref.label == null && ref.shape == null) {
+                return FlowNode(id = ref.id)
+            }
+            if (ref.label != null || ref.shape != null || subgraphStack.isNotEmpty()) {
+                if (ref.id !in subgraphs.map { it.id } || ref.label != null || ref.shape != null) {
+                    explicitNodeIds += ref.id
+                }
+            }
+            if (ref.className != null) {
+                val list = nodeClasses.getOrPut(ref.id) { mutableListOf() }
+                if (ref.className !in list) list += ref.className
+            }
             val existing = nodes[ref.id]
             val node = when {
                 existing == null -> FlowNode(
@@ -247,6 +386,7 @@ internal data class NodeRef(
     val label: String?,
     val shape: NodeShape?,
     val endPos: Int = 0,
+    val className: String? = null,
 )
 
 internal object NodeRefReader {
@@ -274,12 +414,21 @@ internal object NodeRefReader {
             val end = s.indexOf('"', pos + 1)
             if (end < 0) throw MaradonaParseException(lineNo, "Unterminated quote")
             val text = s.substring(pos + 1, end)
-            return NodeRef(text, text, null, end + 1)
+            return withClassSuffix(s, NodeRef(text, text, null, end + 1))
         }
         val idStart = pos
         while (pos < s.length && (s[pos].isLetterOrDigit() || s[pos] == '_' || s[pos] == '-')) pos++
         if (pos == idStart) throw MaradonaParseException(lineNo, "Expected a node id at: ${s.substring(startPos)}")
         val id = s.substring(idStart, pos)
+
+        // Mermaid v2 `id@{ shape: ..., label: "..." }` metadata block
+        if (s.startsWith("@{", pos)) {
+            val closeAt = findClose(s, pos + 2, "}")
+                ?: throw MaradonaParseException(lineNo, "Unclosed '@{' for '$id'")
+            val body = s.substring(pos + 2, closeAt)
+            val (label, shape) = parseMetadataBlock(body)
+            return withClassSuffix(s, NodeRef(id, label, shape, closeAt + 1))
+        }
 
         // Slash shapes share openers: [/..\] trapezoid, [/.../] parallelogram, etc.
         if (s.startsWith("[/", pos) || s.startsWith("[\\", pos)) {
@@ -296,7 +445,7 @@ internal object NodeRefReader {
                 openSlash -> NodeShape.Trapezoid
                 else -> NodeShape.TrapezoidAlt
             }
-            return NodeRef(id, cleanLabel(s.substring(contentStart, closeAt)), shape, closeAt + 2)
+            return withClassSuffix(s, NodeRef(id, cleanLabel(s.substring(contentStart, closeAt)), shape, closeAt + 2))
         }
 
         for (spec in specs) {
@@ -304,24 +453,88 @@ internal object NodeRefReader {
                 val contentStart = pos + spec.open.length
                 val closeAt = findClose(s, contentStart, spec.close)
                     ?: throw MaradonaParseException(lineNo, "Unclosed node shape for '$id'")
-                return NodeRef(id, cleanLabel(s.substring(contentStart, closeAt)), spec.shape, closeAt + spec.close.length)
+                return withClassSuffix(
+                    s,
+                    NodeRef(id, cleanLabel(s.substring(contentStart, closeAt)), spec.shape, closeAt + spec.close.length),
+                )
             }
         }
         if (pos < s.length && s[pos] == '[') {
             val closeAt = findClose(s, pos + 1, "]")
                 ?: throw MaradonaParseException(lineNo, "Unclosed '[' for '$id'")
-            return NodeRef(id, cleanLabel(s.substring(pos + 1, closeAt)), NodeShape.Rect, closeAt + 1)
+            return withClassSuffix(s, NodeRef(id, cleanLabel(s.substring(pos + 1, closeAt)), NodeShape.Rect, closeAt + 1))
         }
-        return NodeRef(id, null, null, pos)
+        return withClassSuffix(s, NodeRef(id, null, null, pos))
+    }
+
+    private fun withClassSuffix(s: String, ref: NodeRef): NodeRef {
+        if (!s.startsWith(":::", ref.endPos)) return ref
+        var p = ref.endPos + 3
+        val start = p
+        while (p < s.length && (s[p].isLetterOrDigit() || s[p] == '_' || s[p] == '-')) p++
+        val cls = s.substring(start, p).takeIf { it.isNotEmpty() }
+        return ref.copy(endPos = p, className = cls)
+    }
+
+    private fun parseMetadataBlock(body: String): Pair<String?, NodeShape?> {
+        var label: String? = null
+        var shape: NodeShape? = null
+        var inQuote = false
+        var quoteChar = '"'
+        val parts = mutableListOf<String>()
+        var start = 0
+        for (i in body.indices) {
+            val c = body[i]
+            if (!inQuote && (c == '"' || c == '\'')) {
+                inQuote = true
+                quoteChar = c
+            } else if (inQuote && c == quoteChar) {
+                inQuote = false
+            } else if (!inQuote && c == ',') {
+                parts += body.substring(start, i)
+                start = i + 1
+            }
+        }
+        parts += body.substring(start)
+        for (part in parts) {
+            val kv = part.split(':', limit = 2)
+            if (kv.size != 2) continue
+            val k = kv[0].trim().lowercase()
+            val v = kv[1].trim().removeSurrounding("\"").removeSurrounding("'")
+            when (k) {
+                "label" -> label = cleanLabel(v)
+                "shape" -> shape = mapShapeAlias(v)
+            }
+        }
+        return label to shape
+    }
+
+    private fun mapShapeAlias(alias: String): NodeShape? = when (alias.trim().lowercase()) {
+        "rect", "rectangle", "proc", "process" -> NodeShape.Rect
+        "rounded", "event" -> NodeShape.RoundedRect
+        "stadium", "pill", "terminal" -> NodeShape.Stadium
+        "subproc", "subprocess", "subroutine", "fr-rect", "framed-rectangle" -> NodeShape.Subroutine
+        "cyl", "cylinder", "db", "database", "lin-cyl", "das", "h-cyl" -> NodeShape.Cylinder
+        "circle", "sm-circ", "f-circ" -> NodeShape.Circle
+        "dbl-circ", "double-circle", "fr-circ", "framed-circle", "cross-circ" -> NodeShape.DoubleCircle
+        "diam", "diamond", "decision" -> NodeShape.Diamond
+        "hex", "hexagon", "prepare" -> NodeShape.Hexagon
+        "lean-r", "lean-right", "in-out" -> NodeShape.Parallelogram
+        "lean-l", "lean-left", "out-in" -> NodeShape.ParallelogramAlt
+        "trap-b", "trapezoid-bottom", "priority" -> NodeShape.Trapezoid
+        "trap-t", "trapezoid-top", "manual", "sl-rect", "curv-trap" -> NodeShape.TrapezoidAlt
+        "odd", "asymmetric", "flag" -> NodeShape.Asymmetric
+        else -> NodeShape.Rect
     }
 
     private fun findClose(s: String, from: Int, close: String): Int? {
-        var inQuote = false
+        var quoteChar: Char? = null
         var i = from
         while (i < s.length) {
             val c = s[i]
-            if (c == '"') inQuote = !inQuote
-            if (!inQuote && s.startsWith(close, i)) return i
+            if (quoteChar == null && (c == '"' || c == '\'')) quoteChar = c
+            else if (quoteChar == c) quoteChar = null
+            if (quoteChar == null && s.startsWith(close, i)) return i
             i++
         }
         return null
@@ -336,6 +549,9 @@ internal object NodeRefReader {
         if (text.length >= 2 && text.first() == '"' && text.last() == '"') {
             text = text.substring(1, text.length - 1).replace("\\\"", "\"")
         }
+        if (text.length >= 2 && text.first() == '`' && text.last() == '`') {
+            text = text.substring(1, text.length - 1)
+        }
         text = text
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
             .replace(Regex("(?i)<b>"), "**").replace(Regex("(?i)</b>"), "**")
@@ -343,7 +559,8 @@ internal object NodeRefReader {
             .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
             .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
             .replace(Regex("<[^>]+>"), "")
-            .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
+            .replace("&quot;", "\"").replace("#quot;", "\"")
+            .replace("&#39;", "'").replace("&apos;", "'")
             .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
         return text.trim()
     }
@@ -355,6 +572,7 @@ internal data class EdgeSpec(
     val endHead: ArrowHead,
     val label: String?,
     val endPos: Int,
+    val edgeId: String? = null,
 )
 
 internal object EdgeReader {
@@ -363,15 +581,28 @@ internal object EdgeReader {
         var pos = startPos
         while (pos < s.length && s[pos].isWhitespace()) pos++
         if (pos >= s.length) return null
+        // Optional Mermaid v11 edge ID prefix, e.g. `e1@-->`
+        var edgeId: String? = null
+        val atIdx = s.indexOf('@', pos)
+        if (atIdx > pos && s.substring(pos, atIdx).all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
+            edgeId = s.substring(pos, atIdx)
+            pos = atIdx + 1
+        }
         var startHead = ArrowHead.None
-        if (s[pos] == '<') { startHead = ArrowHead.Arrow; pos++ }
+        if (pos + 1 < s.length && (s[pos + 1] == '-' || s[pos + 1] == '=' || s[pos + 1] == '~')) {
+            when (s[pos]) {
+                '<' -> { startHead = ArrowHead.Arrow; pos++ }
+                'o' -> { startHead = ArrowHead.Circle; pos++ }
+                'x' -> { startHead = ArrowHead.Cross; pos++ }
+            }
+        }
 
         val stroke: EdgeStroke
         var openEnded = false // true for "--", "==", "-." awaiting a label or closer
         when {
             s.startsWith("~~~", pos) -> {
                 while (pos < s.length && s[pos] == '~') pos++
-                return EdgeSpec(EdgeStroke.Invisible, startHead, ArrowHead.None, null, pos)
+                return EdgeSpec(EdgeStroke.Invisible, startHead, ArrowHead.None, null, pos, edgeId)
             }
             s.startsWith("-.", pos) -> { stroke = EdgeStroke.Dotted; pos += 2; openEnded = true }
             s[pos] == '=' -> {
@@ -416,7 +647,7 @@ internal object EdgeReader {
                     label = NodeRefReader.cleanLabel(text)
                     endHead = headOf(bestCloser.last())
                     pos = bestAt + 1 + bestCloser.length
-                    return withPipeLabel(s, pos, stroke, startHead, endHead, label)
+                    return withPipeLabel(s, pos, stroke, startHead, endHead, label, edgeId)
                 }
             }
         }
@@ -433,7 +664,7 @@ internal object EdgeReader {
         if (stroke == EdgeStroke.Solid && !openEnded && endHead == ArrowHead.None && startHead == ArrowHead.None) {
             // plain "---"
         }
-        return withPipeLabel(s, pos, stroke, startHead, defaultHead(stroke, endHead, openEnded), label)
+        return withPipeLabel(s, pos, stroke, startHead, defaultHead(stroke, endHead, openEnded), label, edgeId)
     }
 
     private fun defaultHead(stroke: EdgeStroke, parsed: ArrowHead, openEnded: Boolean): ArrowHead {
@@ -446,6 +677,7 @@ internal object EdgeReader {
     private fun withPipeLabel(
         s: String, posIn: Int, stroke: EdgeStroke,
         startHead: ArrowHead, endHead: ArrowHead, label: String?,
+        edgeId: String?,
     ): EdgeSpec {
         var pos = posIn
         while (pos < s.length && s[pos].isWhitespace()) pos++
@@ -458,7 +690,7 @@ internal object EdgeReader {
             }
         }
         // "-->" should be an arrow: if the char before pos was '>', headOf handled it.
-        return EdgeSpec(stroke, startHead, endHead, resultLabel, pos)
+        return EdgeSpec(stroke, startHead, endHead, resultLabel, pos, edgeId)
     }
 
     private fun headOf(c: Char): ArrowHead = when (c) {

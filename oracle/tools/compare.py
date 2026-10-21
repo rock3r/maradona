@@ -80,8 +80,8 @@ MIN_BOX_SCALE = 0.5
 MIN_BG_BRIGHTNESS = 180
 # the renderer picks its scale from the golden, so one content axis must line up
 AXIS_MATCH_TOLERANCE = 0.03
-# viewer composites are downscaled to this long edge
-DISPLAY_MAX = 1600
+# keep viewer assets at 1:1 native pixels up to browser texture limits
+DISPLAY_MAX = 16384
 WHITE = (255, 255, 255)
 
 
@@ -182,19 +182,6 @@ def stitch(tiles_imgs, fractions, canvas, view, zoom):
         y = round(window_origin(height, view[1], fy))
         out.paste(tile, (x, y))
     return out
-
-
-def centre_tile(tiles_imgs, total):
-    """The middle tile of a device capture: overlapping windows cannot be joined."""
-    return tiles_imgs[len(tiles_imgs) // 2]
-
-
-def display_asset(img):
-    w, h = img.size
-    if max(w, h) <= DISPLAY_MAX:
-        return img
-    s = DISPLAY_MAX / max(w, h)
-    return img.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
 
 
 def mosaic(tiles_imgs, fractions):

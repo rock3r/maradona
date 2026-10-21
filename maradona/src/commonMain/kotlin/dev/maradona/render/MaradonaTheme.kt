@@ -26,7 +26,7 @@ data class MaradonaTheme(
     val fontFamily: FontFamily = FontFamily.Default,
     val nodeFontSize: TextUnit = 14.sp,
     val edgeLabelFontSize: TextUnit = 12.sp,
-    val subgraphFontSize: TextUnit = 12.sp,
+    val subgraphFontSize: TextUnit = 14.sp,
 ) {
     companion object {
         fun light(): MaradonaTheme = MaradonaTheme(
@@ -35,11 +35,11 @@ data class MaradonaTheme(
             nodeBorder = Color(0xFF8A8878),
             nodeText = Color(0xFF100F0F),
             edge = Color(0xFF100F0F),
-            edgeLabelText = Color(0xFF44423A),
+            edgeLabelText = Color(0xFF100F0F),
             edgeLabelBackground = Color(0xFFFFFCF0),
             subgraphFill = Color(0xFFEAE6D8),
-            subgraphBorder = Color(0xFFCECDC3),
-            subgraphText = Color(0xFF6F6E69),
+            subgraphBorder = Color(0xFF8A8878),
+            subgraphText = Color(0xFF100F0F),
             error = Color(0xFFB3261E),
         )
 

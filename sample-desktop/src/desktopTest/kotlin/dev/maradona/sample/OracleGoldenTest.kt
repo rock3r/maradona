@@ -159,9 +159,9 @@ class OracleGoldenTest {
         """.trimIndent() + "\n"
     }
 
-    /** Pan fractions that cover `scaled` px in `view` px windows, capped like the tools. */
+    /** Pan fractions that cover `scaled` px in `view` px windows without gaps. */
     private fun coverFractions(scaled: Int, view: Int): List<Float> {
-        val n = if (scaled <= view) 1 else maxOf(2, minOf(8, kotlin.math.ceil(scaled / view.toDouble()).toInt()))
+        val n = if (scaled <= view) 1 else maxOf(2, kotlin.math.ceil(scaled / view.toDouble()).toInt())
         return if (n == 1) listOf(0.5f) else (0 until n).map { it.toFloat() / (n - 1) }
     }
 
