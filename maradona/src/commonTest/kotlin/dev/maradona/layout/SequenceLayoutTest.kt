@@ -186,4 +186,43 @@ class SequenceLayoutTest {
         val boxLabel = requireNotNull(box.labelRect)
         assertTrue(boxLabel.bottom <= pb.topRect.y)
     }
+
+    @Test
+    fun multilineBlockHeaderNestedActivationsAndWideSpanMessageStayInsideBounds() {
+        val diagram = SequenceParser.parse(
+            """
+            sequenceDiagram
+              participant A
+              participant B
+              participant C
+              A->>+B: Start
+              B->>+B: Nested
+              loop Line 1<br/>Line 2<br/>Line 3
+                A->>C: Very wide message spanning from A to C across B without clipping
+              end
+              B-->>-B: Done nested
+              B-->>-A: Done outer
+            """.trimIndent(),
+        )
+        val layout = SequenceLayout.layout(
+            diagram = diagram,
+            participantLabelSize = { p -> DiagramSize(p.label.length * 8f, 20f) },
+            messageLabelSize = { _, msg -> DiagramSize(msg.text.length * 8f, 18f) },
+            noteTextSize = { _, note -> DiagramSize(note.text.length * 7f, 18f) },
+            blockLabelSize = { _, _, text ->
+                val lines = text.split("\n")
+                DiagramSize(lines.maxOf { it.length } * 7f, lines.size * 16f)
+            },
+        )
+        val loop = layout.blocks.single()
+        val headerLabel = requireNotNull(loop.labelRect)
+        assertTrue(headerLabel.y >= loop.rect.y, "Multiline block header $headerLabel starts above block ${loop.rect}")
+        val wideMsg = layout.messages.first { it.statement.from == "A" && it.statement.to == "C" }
+        assertTrue(
+            loop.rect.x <= wideMsg.labelRect.x && loop.rect.right >= wideMsg.labelRect.right,
+            "Block ${loop.rect} does not enclose wide message label ${wideMsg.labelRect}",
+        )
+        // Outer activation (depth 0) comes before nested activation (depth 1) for z-order.
+        assertEquals(listOf(0, 1), layout.activations.map { it.depth })
+    }
 }

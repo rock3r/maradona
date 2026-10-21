@@ -356,7 +356,7 @@ object SequenceLayout {
                 boxes = positionedBoxes.map {
                     it.copy(rect = it.rect.shifted(), labelRect = it.labelRect?.shifted())
                 },
-                activations = finishedActivations.map { it.copy(rect = it.rect.shifted()) },
+                activations = finishedActivations.sortedBy { it.depth }.map { it.copy(rect = it.rect.shifted()) },
                 messages = positionedMessages.map {
                     it.copy(
                         startX = it.startX + dx,
@@ -422,11 +422,21 @@ object SequenceLayout {
                         if (fromIdx == toIdx) {
                             val need = msgWidth / 2f + options.actorMargin - widths[fromIdx] / 2f
                             margins[fromIdx] = max(margins[fromIdx], need)
-                        } else if (abs(fromIdx - toIdx) == 1) {
+                        } else {
                             val left = min(fromIdx, toIdx)
                             val right = max(fromIdx, toIdx)
-                            val need = msgWidth + options.actorMargin - widths[left] / 2f - widths[right] / 2f
-                            margins[left] = max(margins[left], need)
+                            val neededSpan = msgWidth + options.actorMargin
+                            var currentSpan = widths[left] / 2f + widths[right] / 2f
+                            for (i in left until right) {
+                                currentSpan += margins[i]
+                                if (i > left) currentSpan += widths[i]
+                            }
+                            if (neededSpan > currentSpan) {
+                                val addPerGap = (neededSpan - currentSpan) / (right - left)
+                                for (i in left until right) {
+                                    margins[i] += addPerGap
+                                }
+                            }
                         }
                     }
                     is SequenceStatement.Note -> {
@@ -594,7 +604,7 @@ object SequenceLayout {
                                 height = labelSz.height,
                             )
                             includeBounds(min(startX, labelRect.x), labelY, max(stopX, labelRect.right), lineY)
-                            recordX(min(fromLeft, toLeft), max(fromRight, toRight))
+                            recordX(min(min(fromLeft, toLeft), labelRect.x), max(max(fromRight, toRight), labelRect.right))
                         }
 
                         if (stmt.activateTarget) {
@@ -672,7 +682,8 @@ object SequenceLayout {
                         bump(options.boxMargin)
                         val blockStartY = verticalPos
                         val headerTextSize = stmt.label?.let { blockLabelSize(bIndex, 0, "[$it]") }
-                        val headerH = max(options.labelBoxHeight, headerTextSize?.height ?: 0f) + options.boxTextMargin
+                        val headerBoxH = max(options.labelBoxHeight, headerTextSize?.height ?: 0f)
+                        val headerH = headerBoxH + options.boxTextMargin
                         bump(headerH)
 
                         var blockMinX = Float.POSITIVE_INFINITY
@@ -728,7 +739,7 @@ object SequenceLayout {
                             val centeredX = (availStart + blockMaxX - it.width) / 2f
                             DiagramRect(
                                 x = max(availStart, centeredX),
-                                y = blockStartY + (options.labelBoxHeight - it.height) / 2f,
+                                y = blockStartY + (headerBoxH - it.height) / 2f,
                                 width = it.width,
                                 height = it.height,
                             )
