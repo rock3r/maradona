@@ -56,7 +56,11 @@ object SequenceParser {
             val trimmedRaw = rawLine.trim()
             if (!headerSeen) {
                 if (inFrontmatter) {
-                    if (trimmedRaw == "---" || trimmedRaw == "...") inFrontmatter = false
+                    if (trimmedRaw == "---" || trimmedRaw == "...") {
+                        inFrontmatter = false
+                    } else if (trimmedRaw.lowercase().startsWith("title:")) {
+                        state.title = NodeRefReader.cleanLabel(trimmedRaw.substring("title:".length))
+                    }
                     continue
                 }
                 if (trimmedRaw == "---") {

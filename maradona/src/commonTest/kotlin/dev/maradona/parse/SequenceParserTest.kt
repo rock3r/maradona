@@ -32,6 +32,7 @@ class SequenceParserTest {
               Note over Customer,API: One order, one transaction
             """.trimIndent(),
         )
+        assertEquals("Order Flow", diagram.title)
         assertTrue(diagram.autonumber)
         assertEquals(listOf("Customer", "Web", "API"), diagram.participants.map { it.id })
         assertEquals(ParticipantKind.Actor, diagram.participants[0].kind)
