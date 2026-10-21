@@ -226,12 +226,24 @@ object ClassLayout {
 
         // Build namespace cluster rectangles bottom-up in post-transform coordinates so
         // each namespace encloses its member classes, notes, and child namespaces, plus
-        // top room for the namespace's title label. Also push any non-member node that
-        // lands inside a namespace's bounding box outside the namespace border.
+        // top room for the namespace's title label. Pass 1 evicts any non-member nodes
+        // (and sibling namespaces) that overlap a namespace box; Pass 2 recomputes all
+        // namespace boxes from the final displaced node coordinates.
+        val nsById = diagram.namespaces.associateBy { it.id }
+        fun externalNsPadX(nodeNsId: String?, memberNsIds: Set<String>): Float {
+            var depth = 0
+            var cur = nodeNsId
+            while (cur != null && cur !in memberNsIds) {
+                depth++
+                cur = nsById[cur]?.parentId
+            }
+            return depth * options.subgraphPaddingX
+        }
+
         val builtNsRects = HashMap<String, DiagramRect>()
-        fun buildNamespaceRect(ns: ClassNamespace): DiagramRect? {
+        fun buildNamespaceRect(ns: ClassNamespace, evict: Boolean): DiagramRect? {
             builtNsRects[ns.id]?.let { return it }
-            val childNsRects = diagram.namespaces.filter { it.parentId == ns.id }.mapNotNull { buildNamespaceRect(it) }
+            val childNsRects = diagram.namespaces.filter { it.parentId == ns.id }.mapNotNull { buildNamespaceRect(it, evict) }
             val directClassRects = diagram.classes.filter { it.namespaceId == ns.id }.mapNotNull { finalRects["c:${it.id}"] }
             val directNoteRects = diagram.notes.filter { it.namespaceId == ns.id }.mapNotNull { finalRects["n:${it.id}"] }
             val syntheticLeaf = if (directClassRects.isEmpty() && directNoteRects.isEmpty() && childNsRects.isEmpty()) {
@@ -255,47 +267,63 @@ object ClassLayout {
             val bottom = memberRects.maxOf { it.bottom } + padBottom
             val nsRect = DiagramRect(left, top, right - left, bottom - top)
 
-            // Evict any non-member class or note whose box overlaps `nsRect`, shifting
-            // subsequent non-member nodes on the same vertical band in lockstep so
-            // displaced nodes preserve their horizontal separation.
-            val memberNsIds = enclosedNamespaceIds(ns.id)
-            val gap = options.nodeGap * 0.5f
-            val nonMemberKeys = buildList {
-                for (c in diagram.classes) if (c.namespaceId !in memberNsIds) add("c:${c.id}")
-                for (n in diagram.notes) if (n.namespaceId !in memberNsIds) add("n:${n.id}")
-            }
-            fun verticalOverlap(a: DiagramRect, b: DiagramRect): Boolean =
-                a.y < b.bottom && b.y < a.bottom
-
-            val overlappingRight = nonMemberKeys
-                .mapNotNull { k -> finalRects[k]?.let { k to it } }
-                .filter { (_, r) -> rectsOverlap(r, nsRect) && r.centerX >= nsRect.centerX }
-                .minByOrNull { (_, r) -> r.x }
-            if (overlappingRight != null) {
-                val minOverlapX = overlappingRight.second.x
-                val shiftRight = (nsRect.right + gap) - minOverlapX
-                if (shiftRight > 0f) {
-                    for (k in nonMemberKeys) {
+            if (evict) {
+                val memberNsIds = enclosedNamespaceIds(ns.id)
+                val gap = options.nodeGap * 0.5f
+                data class NonMember(val key: String, val rect: DiagramRect, val paddedRect: DiagramRect)
+                val nonMembers = buildList {
+                    for (c in diagram.classes) {
+                        if (c.namespaceId in memberNsIds) continue
+                        val k = "c:${c.id}"
                         val r = finalRects[k] ?: continue
-                        if (r.x >= minOverlapX - 0.5f && verticalOverlap(r, nsRect)) {
-                            finalRects[k] = r.copy(x = r.x + shiftRight)
+                        val pad = externalNsPadX(c.namespaceId, memberNsIds)
+                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
+                    }
+                    for (n in diagram.notes) {
+                        if (n.namespaceId in memberNsIds) continue
+                        val k = "n:${n.id}"
+                        val r = finalRects[k] ?: continue
+                        val pad = externalNsPadX(n.namespaceId, memberNsIds)
+                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
+                    }
+                }
+                fun verticalOverlap(a: DiagramRect, b: DiagramRect): Boolean =
+                    a.y < b.bottom && b.y < a.bottom
+
+                val overlappingRight = nonMembers
+                    .filter { rectsOverlap(it.paddedRect, nsRect) && it.rect.centerX >= nsRect.centerX }
+                    .minByOrNull { it.paddedRect.x }
+                if (overlappingRight != null) {
+                    val minOverlapX = overlappingRight.paddedRect.x
+                    val shiftRight = (nsRect.right + gap) - minOverlapX
+                    if (shiftRight > 0f) {
+                        for (nm in nonMembers) {
+                            val r = finalRects[nm.key] ?: continue
+                            if (nm.paddedRect.x >= minOverlapX - 0.5f && verticalOverlap(nm.paddedRect, nsRect)) {
+                                finalRects[nm.key] = r.copy(x = r.x + shiftRight)
+                            }
                         }
                     }
                 }
-            }
 
-            val overlappingLeft = nonMemberKeys
-                .mapNotNull { k -> finalRects[k]?.let { k to it } }
-                .filter { (_, r) -> rectsOverlap(r, nsRect) && r.centerX < nsRect.centerX }
-                .maxByOrNull { (_, r) -> r.right }
-            if (overlappingLeft != null) {
-                val maxOverlapRight = overlappingLeft.second.right
-                val shiftLeft = maxOverlapRight - (nsRect.x - gap)
-                if (shiftLeft > 0f) {
-                    for (k in nonMemberKeys) {
-                        val r = finalRects[k] ?: continue
-                        if (r.right <= maxOverlapRight + 0.5f && verticalOverlap(r, nsRect)) {
-                            finalRects[k] = r.copy(x = r.x - shiftLeft)
+                val overlappingLeft = nonMembers
+                    .mapNotNull { nm ->
+                        val r = finalRects[nm.key] ?: return@mapNotNull null
+                        val pad = (nm.paddedRect.width - nm.rect.width) / 2f
+                        nm.copy(rect = r, paddedRect = DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f))
+                    }
+                    .filter { rectsOverlap(it.paddedRect, nsRect) && it.rect.centerX < nsRect.centerX }
+                    .maxByOrNull { it.paddedRect.right }
+                if (overlappingLeft != null) {
+                    val maxOverlapRight = overlappingLeft.paddedRect.right
+                    val shiftLeft = maxOverlapRight - (nsRect.x - gap)
+                    if (shiftLeft > 0f) {
+                        for (nm in nonMembers) {
+                            val r = finalRects[nm.key] ?: continue
+                            val pad = (nm.paddedRect.width - nm.rect.width) / 2f
+                            if (r.right + pad <= maxOverlapRight + 0.5f && verticalOverlap(nm.paddedRect, nsRect)) {
+                                finalRects[nm.key] = r.copy(x = r.x - shiftLeft)
+                            }
                         }
                     }
                 }
@@ -307,19 +335,21 @@ object ClassLayout {
         fun nsDepth(ns: ClassNamespace): Int {
             var d = 0
             var p = ns.parentId
-            val byId = diagram.namespaces.associateBy { it.id }
             while (p != null) {
                 d++
-                p = byId[p]?.parentId
+                p = nsById[p]?.parentId
             }
             return d
         }
-        val positionedNamespaces = diagram.namespaces
-            .sortedBy { nsDepth(it) }
-            .mapNotNull { ns ->
-                val rect = buildNamespaceRect(ns) ?: return@mapNotNull null
-                PositionedClassNamespace(ns, rect)
-            }
+        val sortedNamespaces = diagram.namespaces.sortedBy { nsDepth(it) }
+        for (ns in sortedNamespaces) {
+            buildNamespaceRect(ns, evict = true)
+        }
+        builtNsRects.clear()
+        val positionedNamespaces = sortedNamespaces.mapNotNull { ns ->
+            val rect = buildNamespaceRect(ns, evict = false) ?: return@mapNotNull null
+            PositionedClassNamespace(ns, rect)
+        }
 
         val positionedClasses = diagram.classes.map { c ->
             val m = metricsById.getValue(c.id)

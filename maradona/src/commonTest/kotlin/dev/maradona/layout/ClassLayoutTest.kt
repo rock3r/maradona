@@ -112,10 +112,12 @@ class ClassLayoutTest {
         val diagram = ClassParser.parse(
             """
             classDiagram
-              namespace VeryWideEnterpriseNamespaceTitleForTesting {
-                class InsideA
+              namespace First {
+                class OutsideA
               }
-              class OutsideB
+              namespace VeryWideEnterpriseNamespaceTitleForTesting {
+                class InsideB
+              }
               class OutsideC
             """.trimIndent(),
         )
@@ -124,14 +126,19 @@ class ClassLayoutTest {
             classBoxSize = ::fakeMetrics,
             namespaceLabelSize = { ns -> DiagramSize(ns.label.length * 14f, 20f) },
         )
-        val nsRect = layout.namespaces.single().rect
-        val outB = layout.classNode("OutsideB")!!.rect
+        val firstNs = layout.namespaces.first { it.namespace.id == "First" }.rect
+        val wideNs = layout.namespaces.first { it.namespace.id == "VeryWideEnterpriseNamespaceTitleForTesting" }.rect
+        val outA = layout.classNode("OutsideA")!!.rect
+        val inB = layout.classNode("InsideB")!!.rect
         val outC = layout.classNode("OutsideC")!!.rect
-        val bOverlapsNs = outB.x < nsRect.right && nsRect.x < outB.right && outB.y < nsRect.bottom && nsRect.y < outB.bottom
-        val cOverlapsNs = outC.x < nsRect.right && nsRect.x < outC.right && outC.y < nsRect.bottom && nsRect.y < outC.bottom
-        val bOverlapsC = outB.x < outC.right && outC.x < outB.right && outB.y < outC.bottom && outC.y < outB.bottom
-        assertTrue(!bOverlapsNs, "OutsideB ($outB) overlaps namespace ($nsRect)")
-        assertTrue(!cOverlapsNs, "OutsideC ($outC) overlaps namespace ($nsRect)")
-        assertTrue(!bOverlapsC, "OutsideB ($outB) and OutsideC ($outC) stacked on top of each other")
+        // `First` must still enclose `OutsideA` after `VeryWide...` evicts it, and the two sibling namespaces must not overlap.
+        assertTrue(outA.x >= firstNs.x && outA.right <= firstNs.right, "OutsideA ($outA) not inside First ($firstNs)")
+        assertTrue(inB.x >= wideNs.x && inB.right <= wideNs.right, "InsideB ($inB) not inside WideNs ($wideNs)")
+        val nsOverlap = firstNs.x < wideNs.right && wideNs.x < firstNs.right && firstNs.y < wideNs.bottom && wideNs.y < firstNs.bottom
+        val cOverlapsWide = outC.x < wideNs.right && wideNs.x < outC.right && outC.y < wideNs.bottom && wideNs.y < outC.bottom
+        val aOverlapsC = outA.x < outC.right && outC.x < outA.right && outA.y < outC.bottom && outC.y < outA.bottom
+        assertTrue(!nsOverlap, "Sibling namespaces overlap: First ($firstNs) vs WideNs ($wideNs)")
+        assertTrue(!cOverlapsWide, "OutsideC ($outC) overlaps WideNs ($wideNs)")
+        assertTrue(!aOverlapsC, "OutsideA ($outA) and OutsideC ($outC) overlap")
     }
 }
