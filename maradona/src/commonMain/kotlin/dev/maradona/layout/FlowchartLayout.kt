@@ -104,6 +104,7 @@ object FlowchartLayout {
             val dagreEdges = chart.edges
                 .withIndex()
                 .mapNotNull { (index, edge) ->
+                    if (edge.from == edge.to) return@mapNotNull null
                     val from = resolveSubgraphEndpoint(edge.from, isSource = true)
                     val to = resolveSubgraphEndpoint(edge.to, isSource = false)
                     if (from == to || from !in sizesById || to !in sizesById) return@mapNotNull null

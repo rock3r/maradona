@@ -526,17 +526,17 @@ internal object NodeRefReader {
         "rounded", "event" -> NodeShape.RoundedRect
         "stadium", "pill", "terminal" -> NodeShape.Stadium
         "subproc", "subprocess", "subroutine", "fr-rect", "framed-rectangle" -> NodeShape.Subroutine
-        "cyl", "cylinder", "db", "database", "lin-cyl", "das", "h-cyl" -> NodeShape.Cylinder
-        "circle", "sm-circ", "f-circ" -> NodeShape.Circle
-        "dbl-circ", "double-circle", "fr-circ", "framed-circle", "cross-circ" -> NodeShape.DoubleCircle
+        "cyl", "cylinder", "db", "database" -> NodeShape.Cylinder
+        "circle" -> NodeShape.Circle
+        "dbl-circ", "double-circle", "fr-circ", "framed-circle" -> NodeShape.DoubleCircle
         "diam", "diamond", "decision" -> NodeShape.Diamond
         "hex", "hexagon", "prepare" -> NodeShape.Hexagon
         "lean-r", "lean-right", "in-out" -> NodeShape.Parallelogram
         "lean-l", "lean-left", "out-in" -> NodeShape.ParallelogramAlt
         "trap-b", "trapezoid-bottom", "priority" -> NodeShape.Trapezoid
-        "trap-t", "trapezoid-top", "manual", "sl-rect", "curv-trap" -> NodeShape.TrapezoidAlt
-        "odd", "asymmetric", "flag" -> NodeShape.Asymmetric
-        else -> NodeShape.Rect
+        "trap-t", "trapezoid-top", "manual" -> NodeShape.TrapezoidAlt
+        "odd", "asymmetric" -> NodeShape.Asymmetric
+        else -> null
     }
 
     private fun findClose(s: String, from: Int, close: String, allowSingleQuote: Boolean = false): Int? {
