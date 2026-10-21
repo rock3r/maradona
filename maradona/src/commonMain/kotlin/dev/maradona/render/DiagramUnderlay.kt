@@ -68,7 +68,7 @@ fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
  * Uniform cubic B-spline (`d3.curveBasis`) through [points], matching the exact
  * SVG path `d` commands mermaid emits for flowchart edges.
  */
-private fun basisSpline(points: List<DiagramPoint>): Path {
+internal fun basisSpline(points: List<DiagramPoint>): Path {
     val path = Path()
     val n = points.size
     if (n == 0) return path
@@ -181,7 +181,7 @@ private fun trimStart(points: List<DiagramPoint>, distance: Float): List<Diagram
     return result
 }
 
-private fun trimPath(points: List<DiagramPoint>, startBy: Float, endBy: Float): List<DiagramPoint> {
+internal fun trimPath(points: List<DiagramPoint>, startBy: Float, endBy: Float): List<DiagramPoint> {
     var pts = points
     if (endBy > 0f) pts = trimEnd(pts, endBy)
     if (startBy > 0f) pts = trimStart(pts, startBy)

@@ -609,7 +609,7 @@ internal object NodeRefReader {
             .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
             .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
             .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
-            .replace(Regex("<[^>]+>"), "")
+            .replace(Regex("(?i)</?(?:span|div|p|sub|sup|font|small|mark|u|s|del|ins|code)(?:\\s[^>]*)?>"), "")
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
             .replace("&lt;", "<").replace("#lt;", "<")

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
@@ -98,6 +99,8 @@ fun MaradonaDiagram(
     onLayout: (dev.maradona.layout.DiagramLayout) -> Unit = {},
     /** Reports the computed sequence diagram layout (see [MaradonaSequenceLayout.onLayout]). */
     onSequenceLayout: (SequenceDiagramLayout) -> Unit = {},
+    /** Reports the computed class diagram layout (see [MaradonaClassLayout.onLayout]). */
+    onClassLayout: (ClassDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -317,6 +320,16 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 onLayout = onSequenceLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.ClassModel ->
+                            MaradonaClassLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                autoDirection = autoDirection,
+                                layoutOptions = layoutOptions,
+                                availableWidthPx = layoutWidthPx,
+                                onLayout = onClassLayout,
                                 modifier = contentModifier,
                             )
                     }

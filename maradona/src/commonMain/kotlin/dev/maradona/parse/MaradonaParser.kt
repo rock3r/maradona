@@ -1,5 +1,6 @@
 package dev.maradona.parse
 
+import dev.maradona.model.ClassDiagram
 import dev.maradona.model.Flowchart
 import dev.maradona.model.SequenceDiagram
 
@@ -7,12 +8,13 @@ import dev.maradona.model.SequenceDiagram
 sealed interface MaradonaDiagramModel {
     data class FlowchartModel(val chart: Flowchart) : MaradonaDiagramModel
     data class SequenceModel(val diagram: SequenceDiagram) : MaradonaDiagramModel
+    data class ClassModel(val diagram: ClassDiagram) : MaradonaDiagramModel
 }
 
 /**
  * Top-level Mermaid parser that detects the diagram type from the header line
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
- * and dispatches to [FlowchartParser] or [SequenceParser].
+ * and dispatches to [FlowchartParser], [SequenceParser], or [ClassParser].
  */
 object MaradonaParser {
 
@@ -21,6 +23,8 @@ object MaradonaParser {
         return when {
             header.startsWith("sequencediagram") ->
                 MaradonaDiagramModel.SequenceModel(SequenceParser.parse(source))
+            header.startsWith("classdiagram") ->
+                MaradonaDiagramModel.ClassModel(ClassParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

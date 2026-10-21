@@ -97,6 +97,27 @@ private val examples = linkedMapOf(
           VM-->>-UI: Layout ready
           Note over User,UI: Pan & pinch-zoom active
     """.trimIndent(),
+    "Class" to """
+        classDiagram
+          class Customer {
+            +String name
+            +String email
+          }
+          class Order {
+            +String id
+            +total() Money
+          }
+          class LineItem {
+            +int quantity
+          }
+          class Payment {
+            <<interface>>
+            +authorize()* bool
+          }
+          Customer "1" --> "*" Order : places
+          Order "1" *-- "*" LineItem : contains
+          Order ..|> Payment : settled by
+    """.trimIndent(),
 )
 
 private class SampleState(
