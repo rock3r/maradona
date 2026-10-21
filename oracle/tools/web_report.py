@@ -20,6 +20,7 @@ HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="data:,">
 <title>Maradona oracle</title>
 <style>
   :root { --ok: #1a7f37; --ko: #cf222e; --bg: #f6f5ef; --panel: #fff; }
@@ -84,7 +85,8 @@ HTML = """<!DOCTYPE html>
   .row { display: flex; gap: 16px; justify-content: safe center; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
   .row.stack { flex-direction: column; align-items: safe center; }
   .row.split { overflow: hidden; }
-  .row.split .panel { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+  .row.split.stack { align-items: stretch; }
+  .row.split .panel { flex: 1 1 0; min-width: 0; max-width: 100%; display: flex; flex-direction: column; }
   .row.split .panel .scroll { overflow: auto; max-height: 55vh; display: flex;
                               background: #fff; border: 1px solid #ccc6b2; }
   .row.split .panel img { border: none; flex: 0 0 auto; margin: auto; display: block; }
@@ -300,7 +302,7 @@ function render() {
     sliders.hidden = true;
     stage.classList.add('flow');
     stage.classList.remove('split', 'stack');
-    document.querySelectorAll('#tabs button').forEach(b => b.disabled = true);
+    document.querySelectorAll('#tabs button[data-view]').forEach(b => b.disabled = true);
     const w = e.worst;
     meta.textContent = `layout · ${sel.key} · scale ×${e.scale.toFixed(3)} · size ${(w.size * 100).toFixed(1)}% · centre ${(w.centre * 100).toFixed(1)}% · edges ${(w.edges * 100).toFixed(1)}%`;
     if (e.images) {
@@ -318,7 +320,7 @@ function render() {
     applyZoom();
     return;
   }
-  document.querySelectorAll('#tabs button').forEach(b => b.disabled = false);
+  document.querySelectorAll('#tabs button[data-view]').forEach(b => b.disabled = false);
   meta.textContent = `${sel.platform} · ${sel.key} · ${e.mode}` +
     ('mismatch' in e ? ` · pixel diff ${(e.mismatch * 100).toFixed(2)}% (visual only)` : '') +
     ('driftW' in e ? ` · size vs golden W x${e.driftW.toFixed(2)} H x${e.driftH.toFixed(2)}` : '') +
@@ -414,9 +416,9 @@ for (const [platform, entries] of Object.entries(DATA)) {
     side.appendChild(d);
   }
 }
-document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+document.querySelectorAll('#tabs button[data-view]').forEach(b => b.onclick = () => {
   view = b.dataset.view;
-  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('sel', x === b));
+  document.querySelectorAll('#tabs button[data-view]').forEach(x => x.classList.toggle('sel', x === b));
   render();
 });
 document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
@@ -469,8 +471,76 @@ def main() -> None:
         data[platform] = json.loads(report.read_text())
     OUT.mkdir(parents=True, exist_ok=True)
     html = HTML.replace("__DATA__", json.dumps(data))
+    if "__DATA__" in html:
+        raise RuntimeError("unreplaced __DATA__ placeholder in generated HTML")
+    for section, entries in data.items():
+        if not entries:
+            raise RuntimeError(f"empty section in web report: {section}")
+        for key, entry in entries.items():
+            if not entry.get("images") or not entry["images"].get("gold") or not entry["images"].get("ours"):
+                raise RuntimeError(f"missing comparison images for {section}/{key}")
     (OUT / "index.html").write_text(html)
-    print(f"wrote {OUT / 'index.html'}")
+    print(f"wrote {OUT / 'index.html'} ({sum(len(v) for v in data.values())} entries across {list(data.keys())})")
+    _verify_browser_dom()
+
+
+def _verify_browser_dom() -> None:
+    """Headless browser smoke check for zoom, sync-scroll, tabs, and tile controls."""
+    import shutil
+    import subprocess
+    puppeteer_dir = ROOT / "tools" / "node_modules" / "puppeteer"
+    chrome = pathlib.Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    if not shutil.which("node") or not puppeteer_dir.exists() or not chrome.exists():
+        return
+    script = f"""
+const puppeteer = require({json.dumps(str(puppeteer_dir))});
+(async () => {{
+  const browser = await puppeteer.launch({{
+    headless: "new",
+    executablePath: {json.dumps(str(chrome))}
+  }});
+  try {{
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", e => errors.push(e.message));
+    page.on("console", m => {{ if (m.type() === "error") errors.push(m.text()); }});
+    await page.setViewport({{ width: 1400, height: 900 }});
+    const fileUrl = {json.dumps((OUT / "index.html").as_uri())};
+    await page.goto(fileUrl + "#layout/shapes-lr", {{ waitUntil: "load" }});
+    await page.click('#zoom button[data-zoom="100"]');
+    const layoutCheck = await page.evaluate(() => {{
+      const btn100 = document.querySelector('#zoom button[data-zoom="100"]');
+      const scrolls = Array.from(document.querySelectorAll('.row .scroll'));
+      if (scrolls.length === 2) {{
+        scrolls[0].scrollLeft = 400;
+        scrolls[0].dispatchEvent(new Event('scroll'));
+      }}
+      const text = document.body.innerText;
+      return {{
+        disabled: btn100.disabled,
+        selected: btn100.classList.contains('sel'),
+        scrollSync: scrolls.length === 2 && scrolls[0].scrollLeft === 400 && scrolls[1].scrollLeft === 400,
+        hasUndefined: text.includes('undefined') || text.includes('NaN'),
+      }};
+    }});
+    if (layoutCheck.disabled || !layoutCheck.selected || !layoutCheck.scrollSync || layoutCheck.hasUndefined) {{
+      throw new Error("layout viewer check failed: " + JSON.stringify(layoutCheck));
+    }}
+    await page.goto(fileUrl + "#desktop/basic-td-100", {{ waitUntil: "load" }});
+    await page.click('#tabs button[data-view="onion"]');
+    const onionHidden = await page.evaluate(() => document.getElementById('sliders').hidden);
+    if (onionHidden) throw new Error("#sliders stayed hidden in onion view");
+    await page.click('#tabs button[data-view="side"]');
+    const sideHidden = await page.evaluate(() => document.getElementById('sliders').hidden);
+    if (!sideHidden) throw new Error("#sliders stayed visible in side view");
+    if (errors.length) throw new Error("browser console/page errors: " + errors.join("; "));
+  }} finally {{
+    await browser.close();
+  }}
+}})();
+"""
+    subprocess.run(["node", "-e", script], check=True)
+    print("verified web report interactive DOM in headless Chrome")
 
 
 if __name__ == "__main__":

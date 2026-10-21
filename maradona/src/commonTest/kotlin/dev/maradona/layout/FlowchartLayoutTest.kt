@@ -170,4 +170,53 @@ class FlowchartLayoutTest {
         val label = selfLoop.edges.single().labelRect!!
         assertTrue(label.right <= selfLoop.width && label.y >= 0f)
     }
+
+    @Test
+    fun lrShapeOutlinesAttachInPostTransformCoordinates() {
+        val layout = layoutOf(
+            """
+            flowchart LR
+              A[Rect] --> B(Rounded)
+              B --> C([Stadium])
+              C --> D[(Database)]
+              D --> E((Circle))
+              E --> F{Decision}
+              F --> G{{Hexagon}}
+              G --> H[/Parallelogram/]
+              H --> I[\ParallelogramAlt\]
+              I --> J[/Trapezoid\]
+              J --> K[\TrapezoidAlt/]
+              K --> L[[Subroutine]]
+              L --> M>Flag]
+            """.trimIndent(),
+        )
+        assertEquals(Direction.LR, layout.direction)
+        for (edge in layout.edges) {
+            val src = layout.node(edge.edge.from)!!
+            val dst = layout.node(edge.edge.to)!!
+            val start = edge.points.first()
+            val end = edge.points.last()
+            // Every LR edge starts on the right half of src and ends on the left half of dst.
+            assertTrue(
+                start.x > src.rect.centerX && start.x <= src.rect.right + 1.5f,
+                "Edge ${edge.edge.from}->${edge.edge.to} start $start not on right side of ${src.rect}",
+            )
+            assertTrue(
+                end.x >= dst.rect.x - 1.5f && end.x < dst.rect.centerX,
+                "Edge ${edge.edge.from}->${edge.edge.to} end $end not on left side of ${dst.rect}",
+            )
+        }
+        // Decision diamond in LR attaches at its left/right vertices (rect.x / rect.right), not top/bottom.
+        val intoDiamond = layout.edges.first { it.edge.to == "F" }.points.last()
+        val diamondRect = layout.node("F")!!.rect
+        assertEquals(diamondRect.x, intoDiamond.x, 1.5f)
+        assertEquals(diamondRect.centerY, intoDiamond.y, 1.5f)
+
+        // Asymmetric (>Flag]) in LR attaches inside the left inward chevron notch at vertical center.
+        val intoFlag = layout.edges.first { it.edge.to == "M" }.points.last()
+        val flagRect = layout.node("M")!!.rect
+        val expectedNotchX = flagRect.x + flagRect.height / 4f
+        assertEquals(expectedNotchX, intoFlag.x, 1.5f)
+        assertEquals(flagRect.centerY, intoFlag.y, 1.5f)
+    }
 }

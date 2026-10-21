@@ -83,6 +83,20 @@ private val examples = linkedMapOf(
           R --> UI
           style R fill:#d3e5f5,stroke:#205ea6
     """.trimIndent(),
+    "Sequence" to """
+        sequenceDiagram
+          autonumber
+          actor User
+          participant UI as Compose UI
+          participant VM as ViewModel
+          participant API as Backend API
+          User->>UI: Open diagram
+          UI->>+VM: Parse source
+          VM->>+API: Fetch config
+          API-->>-VM: 200 OK
+          VM-->>-UI: Layout ready
+          Note over User,UI: Pan & pinch-zoom active
+    """.trimIndent(),
 )
 
 private class SampleState(

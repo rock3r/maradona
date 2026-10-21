@@ -37,8 +37,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.LayoutOptions
-import dev.maradona.model.Flowchart
-import dev.maradona.parse.FlowchartParser
+import dev.maradona.layout.SequenceDiagramLayout
+import dev.maradona.parse.MaradonaDiagramModel
+import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -93,13 +94,15 @@ fun MaradonaDiagram(
     initialPan: Offset? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
     onNaturalSize: (IntSize) -> Unit = {},
-    /** Reports the computed layout (see [MaradonaLayout.onLayout]). */
+    /** Reports the computed flowchart layout (see [MaradonaLayout.onLayout]). */
     onLayout: (dev.maradona.layout.DiagramLayout) -> Unit = {},
+    /** Reports the computed sequence diagram layout (see [MaradonaSequenceLayout.onLayout]). */
+    onSequenceLayout: (SequenceDiagramLayout) -> Unit = {},
 ) {
-    val parsed = remember(source) { runCatching { FlowchartParser.parse(source) } }
-    var lastGood by remember { mutableStateOf<Flowchart?>(null) }
+    val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
+    var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
     parsed.getOrNull()?.let { lastGood = it }
-    val chart = parsed.getOrNull() ?: lastGood
+    val model = parsed.getOrNull() ?: lastGood
     val error = parsed.exceptionOrNull()
 
     // Committed state: rendered crisply via density scaling.
@@ -259,7 +262,7 @@ fun MaradonaDiagram(
         val centerX = (availW - naturalSize.width * scale) / 2f
         val centerY = (availH - naturalSize.height * scale) / 2f
 
-        if (chart != null) {
+        if (model != null) {
             val density = LocalDensity.current
             // sp -> px is sp * fontScale * density, so fontScale must NOT be
             // scaled: doing so would zoom text quadratically while dp-sized
@@ -283,29 +286,40 @@ fun MaradonaDiagram(
                     },
             ) {
                 CompositionLocalProvider(LocalDensity provides zoomedDensity) {
-                    MaradonaLayout(
-                        chart = chart,
-                        theme = theme,
-                        autoDirection = autoDirection,
-                        layoutOptions = layoutOptions,
-                        // The width the auto-direction adaption compares against,
-                        // in px at the current (zoom-scaled) density. Passing the
-                        // natural-units width here would compare it against
-                        // density-scaled values, so zooming in would spuriously
-                        // flip a horizontal chart to vertical.
-                        availableWidthPx = layoutWidthPx,
-                        onLayout = onLayout,
-                        modifier = Modifier
-                            .wrapContentSize(Alignment.TopStart, unbounded = true)
-                            .onSizeChanged {
-                                naturalSize = IntSize(
-                                    (it.width / scale).roundToInt(),
-                                    (it.height / scale).roundToInt(),
-                                )
-                                onNaturalSize(naturalSize)
-                            }
-                            .alpha(if (error != null) 0.45f else 1f),
-                    )
+                    val contentModifier = Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .onSizeChanged {
+                            naturalSize = IntSize(
+                                (it.width / scale).roundToInt(),
+                                (it.height / scale).roundToInt(),
+                            )
+                            onNaturalSize(naturalSize)
+                        }
+                        .alpha(if (error != null) 0.45f else 1f)
+                    when (model) {
+                        is MaradonaDiagramModel.FlowchartModel ->
+                            MaradonaLayout(
+                                chart = model.chart,
+                                theme = theme,
+                                autoDirection = autoDirection,
+                                layoutOptions = layoutOptions,
+                                // The width the auto-direction adaption compares against,
+                                // in px at the current (zoom-scaled) density. Passing the
+                                // natural-units width here would compare it against
+                                // density-scaled values, so zooming in would spuriously
+                                // flip a horizontal chart to vertical.
+                                availableWidthPx = layoutWidthPx,
+                                onLayout = onLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.SequenceModel ->
+                            MaradonaSequenceLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                onLayout = onSequenceLayout,
+                                modifier = contentModifier,
+                            )
+                    }
                 }
             }
         }

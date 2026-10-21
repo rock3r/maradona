@@ -65,12 +65,51 @@ object FlowchartParser {
         return state.build()
     }
 
-    /** Strips `%%{ ... }%%` directive blocks (which may span multiple lines), preserving line count. */
-    private fun stripDirectives(source: String): String {
+    /**
+     * Strips `%%{ ... }%%` directive blocks (which may span multiple lines) outside
+     * quoted strings, preserving line count so error line numbers stay accurate.
+     */
+    internal fun stripDirectives(source: String): String {
         if (!source.contains("%%{")) return source
-        return source.replace(Regex("%%\\{[\\s\\S]*?\\}%%")) { match ->
-            "\n".repeat(match.value.count { it == '\n' })
+        val out = StringBuilder(source.length)
+        var i = 0
+        var inQuote = false
+        while (i < source.length) {
+            val c = source[i]
+            if (c == '\n') {
+                // Node labels do not span raw unescaped newlines outside quotes,
+                // and single-line comments end at newline.
+                out.append(c)
+                i++
+            } else if (!inQuote && source.startsWith("%%{", i)) {
+                val close = source.indexOf("}%%", i + 3)
+                if (close < 0) {
+                    out.append(source, i, source.length)
+                    break
+                }
+                for (k in i until close + 3) {
+                    if (source[k] == '\n') out.append('\n')
+                }
+                i = close + 3
+            } else if (!inQuote && source.startsWith("%%", i)) {
+                // Single-line comment: copy until newline without toggling quote state.
+                val nl = source.indexOf('\n', i + 2)
+                if (nl < 0) {
+                    out.append(source, i, source.length)
+                    break
+                }
+                out.append(source, i, nl + 1)
+                i = nl + 1
+            } else if (c == '"' && (i == 0 || source[i - 1] != '\\')) {
+                inQuote = !inQuote
+                out.append(c)
+                i++
+            } else {
+                out.append(c)
+                i++
+            }
         }
+        return out.toString()
     }
 
     private fun consumeHeader(line: String, lineNo: Int, state: State): String {
@@ -573,7 +612,13 @@ internal object NodeRefReader {
             .replace(Regex("<[^>]+>"), "")
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
-            .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            .replace("&lt;", "<").replace("#lt;", "<")
+            .replace("&gt;", ">").replace("#gt;", ">")
+            .replace("&amp;", "&").replace("#amp;", "&")
+            .replace(Regex("&?#(\\d{1,5});")) { m ->
+                val code = m.groupValues[1].toIntOrNull()
+                if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
+            }
         return text.trim()
     }
 }
