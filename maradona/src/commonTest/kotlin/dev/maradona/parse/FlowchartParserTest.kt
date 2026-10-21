@@ -227,12 +227,17 @@ class FlowchartParserTest {
             """
             flowchart TD
               subgraph one[Group One]
-                A[First] --> B[Second]
+                A[Don't panic] --> two
+              end
+              subgraph two[Group Two]
+                B[Second]
               end
               Start --> one
             """.trimIndent(),
         )
         assertEquals(listOf("A", "B", "Start"), chart.nodes.map { it.id })
+        assertEquals("Don't panic", chart.nodes.first { it.id == "A" }.label)
+        assertEquals("two", chart.edges.first().to)
         val incoming = chart.edges.last()
         assertEquals("Start", incoming.from)
         assertEquals("one", incoming.to)

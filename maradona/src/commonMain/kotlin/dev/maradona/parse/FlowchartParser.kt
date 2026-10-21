@@ -96,13 +96,24 @@ object FlowchartParser {
     }
 
     private fun stripComment(line: String): String {
-        var quoteChar: Char? = null
+        var inDoubleQuote = false
+        var inSingleQuote = false
+        var metaDepth = 0
         var i = 0
         while (i < line.length - 1) {
             val c = line[i]
-            if (quoteChar == null && (c == '"' || c == '\'')) quoteChar = c
-            else if (quoteChar == c) quoteChar = null
-            if (quoteChar == null && c == '%' && line[i + 1] == '%') return line.substring(0, i)
+            if (!inDoubleQuote && !inSingleQuote && line.startsWith("@{", i)) {
+                metaDepth++
+            } else if (!inDoubleQuote && !inSingleQuote && metaDepth > 0 && c == '}') {
+                metaDepth--
+            } else if (!inSingleQuote && c == '"') {
+                inDoubleQuote = !inDoubleQuote
+            } else if (!inDoubleQuote && metaDepth > 0 && c == '\'') {
+                inSingleQuote = !inSingleQuote
+            }
+            if (!inDoubleQuote && !inSingleQuote && c == '%' && line[i + 1] == '%') {
+                return line.substring(0, i)
+            }
             i++
         }
         return line
@@ -112,23 +123,18 @@ object FlowchartParser {
     private fun splitStatements(line: String): List<String> {
         val out = mutableListOf<String>()
         var depth = 0
-        var quoteChar: Char? = null
+        var inQuote = false
         var start = 0
         for (i in line.indices) {
-            val c = line[i]
-            if (quoteChar == null && (c == '"' || c == '\'')) {
-                quoteChar = c
-            } else if (quoteChar == c) {
-                quoteChar = null
-            } else if (quoteChar == null) {
-                when (c) {
-                    '[', '(', '{' -> depth++
-                    ']', ')', '}' -> if (depth > 0) depth--
-                    ';' -> if (depth == 0) {
-                        out += line.substring(start, i)
-                        start = i + 1
-                    }
+            when (val c = line[i]) {
+                '"' -> inQuote = !inQuote
+                '[', '(', '{' -> if (!inQuote) depth++
+                ']', ')', '}' -> if (!inQuote && depth > 0) depth--
+                ';' -> if (!inQuote && depth == 0) {
+                    out += line.substring(start, i)
+                    start = i + 1
                 }
+                else -> Unit
             }
         }
         out += line.substring(start)
@@ -311,6 +317,14 @@ object FlowchartParser {
         private fun chain(stmt: String, lineNo: Int) {
             var pos = 0
             var previous: List<String> = readGroup(stmt, pos, lineNo).also { pos = it.second }.first
+            pos = skipSpaces(stmt, pos)
+            if (pos >= stmt.length) {
+                // Standalone node statement (e.g. `a1` inside a subgraph): mark as explicit.
+                for (id in previous) {
+                    if (id !in edgeIds) explicitNodeIds += id
+                }
+                return
+            }
             while (true) {
                 pos = skipSpaces(stmt, pos)
                 if (pos >= stmt.length) break
@@ -346,10 +360,8 @@ object FlowchartParser {
             if (ref.id in edgeIds && ref.label == null && ref.shape == null) {
                 return FlowNode(id = ref.id)
             }
-            if (ref.label != null || ref.shape != null || subgraphStack.isNotEmpty()) {
-                if (ref.id !in subgraphs.map { it.id } || ref.label != null || ref.shape != null) {
-                    explicitNodeIds += ref.id
-                }
+            if (ref.label != null || ref.shape != null) {
+                explicitNodeIds += ref.id
             }
             if (ref.className != null) {
                 val list = nodeClasses.getOrPut(ref.id) { mutableListOf() }
@@ -423,7 +435,7 @@ internal object NodeRefReader {
 
         // Mermaid v2 `id@{ shape: ..., label: "..." }` metadata block
         if (s.startsWith("@{", pos)) {
-            val closeAt = findClose(s, pos + 2, "}")
+            val closeAt = findClose(s, pos + 2, "}", allowSingleQuote = true)
                 ?: throw MaradonaParseException(lineNo, "Unclosed '@{' for '$id'")
             val body = s.substring(pos + 2, closeAt)
             val (label, shape) = parseMetadataBlock(body)
@@ -527,12 +539,12 @@ internal object NodeRefReader {
         else -> NodeShape.Rect
     }
 
-    private fun findClose(s: String, from: Int, close: String): Int? {
+    private fun findClose(s: String, from: Int, close: String, allowSingleQuote: Boolean = false): Int? {
         var quoteChar: Char? = null
         var i = from
         while (i < s.length) {
             val c = s[i]
-            if (quoteChar == null && (c == '"' || c == '\'')) quoteChar = c
+            if (quoteChar == null && (c == '"' || (allowSingleQuote && c == '\''))) quoteChar = c
             else if (quoteChar == c) quoteChar = null
             if (quoteChar == null && s.startsWith(close, i)) return i
             i++
