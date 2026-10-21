@@ -128,8 +128,9 @@ object SequenceParser {
 
     private fun isEntitySemicolon(line: String, semiIdx: Int): Boolean {
         var j = semiIdx - 1
-        while (j >= 0 && (line[j].isLetterOrDigit() || line[j] == '#')) j--
-        return j >= 0 && j < semiIdx - 1 && line[j] == '&'
+        while (j >= 0 && line[j].isLetterOrDigit()) j--
+        if (j < 0 || j == semiIdx - 1) return false
+        return line[j] == '&' || line[j] == '#'
     }
 
     private fun stripComment(line: String): String {

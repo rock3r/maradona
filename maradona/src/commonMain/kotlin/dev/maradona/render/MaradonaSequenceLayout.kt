@@ -434,9 +434,9 @@ private fun SequenceParticipantBox(
 private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme: MaradonaTheme) {
     val unit = density
 
-    // 0. Participant `box` groupings behind everything else.
+    // 0. Participant `box` groupings behind everything else (transparent when uncolored).
     for (b in layout.boxes) {
-        val fill = parseCssColor(b.box.color) ?: theme.subgraphFill.copy(alpha = 0.45f)
+        val fill = b.box.color?.let(::parseCssColor) ?: Color.Transparent
         if (fill != Color.Transparent) {
             drawRect(
                 color = fill,
@@ -573,6 +573,15 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
                 color = theme.edge,
                 unit = unit,
             )
+            if (arrow.bidirectional) {
+                drawSequenceHead(
+                    head = arrow.head,
+                    tip = DiagramPoint(x, y),
+                    from = DiagramPoint(x + 12f * unit, y),
+                    color = theme.edge,
+                    unit = unit,
+                )
+            }
         } else {
             val toRight = msg.stopX >= msg.startX
             val trimEnd = if (arrow.head == SequenceHead.Filled) 7f * unit else 0f

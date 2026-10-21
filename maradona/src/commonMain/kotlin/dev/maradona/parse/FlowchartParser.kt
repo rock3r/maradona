@@ -612,7 +612,13 @@ internal object NodeRefReader {
             .replace(Regex("<[^>]+>"), "")
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
-            .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            .replace("&lt;", "<").replace("#lt;", "<")
+            .replace("&gt;", ">").replace("#gt;", ">")
+            .replace("&amp;", "&").replace("#amp;", "&")
+            .replace(Regex("&?#(\\d{1,5});")) { m ->
+                val code = m.groupValues[1].toIntOrNull()
+                if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
+            }
         return text.trim()
     }
 }
