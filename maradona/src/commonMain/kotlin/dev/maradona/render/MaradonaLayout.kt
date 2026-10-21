@@ -127,13 +127,15 @@ fun MaradonaLayout(
         }
 
         // Measured sizes are in px at the current density, so scale the gaps too.
+        val renderDensity = density
         val scaledOptions = with(layoutOptions) {
             copy(
-                nodeGap = nodeGap * density,
-                layerGap = layerGap * density,
-                padding = padding * density,
-                subgraphPaddingX = subgraphPaddingX * density,
-                subgraphPaddingY = subgraphPaddingY * density,
+                nodeGap = nodeGap * renderDensity,
+                layerGap = layerGap * renderDensity,
+                padding = padding * renderDensity,
+                subgraphPaddingX = subgraphPaddingX * renderDensity,
+                subgraphPaddingY = subgraphPaddingY * renderDensity,
+                density = renderDensity,
             )
         }
         var result = FlowchartLayout.layout(

@@ -55,6 +55,8 @@ data class LayoutOptions(
     // outside its children horizontally and one rank (25) above and below.
     val subgraphPaddingX: Float = 40f,
     val subgraphPaddingY: Float = 25f,
+    /** Render density (px per dp), used when a shape outline formula depends on dp width. */
+    val density: Float = 1f,
     /** Force a direction regardless of the source (used for narrow-screen adaption). */
     val directionOverride: Direction? = null,
 )

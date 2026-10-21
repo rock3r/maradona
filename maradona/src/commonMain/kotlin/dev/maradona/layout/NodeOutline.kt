@@ -18,7 +18,12 @@ import kotlin.math.sqrt
  */
 internal object NodeOutline {
 
-    fun intersect(shape: NodeShape, rect: DiagramRect, target: DiagramPoint): DiagramPoint {
+    fun intersect(
+        shape: NodeShape,
+        rect: DiagramRect,
+        target: DiagramPoint,
+        density: Float = 1f,
+    ): DiagramPoint {
         val centre = DiagramPoint(rect.centerX, rect.centerY)
         val dx = target.x - centre.x
         val dy = target.y - centre.y
@@ -26,7 +31,7 @@ internal object NodeOutline {
 
         return when (shape) {
             NodeShape.Circle, NodeShape.DoubleCircle -> ellipse(centre, rect.width / 2f, rect.height / 2f, dx, dy)
-            NodeShape.Cylinder -> cylinder(rect, dx, dy)
+            NodeShape.Cylinder -> cylinder(rect, dx, dy, density)
             NodeShape.Diamond,
             NodeShape.Hexagon,
             NodeShape.Parallelogram,
@@ -39,11 +44,12 @@ internal object NodeOutline {
         }
     }
 
-    private fun cylinder(rect: DiagramRect, dx: Float, dy: Float): DiagramPoint {
+    private fun cylinder(rect: DiagramRect, dx: Float, dy: Float, density: Float): DiagramPoint {
         val rx = rect.width / 2f
         val halfH = rect.height / 2f
         if (rx <= 0f || halfH <= 0f) return DiagramPoint(rect.centerX, rect.centerY)
-        val ry = minOf(halfH * 0.5f, rx / 2.5f)
+        val wDp = rect.width / density.coerceAtLeast(0.01f)
+        val ry = (rx / (2.5f + wDp / 50f)).coerceAtMost(halfH * 0.5f)
         val bodyHalf = halfH - ry
         if (dx != 0f) {
             val tx = rx / abs(dx)

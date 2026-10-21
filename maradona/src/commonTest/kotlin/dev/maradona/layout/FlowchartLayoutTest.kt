@@ -148,4 +148,26 @@ class FlowchartLayoutTest {
         assertEquals(sg.y, intoSg.points.last().y, 0.5f)
         assertEquals(sg.bottom, fromSg.points.first().y, 0.5f)
     }
+
+    @Test
+    fun emptySubgraphAndSelfLoopLabelFitWithinBounds() {
+        val emptySg = layoutOf(
+            """
+            flowchart TD
+              subgraph empty[Empty Group]
+              end
+            """.trimIndent(),
+        )
+        assertEquals(1, emptySg.subgraphs.size)
+        assertTrue(emptySg.width > 0f && emptySg.height > 0f)
+
+        val selfLoop = layoutOf(
+            """
+            flowchart TD
+              A[Node] -- loop label --> A
+            """.trimIndent(),
+        )
+        val label = selfLoop.edges.single().labelRect!!
+        assertTrue(label.right <= selfLoop.width && label.y >= 0f)
+    }
 }

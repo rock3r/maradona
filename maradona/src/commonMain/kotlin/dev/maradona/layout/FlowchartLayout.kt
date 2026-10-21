@@ -25,7 +25,7 @@ object FlowchartLayout {
         options: LayoutOptions = LayoutOptions(),
     ): DiagramLayout {
         val direction = options.directionOverride ?: chart.direction
-        if (chart.nodes.isEmpty()) {
+        if (chart.nodes.isEmpty() && chart.subgraphs.isEmpty()) {
             return DiagramLayout(0f, 0f, direction, emptyList(), emptyList(), emptyList())
         }
         // For horizontal directions, run canonical layout with swapped sizes so a
@@ -38,7 +38,7 @@ object FlowchartLayout {
             { edgeLabelSize(it)?.maybeSwapped() },
             options,
         ).compute()
-        return canonical.transformed(direction).attachOutlines()
+        return canonical.transformed(direction).attachOutlines(options)
     }
 
     private class CanonicalLayout(
@@ -253,12 +253,13 @@ private fun DiagramLayout.transformed(direction: Direction): DiagramLayout {
  * Attaches edge endpoints to the actual node shape outlines in final (unrotated)
  * diagram coordinates, and routes self-loops around the final node boxes.
  */
-private fun DiagramLayout.attachOutlines(): DiagramLayout {
+private fun DiagramLayout.attachOutlines(options: LayoutOptions): DiagramLayout {
     val nodeById = nodes.associateBy { it.node.id }
     val subgraphById = subgraphs.associateBy { it.subgraph.id }
     fun DiagramRect.contains(p: DiagramPoint): Boolean =
         p.x >= x && p.x <= right && p.y >= y && p.y <= bottom
 
+    var hasSelfLoop = false
     val updatedEdges = edges.map { positioned ->
         val edge = positioned.edge
         val fromNode = nodeById[edge.from]
@@ -272,8 +273,9 @@ private fun DiagramLayout.attachOutlines(): DiagramLayout {
         val toShape = toNode?.node?.shape ?: dev.maradona.model.NodeShape.Rect
 
         if (edge.from == edge.to) {
+            hasSelfLoop = true
             val r = fromRect
-            val out = 28f
+            val out = 28f * options.density
             val points = listOf(
                 DiagramPoint(r.right, r.centerY),
                 DiagramPoint(r.right + out, r.centerY),
@@ -300,9 +302,46 @@ private fun DiagramLayout.attachOutlines(): DiagramLayout {
                 pts.removeAt(pts.lastIndex - 1)
             }
         }
-        pts[0] = NodeOutline.intersect(fromShape, fromRect, pts[1])
-        pts[pts.lastIndex] = NodeOutline.intersect(toShape, toRect, pts[pts.lastIndex - 1])
+        pts[0] = NodeOutline.intersect(fromShape, fromRect, pts[1], options.density)
+        pts[pts.lastIndex] = NodeOutline.intersect(toShape, toRect, pts[pts.lastIndex - 1], options.density)
         positioned.copy(points = pts)
     }
-    return copy(edges = updatedEdges)
+    if (!hasSelfLoop) return copy(edges = updatedEdges)
+
+    // Ensure self-loop polylines and labels fit within the layout bounds.
+    var minX = options.padding
+    var minY = options.padding
+    var maxX = width - options.padding
+    var maxY = height - options.padding
+    for (e in updatedEdges) {
+        if (e.edge.from != e.edge.to) continue
+        for (p in e.points) {
+            if (p.x < minX) minX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.x > maxX) maxX = p.x
+            if (p.y > maxY) maxY = p.y
+        }
+        e.labelRect?.let { r ->
+            if (r.x < minX) minX = r.x
+            if (r.y < minY) minY = r.y
+            if (r.right > maxX) maxX = r.right
+            if (r.bottom > maxY) maxY = r.bottom
+        }
+    }
+    val dx = options.padding - minX
+    val dy = options.padding - minY
+    fun DiagramRect.shifted() = if (dx == 0f && dy == 0f) this else copy(x = x + dx, y = y + dy)
+    return DiagramLayout(
+        width = (maxX - minX) + options.padding * 2,
+        height = (maxY - minY) + options.padding * 2,
+        direction = direction,
+        nodes = if (dx == 0f && dy == 0f) nodes else nodes.map { it.copy(rect = it.rect.shifted()) },
+        edges = if (dx == 0f && dy == 0f) updatedEdges else updatedEdges.map {
+            it.copy(
+                points = it.points.map { p -> DiagramPoint(p.x + dx, p.y + dy) },
+                labelRect = it.labelRect?.shifted(),
+            )
+        },
+        subgraphs = if (dx == 0f && dy == 0f) subgraphs else subgraphs.map { it.copy(rect = it.rect.shifted()) },
+    )
 }
