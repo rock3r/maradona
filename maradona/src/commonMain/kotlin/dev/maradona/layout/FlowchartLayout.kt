@@ -57,16 +57,24 @@ object FlowchartLayout {
         fun compute(): DiagramLayout {
             val sizesById = chart.nodes.associate { it.id to sizes.getValue(it.id) }.toMutableMap()
             val subgraphIds = chart.subgraphs.map { it.id }.toSet()
+            // Only leaf empty subgraphs get a synthetic dagre node; parent subgraphs
+            // include their descendant leaf empty subgraphs in their member list so
+            // nested empty subgraphs sit inside their parent box.
+            val leafEmptySubgraphIds = chart.subgraphs
+                .filter { sg ->
+                    chart.nodes.none { it.subgraphId == sg.id } &&
+                        chart.subgraphs.none { it.parentId == sg.id }
+                }
+                .map { it.id }
+                .toSet()
+            for (sgId in leafEmptySubgraphIds) {
+                sizesById.getOrPut(sgId) { DiagramSize(120f, 54f) }
+            }
             fun membersOf(sgId: String): List<String> {
                 val direct = chart.nodes.filter { it.subgraphId == sgId }.map { it.id }
+                val selfLeaf = if (sgId in leafEmptySubgraphIds) listOf(sgId) else emptyList()
                 val nested = chart.subgraphs.filter { it.parentId == sgId }.flatMap { membersOf(it.id) }
-                return direct + nested
-            }
-            // If an empty subgraph exists, give it a synthetic member in dagre so it
-            // receives a positioned bounding box and can anchor incident edges.
-            val emptySubgraphIds = chart.subgraphs.map { it.id }.filter { membersOf(it).isEmpty() }.toSet()
-            for (sgId in emptySubgraphIds) {
-                sizesById.getOrPut(sgId) { DiagramSize(120f, 54f) }
+                return direct + selfLeaf + nested
             }
             val dagreNodes = sizesById.map { (id, sz) -> id to (sz.width to sz.height) }
 
@@ -200,22 +208,36 @@ object FlowchartLayout {
             }
             fun membersOf(sgId: String): List<String> {
                 val direct = chart.nodes.filter { it.subgraphId == sgId }.map { it.id }
+                val selfLeaf = if (chart.nodes.none { it.subgraphId == sgId } && chart.subgraphs.none { it.parentId == sgId }) {
+                    listOf(sgId)
+                } else {
+                    emptyList()
+                }
                 val nested = chart.subgraphs.filter { it.parentId == sgId }.flatMap { membersOf(it.id) }
-                return direct + nested
+                return direct + selfLeaf + nested
             }
-            return chart.subgraphs.mapNotNull { sg ->
-                val memberIds = membersOf(sg.id)
-                val rects = if (memberIds.isEmpty()) {
+            // Build bottom-up so a parent subgraph's box encloses its nested child subgraphs' padded boxes.
+            val built = HashMap<String, DiagramRect>()
+            fun buildOne(sg: dev.maradona.model.Subgraph): DiagramRect? {
+                built[sg.id]?.let { return it }
+                val directRects = chart.nodes.filter { it.subgraphId == sg.id }.mapNotNull { nodeRects[it.id] }
+                val childSgRects = chart.subgraphs.filter { it.parentId == sg.id }.mapNotNull { buildOne(it) }
+                val selfSynthetic = if (directRects.isEmpty() && childSgRects.isEmpty()) {
                     listOfNotNull(nodeRects[sg.id])
                 } else {
-                    memberIds.mapNotNull { nodeRects[it] }
+                    emptyList()
                 }
-                if (rects.isEmpty()) return@mapNotNull null
+                val rects = directRects + childSgRects + selfSynthetic
+                if (rects.isEmpty()) return null
                 val minX = rects.minOf { it.x } - options.subgraphPaddingX
                 val minY = rects.minOf { it.y } - options.subgraphPaddingY
                 val maxX = rects.maxOf { it.right } + options.subgraphPaddingX
                 val maxY = rects.maxOf { it.bottom } + options.subgraphPaddingY
-                PositionedSubgraph(sg, DiagramRect(minX, minY, maxX - minX, maxY - minY))
+                return DiagramRect(minX, minY, maxX - minX, maxY - minY).also { built[sg.id] = it }
+            }
+            return chart.subgraphs.mapNotNull { sg ->
+                val rect = buildOne(sg) ?: return@mapNotNull null
+                PositionedSubgraph(sg, rect)
             }
         }
     }
