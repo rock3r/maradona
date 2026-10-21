@@ -111,5 +111,8 @@ private val namedColors = mapOf(
     "green" to Color(0xFF008000), "blue" to Color.Blue, "yellow" to Color.Yellow,
     "orange" to Color(0xFFFFA500), "purple" to Color(0xFF800080),
     "pink" to Color(0xFFFFC0CB), "gray" to Color.Gray, "grey" to Color.Gray,
-    "cyan" to Color.Cyan, "magenta" to Color.Magenta, "transparent" to Color.Transparent,
+    "cyan" to Color.Cyan, "aqua" to Color.Cyan, "teal" to Color(0xFF008080),
+    "lightblue" to Color(0xFFADD8E6), "lightgreen" to Color(0xFF90EE90),
+    "lightyellow" to Color(0xFFFFFFE0), "magenta" to Color.Magenta,
+    "transparent" to Color.Transparent,
 )

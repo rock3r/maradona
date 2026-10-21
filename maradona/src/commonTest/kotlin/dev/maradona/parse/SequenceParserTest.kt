@@ -94,4 +94,31 @@ class SequenceParserTest {
         assertTrue(seq is MaradonaDiagramModel.SequenceModel)
         assertTrue(flow is MaradonaDiagramModel.FlowchartModel)
     }
+
+    @Test
+    fun semicolonDelimitedStatementsAndParticipantBoxes() {
+        val diagram = SequenceParser.parse(
+            """
+            sequenceDiagram; participant A as Alice;
+              box Purple Team B
+                participant B
+                participant C
+              end
+              A->>B: one; B->>C: "two; still two"; C-->>A: A &amp; B
+            """.trimIndent(),
+        )
+        assertEquals(listOf("A", "B", "C"), diagram.participants.map { it.id })
+        assertEquals(1, diagram.boxes.size)
+        val box = diagram.boxes.single()
+        assertEquals("Purple", box.color)
+        assertEquals("Team B", box.label)
+        assertEquals(listOf("B", "C"), box.participantIds)
+        assertEquals(3, diagram.statements.size)
+        val m0 = diagram.statements[0] as SequenceStatement.Message
+        val m1 = diagram.statements[1] as SequenceStatement.Message
+        val m2 = diagram.statements[2] as SequenceStatement.Message
+        assertEquals("one", m0.text)
+        assertEquals("two; still two", m1.text)
+        assertEquals("A & B", m2.text)
+    }
 }

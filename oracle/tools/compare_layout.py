@@ -44,10 +44,8 @@ MAX_LABEL_ERR = 0.03       # edge label centre offset, share of the diagonal
 # and its edges anti-alias, so a couple of px per side is expected.
 MAX_RENDER_ERR = 2.0 * 3.0
 # Edge endpoints, as a share of the diagonal: an edge must start and end where
-# mermaid's does (its attachment point on the node outline). The budget is
-# generous because attachment points still differ on a few shapes - recorded as
-# a known difference in the README - but a missing or unrouted edge (100%) fails.
-MAX_EDGE_ERR = 0.06
+# mermaid's does (its attachment point on the node outline).
+MAX_EDGE_ERR = 0.02
 
 
 def _centre(rect):
@@ -175,13 +173,15 @@ def compare_chart(chart):
         edge_rows.append((f"{key[0]}->{key[1]}", f"{start_err:.0f}/{end_err:.0f}px",
                           f"{len(gp)}", f"{len(op)}"))
 
-    # The layout itself is what this oracle judges: the renderer line is a
-    # separate (still rough) check, reported but not gated.
+    unmatched_count = sum(1 for r in render_rows if not r[1].endswith("px"))
+    worst["unmatched"] = unmatched_count
     passed = (worst["missing"] == 0
+              and unmatched_count == 0
               and worst["size"] <= MAX_SIZE_ERR
               and worst["centre"] <= MAX_CENTRE_ERR
               and worst["label"] <= MAX_LABEL_ERR
-              and worst["edges"] <= MAX_EDGE_ERR)
+              and worst["edges"] <= MAX_EDGE_ERR
+              and worst["render"] <= MAX_RENDER_ERR)
     return {
         "kind": "layout", "chart": chart, "scale": round(scale, 4),
         "absolute_scale": round(absolute_scale, 4), "rows": rows,

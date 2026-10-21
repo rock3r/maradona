@@ -7,6 +7,7 @@ import dev.maradona.model.SequenceBlockKind
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.SequenceHead
 import dev.maradona.model.SequenceParticipant
+import dev.maradona.model.SequenceParticipantBoxGroup
 import dev.maradona.model.SequenceSection
 import dev.maradona.model.SequenceStatement
 
@@ -75,11 +76,15 @@ object SequenceParser {
                     throw MaradonaParseException(lineNo, "Expected 'sequenceDiagram', got: ${line.take(40)}")
                 }
                 headerSeen = true
-                val rest = line.substring("sequenceDiagram".length).trim()
-                if (rest.isNotEmpty()) state.statement(rest, lineNo)
+                val rest = line.substring("sequenceDiagram".length).trim().trimStart(';')
+                for (stmt in splitStatements(rest)) {
+                    state.statement(stmt, lineNo)
+                }
                 continue
             }
-            state.statement(line, lineNo)
+            for (stmt in splitStatements(line)) {
+                state.statement(stmt, lineNo)
+            }
         }
         if (!headerSeen) throw MaradonaParseException(1, "Expected 'sequenceDiagram'")
         if (state.participants.size > MAX_PARTICIPANTS) {
@@ -89,6 +94,42 @@ object SequenceParser {
             throw MaradonaParseException(1, "Too many statements")
         }
         return state.build()
+    }
+
+    /**
+     * Splits a line into semicolon-delimited statements while preserving `;`
+     * inside double quotes, parentheses (`rgb(...)`), and HTML entities (`&amp;`, `&#59;`).
+     */
+    private fun splitStatements(line: String): List<String> {
+        if (';' !in line) {
+            val t = line.trim()
+            return if (t.isEmpty()) emptyList() else listOf(t)
+        }
+        val out = mutableListOf<String>()
+        var start = 0
+        var inQuote = false
+        var parenDepth = 0
+        for (i in line.indices) {
+            when (line[i]) {
+                '"' -> inQuote = !inQuote
+                '(' -> if (!inQuote) parenDepth++
+                ')' -> if (!inQuote && parenDepth > 0) parenDepth--
+                ';' -> if (!inQuote && parenDepth == 0 && !isEntitySemicolon(line, i)) {
+                    val part = line.substring(start, i).trim()
+                    if (part.isNotEmpty()) out += part
+                    start = i + 1
+                }
+            }
+        }
+        val tail = line.substring(start).trim()
+        if (tail.isNotEmpty()) out += tail
+        return out
+    }
+
+    private fun isEntitySemicolon(line: String, semiIdx: Int): Boolean {
+        var j = semiIdx - 1
+        while (j >= 0 && (line[j].isLetterOrDigit() || line[j] == '#')) j--
+        return j >= 0 && j < semiIdx - 1 && line[j] == '&'
     }
 
     private fun stripComment(line: String): String {
@@ -111,10 +152,24 @@ object SequenceParser {
         ),
     )
 
+    private class OpenBox(
+        val color: String?,
+        val label: String?,
+        val participantIds: MutableList<String> = mutableListOf(),
+    )
+
+    private val boxColorTokens = setOf(
+        "transparent", "black", "white", "red", "green", "blue", "yellow",
+        "orange", "purple", "pink", "gray", "grey", "cyan", "aqua", "teal",
+        "lightblue", "lightgreen", "lightyellow", "magenta",
+    )
+
     private class State {
         var title: String? = null
         var autonumber: Boolean = false
         val participants = LinkedHashMap<String, SequenceParticipant>()
+        private val boxes = mutableListOf<SequenceParticipantBoxGroup>()
+        private var openBox: OpenBox? = null
         private val rootStatements = mutableListOf<SequenceStatement>()
         private val blockStack = ArrayDeque<OpenBlock>()
         var statementCount = 0
@@ -151,17 +206,27 @@ object SequenceParser {
                 }
                 lower.startsWith("note ") -> parseNote(stmt.substring("note ".length).trim(), lineNo)
                 lower == "end" -> {
-                    val block = if (blockStack.isNotEmpty()) {
-                        blockStack.removeLast()
+                    val activeBox = openBox
+                    if (activeBox != null) {
+                        openBox = null
+                        if (activeBox.participantIds.isNotEmpty()) {
+                            boxes += SequenceParticipantBoxGroup(
+                                color = activeBox.color,
+                                label = activeBox.label,
+                                participantIds = activeBox.participantIds.toList(),
+                            )
+                        }
+                    } else if (blockStack.isNotEmpty()) {
+                        val block = blockStack.removeLast()
+                        val built = SequenceStatement.Block(
+                            kind = block.kind,
+                            label = block.label,
+                            sections = block.sections.map { (secLabel, list) -> SequenceSection(secLabel, list) },
+                        )
+                        currentList() += built
                     } else {
                         throw MaradonaParseException(lineNo, "'end' without open block")
                     }
-                    val built = SequenceStatement.Block(
-                        kind = block.kind,
-                        label = block.label,
-                        sections = block.sections.map { (secLabel, list) -> SequenceSection(secLabel, list) },
-                    )
-                    currentList() += built
                 }
                 lower.startsWith("loop ") || lower == "loop" ->
                     openBlock(SequenceBlockKind.Loop, stmt.drop(4).trim())
@@ -187,8 +252,37 @@ object SequenceParser {
                     lower.startsWith("properties ") || lower.startsWith("details ") ||
                     lower.startsWith("create ") || lower.startsWith("destroy ") -> Unit
                 (lower == "box" || lower.startsWith("box ")) && !containsArrow(stmt) ->
-                    openBlock(SequenceBlockKind.Rect, stmt.drop(3).trim())
+                    startBox(stmt.drop(3).trim(), lineNo)
                 else -> parseMessage(stmt, lineNo)
+            }
+        }
+
+        private fun startBox(rest: String, lineNo: Int) {
+            if (openBox != null) {
+                throw MaradonaParseException(lineNo, "Nested 'box' blocks are not supported")
+            }
+            if (rest.isEmpty()) {
+                openBox = OpenBox(color = null, label = null)
+                return
+            }
+            val lower = rest.lowercase()
+            if (lower.startsWith("rgb(") || lower.startsWith("rgba(")) {
+                val closeParen = rest.indexOf(')')
+                if (closeParen > 0) {
+                    val color = rest.substring(0, closeParen + 1).trim()
+                    val label = rest.substring(closeParen + 1).trim().takeIf { it.isNotEmpty() }
+                        ?.let(NodeRefReader::cleanLabel)
+                    openBox = OpenBox(color = color, label = label)
+                    return
+                }
+            }
+            val firstToken = rest.substringBefore(' ').trim()
+            if (firstToken.startsWith("#") || firstToken.lowercase() in boxColorTokens) {
+                val label = rest.substringAfter(' ', "").trim().takeIf { it.isNotEmpty() }
+                    ?.let(NodeRefReader::cleanLabel)
+                openBox = OpenBox(color = firstToken, label = label)
+            } else {
+                openBox = OpenBox(color = null, label = NodeRefReader.cleanLabel(rest))
             }
         }
 
@@ -227,6 +321,7 @@ object SequenceParser {
             }
             if (id.isEmpty()) throw MaradonaParseException(lineNo, "Participant needs an id")
             participants[id] = SequenceParticipant(id = id, label = label, kind = kind)
+            openBox?.let { box -> if (id !in box.participantIds) box.participantIds += id }
         }
 
         private fun parseNote(rest: String, lineNo: Int) {
@@ -311,6 +406,7 @@ object SequenceParser {
             if (id !in participants) {
                 participants[id] = SequenceParticipant(id = id, label = id)
             }
+            openBox?.let { box -> if (id !in box.participantIds) box.participantIds += id }
         }
 
         private fun unquoteId(raw: String): String {
@@ -323,6 +419,9 @@ object SequenceParser {
         }
 
         fun build(): SequenceDiagram {
+            if (openBox != null) {
+                throw MaradonaParseException(statementCount, "Unclosed 'box' block")
+            }
             if (blockStack.isNotEmpty()) {
                 throw MaradonaParseException(statementCount, "Unclosed '${blockStack.last().kind.name.lowercase()}' block")
             }
@@ -330,6 +429,7 @@ object SequenceParser {
                 title = title,
                 autonumber = autonumber,
                 participants = participants.values.toList(),
+                boxes = boxes.toList(),
                 statements = rootStatements.toList(),
             )
         }

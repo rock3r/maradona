@@ -166,6 +166,21 @@ fun MaradonaSequenceLayout(
                     ),
                 )
             }
+            for ((index, box) in diagram.boxes.withIndex()) {
+                if (!box.label.isNullOrBlank()) {
+                    BasicText(
+                        text = annotatedLabel(box.label),
+                        modifier = Modifier.layoutId("boxlabel:$index"),
+                        style = TextStyle(
+                            color = theme.subgraphText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.subgraphFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
+            }
             for ((index, block) in flatBlocks.withIndex()) {
                 if (block.kind != SequenceBlockKind.Rect) {
                     BasicText(
@@ -218,6 +233,7 @@ fun MaradonaSequenceLayout(
         val blockTagPlaceables = HashMap<Int, Placeable>()
         val blockLabelPlaceables = HashMap<Int, Placeable>()
         val blockDivPlaceables = HashMap<String, Placeable>()
+        val boxLabelPlaceables = HashMap<Int, Placeable>()
         var titlePlaceable: Placeable? = null
 
         val topBoxMeasurables = HashMap<String, androidx.compose.ui.layout.Measurable>()
@@ -236,6 +252,7 @@ fun MaradonaSequenceLayout(
                 id.startsWith("btag:") -> blockTagPlaceables[id.removePrefix("btag:").toInt()] = m.measure(unbounded)
                 id.startsWith("blabel:") -> blockLabelPlaceables[id.removePrefix("blabel:").toInt()] = m.measure(unbounded)
                 id.startsWith("bdiv:") -> blockDivPlaceables[id.removePrefix("bdiv:")] = m.measure(unbounded)
+                id.startsWith("boxlabel:") -> boxLabelPlaceables[id.removePrefix("boxlabel:").toInt()] = m.measure(unbounded)
             }
         }
 
@@ -275,6 +292,10 @@ fun MaradonaSequenceLayout(
                 val pl = if (secIdx == 0) blockLabelPlaceables[idx] else blockDivPlaceables["$idx:$secIdx"]
                 DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
             },
+            boxLabelSize = { idx, _ ->
+                val pl = boxLabelPlaceables[idx]
+                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
+            },
             titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
             options = scaledOptions,
         )
@@ -300,6 +321,11 @@ fun MaradonaSequenceLayout(
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
                 titlePlaceable?.place(r.x.roundToInt(), r.y.roundToInt())
+            }
+            for (b in result.boxes) {
+                b.labelRect?.let { r ->
+                    boxLabelPlaceables[b.index]?.place(r.x.roundToInt(), r.y.roundToInt())
+                }
             }
             for (pp in result.participants) {
                 val id = pp.participant.id
@@ -408,6 +434,24 @@ private fun SequenceParticipantBox(
 private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme: MaradonaTheme) {
     val unit = density
 
+    // 0. Participant `box` groupings behind everything else.
+    for (b in layout.boxes) {
+        val fill = parseCssColor(b.box.color) ?: theme.subgraphFill.copy(alpha = 0.45f)
+        if (fill != Color.Transparent) {
+            drawRect(
+                color = fill,
+                topLeft = Offset(b.rect.x, b.rect.y),
+                size = Size(b.rect.width, b.rect.height),
+            )
+        }
+        drawRect(
+            color = theme.subgraphBorder,
+            topLeft = Offset(b.rect.x, b.rect.y),
+            size = Size(b.rect.width, b.rect.height),
+            style = Stroke(width = 1f * unit),
+        )
+    }
+
     // 1. Background `rect` blocks.
     for (block in layout.blocks) {
         if (block.kind == SequenceBlockKind.Rect) {
@@ -430,7 +474,23 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
         )
     }
 
-    // 3. Control-flow frames (`loop`, `alt`, `opt`, `par`, `critical`, `break`).
+    // 3. Activation bars (drawn above lifelines and behind control-flow frame tabs).
+    for (act in layout.activations) {
+        val r = act.rect
+        drawRect(
+            color = theme.subgraphFill,
+            topLeft = Offset(r.x, r.y),
+            size = Size(r.width, r.height),
+        )
+        drawRect(
+            color = theme.nodeBorder,
+            topLeft = Offset(r.x, r.y),
+            size = Size(r.width, r.height),
+            style = Stroke(width = 1f * unit),
+        )
+    }
+
+    // 4. Control-flow frames (`loop`, `alt`, `opt`, `par`, `critical`, `break`).
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)
     for (block in layout.blocks) {
         if (block.kind == SequenceBlockKind.Rect) continue
@@ -464,22 +524,6 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
                 pathEffect = dashEffect,
             )
         }
-    }
-
-    // 4. Activation bars.
-    for (act in layout.activations) {
-        val r = act.rect
-        drawRect(
-            color = theme.subgraphFill,
-            topLeft = Offset(r.x, r.y),
-            size = Size(r.width, r.height),
-        )
-        drawRect(
-            color = theme.nodeBorder,
-            topLeft = Offset(r.x, r.y),
-            size = Size(r.width, r.height),
-            style = Stroke(width = 1f * unit),
-        )
     }
 
     // 5. Notes (`#FFF5AD` sticky note fill and `#E3D296` border matching Mermaid).

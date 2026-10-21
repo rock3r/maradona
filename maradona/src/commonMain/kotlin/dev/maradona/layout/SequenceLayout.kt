@@ -4,6 +4,7 @@ import dev.maradona.model.NotePlacement
 import dev.maradona.model.SequenceBlockKind
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.SequenceParticipant
+import dev.maradona.model.SequenceParticipantBoxGroup
 import dev.maradona.model.SequenceStatement
 import kotlin.math.abs
 import kotlin.math.max
@@ -58,11 +59,19 @@ data class PositionedSequenceBlock(
     val dividers: List<PositionedSequenceDivider>,
 )
 
+data class PositionedSequenceBox(
+    val index: Int,
+    val box: SequenceParticipantBoxGroup,
+    val rect: DiagramRect,
+    val labelRect: DiagramRect?,
+)
+
 data class SequenceDiagramLayout(
     val width: Float,
     val height: Float,
     val titleRect: DiagramRect?,
     val participants: List<PositionedParticipant>,
+    val boxes: List<PositionedSequenceBox> = emptyList(),
     val activations: List<PositionedActivation>,
     val messages: List<PositionedSequenceMessage>,
     val notes: List<PositionedSequenceNote>,
@@ -99,11 +108,12 @@ object SequenceLayout {
         messageLabelSize: (Int, SequenceStatement.Message) -> DiagramSize,
         noteTextSize: (Int, SequenceStatement.Note) -> DiagramSize,
         blockLabelSize: (Int, Int, String) -> DiagramSize,
+        boxLabelSize: (Int, SequenceParticipantBoxGroup) -> DiagramSize = { _, _ -> DiagramSize(0f, 0f) },
         titleSize: DiagramSize? = null,
         options: SequenceLayoutOptions = SequenceLayoutOptions(),
     ): SequenceDiagramLayout {
         if (diagram.participants.isEmpty()) {
-            return SequenceDiagramLayout(0f, 0f, null, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+            return SequenceDiagramLayout(0f, 0f, null, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         }
         return Engine(
             diagram = diagram,
@@ -111,6 +121,7 @@ object SequenceLayout {
             messageLabelSize = messageLabelSize,
             noteTextSize = noteTextSize,
             blockLabelSize = blockLabelSize,
+            boxLabelSize = boxLabelSize,
             titleSize = titleSize,
             options = options,
         ).compute()
@@ -130,6 +141,7 @@ object SequenceLayout {
         private val messageLabelSize: (Int, SequenceStatement.Message) -> DiagramSize,
         private val noteTextSize: (Int, SequenceStatement.Note) -> DiagramSize,
         private val blockLabelSize: (Int, Int, String) -> DiagramSize,
+        private val boxLabelSize: (Int, SequenceParticipantBoxGroup) -> DiagramSize,
         private val titleSize: DiagramSize?,
         private val options: SequenceLayoutOptions,
     ) {
@@ -185,7 +197,47 @@ object SequenceLayout {
                 headerHeight = max(headerHeight, heights[i])
             }
 
-            collectMessageSpacing(diagram.statements, IntArray(1), IntArray(1))
+            collectMessageSpacing(diagram.statements, IntArray(1), IntArray(1), IntArray(1))
+
+            // Add spacing for participant `box` groupings and their titles.
+            val boxByParticipant = HashMap<Int, Int>()
+            val boxLabelSizes = diagram.boxes.mapIndexed { bIdx, box ->
+                for (pid in box.participantIds) {
+                    indexById[pid]?.let { boxByParticipant[it] = bIdx }
+                }
+                if (!box.label.isNullOrBlank()) boxLabelSize(bIdx, box) else DiagramSize(0f, 0f)
+            }
+            if (diagram.boxes.isNotEmpty()) {
+                for (i in 0 until participants.lastIndex) {
+                    val b0 = boxByParticipant[i]
+                    val b1 = boxByParticipant[i + 1]
+                    if (b0 != b1 && (b0 != null || b1 != null)) {
+                        margins[i] += options.boxMargin * 2f
+                    }
+                }
+                for ((bIdx, box) in diagram.boxes.withIndex()) {
+                    val memberIndices = box.participantIds.mapNotNull { indexById[it] }
+                    if (memberIndices.isEmpty()) continue
+                    val minIdx = memberIndices.min()
+                    val maxIdx = memberIndices.max()
+                    val labelW = boxLabelSizes[bIdx].width
+                    if (labelW <= 0f) continue
+                    var spanW = 0f
+                    for (i in minIdx..maxIdx) {
+                        spanW += widths[i]
+                        if (i < maxIdx) spanW += margins[i]
+                    }
+                    if (labelW > spanW) {
+                        val deficit = labelW - spanW
+                        if (maxIdx > minIdx) {
+                            val perGap = deficit / (maxIdx - minIdx)
+                            for (i in minIdx until maxIdx) margins[i] += perGap
+                        } else {
+                            widths[minIdx] += deficit
+                        }
+                    }
+                }
+            }
 
             var curX = 0f
             for (i in participants.indices) {
@@ -205,6 +257,12 @@ object SequenceLayout {
                 )
                 includeBounds(titleRect.x, titleRect.y, titleRect.right, titleRect.bottom)
                 bump(titleSize.height + options.boxMargin * 1.5f)
+            }
+
+            val boxGroupTopY = verticalPos
+            val maxBoxTitleH = boxLabelSizes.maxOfOrNull { it.height } ?: 0f
+            if (diagram.boxes.isNotEmpty()) {
+                bump(options.boxMargin + (if (maxBoxTitleH > 0f) maxBoxTitleH + options.boxTextMargin * 2f else 0f))
             }
 
             val topBoxY = verticalPos
@@ -244,6 +302,32 @@ object SequenceLayout {
                 bump(headerHeight)
             }
 
+            val positionedBoxes = mutableListOf<PositionedSequenceBox>()
+            if (diagram.boxes.isNotEmpty()) {
+                bump(options.boxMargin)
+                val boxBottomY = verticalPos
+                for ((bIdx, box) in diagram.boxes.withIndex()) {
+                    val memberIndices = box.participantIds.mapNotNull { indexById[it] }
+                    if (memberIndices.isEmpty()) continue
+                    val minIdx = memberIndices.min()
+                    val maxIdx = memberIndices.max()
+                    val bx = actorX[minIdx] - options.boxMargin
+                    val bRight = actorX[maxIdx] + widths[maxIdx] + options.boxMargin
+                    val bRect = DiagramRect(bx, boxGroupTopY, bRight - bx, boxBottomY - boxGroupTopY)
+                    val lSize = boxLabelSizes[bIdx]
+                    val lRect = if (!box.label.isNullOrBlank() && lSize.width > 0f) {
+                        DiagramRect(
+                            x = bx + (bRect.width - lSize.width) / 2f,
+                            y = boxGroupTopY + options.boxMargin * 0.5f + options.boxTextMargin,
+                            width = lSize.width,
+                            height = lSize.height,
+                        )
+                    } else null
+                    includeBounds(bRect.x, bRect.y, bRect.right, bRect.bottom)
+                    positionedBoxes += PositionedSequenceBox(bIdx, box, bRect, lRect)
+                }
+            }
+
             // 4. Normalize coordinates so minX/minY sit at padding.
             if (!minX.isFinite()) minX = 0f
             val dx = options.paddingX - minX
@@ -269,6 +353,9 @@ object SequenceLayout {
                 height = (maxY - minY) + options.paddingY * 2f,
                 titleRect = titleRect?.shifted(),
                 participants = positionedParticipants,
+                boxes = positionedBoxes.map {
+                    it.copy(rect = it.rect.shifted(), labelRect = it.labelRect?.shifted())
+                },
                 activations = finishedActivations.map { it.copy(rect = it.rect.shifted()) },
                 messages = positionedMessages.map {
                     it.copy(
@@ -292,10 +379,37 @@ object SequenceLayout {
             )
         }
 
+        private fun participantSpan(statements: List<SequenceStatement>): Pair<Int, Int>? {
+            var minIdx = Int.MAX_VALUE
+            var maxIdx = Int.MIN_VALUE
+            fun includeId(id: String) {
+                val idx = indexById[id] ?: return
+                minIdx = min(minIdx, idx)
+                maxIdx = max(maxIdx, idx)
+            }
+            fun walk(list: List<SequenceStatement>) {
+                for (s in list) {
+                    when (s) {
+                        is SequenceStatement.Message -> {
+                            includeId(s.from)
+                            includeId(s.to)
+                        }
+                        is SequenceStatement.Note -> s.participants.forEach(::includeId)
+                        is SequenceStatement.Activate -> includeId(s.participantId)
+                        is SequenceStatement.Deactivate -> includeId(s.participantId)
+                        is SequenceStatement.Block -> for (sec in s.sections) walk(sec.statements)
+                    }
+                }
+            }
+            walk(statements)
+            return if (minIdx <= maxIdx) minIdx to maxIdx else null
+        }
+
         private fun collectMessageSpacing(
             statements: List<SequenceStatement>,
             msgIdx: IntArray,
             noteIdx: IntArray,
+            blockIdx: IntArray,
         ) {
             for (stmt in statements) {
                 when (stmt) {
@@ -331,8 +445,40 @@ object SequenceLayout {
                         }
                     }
                     is SequenceStatement.Block -> {
+                        val bIndex = blockIdx[0]++
                         for (sec in stmt.sections) {
-                            collectMessageSpacing(sec.statements, msgIdx, noteIdx)
+                            collectMessageSpacing(sec.statements, msgIdx, noteIdx, blockIdx)
+                        }
+                        if (stmt.kind != SequenceBlockKind.Rect) {
+                            val span = participantSpan(stmt.sections.flatMap { it.statements })
+                            if (span != null && span.first < span.second) {
+                                val minIdx = span.first
+                                val maxIdx = span.second
+                                val headerW = options.labelBoxWidth +
+                                    (stmt.label?.let { blockLabelSize(bIndex, 0, "[$it]").width } ?: 0f) +
+                                    options.boxMargin * 2f
+                                var maxSecW = 0f
+                                for ((secIdx, sec) in stmt.sections.withIndex()) {
+                                    if (secIdx > 0 && sec.label != null) {
+                                        maxSecW = max(maxSecW, blockLabelSize(bIndex, secIdx, "[${sec.label}]").width)
+                                    }
+                                }
+                                val secNeed = if (maxSecW > 0f) {
+                                    maxSecW + options.activationWidth + options.boxMargin * 2f
+                                } else 0f
+                                val neededSpan = max(headerW, secNeed)
+                                var currentSpan = widths[minIdx] / 2f + widths[maxIdx] / 2f
+                                for (i in minIdx until maxIdx) {
+                                    currentSpan += margins[i]
+                                    if (i > minIdx) currentSpan += widths[i]
+                                }
+                                if (neededSpan > currentSpan) {
+                                    val addPerGap = (neededSpan - currentSpan) / (maxIdx - minIdx)
+                                    for (i in minIdx until maxIdx) {
+                                        margins[i] += addPerGap
+                                    }
+                                }
+                            }
                         }
                     }
                     else -> Unit
@@ -563,10 +709,9 @@ object SequenceLayout {
                             blockMinX = actorX.first()
                             blockMaxX = actorX.last() + widths.last()
                         } else {
-                            // Leave room for the 50dp tag tab to the left of the leftmost
-                            // enclosed lifeline/activation bar, plus padding on the right.
-                            blockMinX -= (options.labelBoxWidth + options.boxMargin * 1.5f)
-                            blockMaxX += options.boxMargin * 2.5f
+                            val pad = options.boxMargin * 1.5f
+                            blockMinX -= pad
+                            blockMaxX += pad
                         }
                         val minHeaderW = options.labelBoxWidth + (headerTextSize?.width ?: 0f) + options.boxMargin * 3f
                         val minSecW = maxSectionLabelW + options.boxMargin * 3f

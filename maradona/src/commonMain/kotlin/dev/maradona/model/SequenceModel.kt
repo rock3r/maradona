@@ -76,10 +76,17 @@ sealed interface SequenceStatement {
     ) : SequenceStatement
 }
 
+data class SequenceParticipantBoxGroup(
+    val color: String? = null,
+    val label: String? = null,
+    val participantIds: List<String>,
+)
+
 data class SequenceDiagram(
     val title: String? = null,
     val autonumber: Boolean = false,
     val mirrorActors: Boolean = true,
     val participants: List<SequenceParticipant> = emptyList(),
+    val boxes: List<SequenceParticipantBoxGroup> = emptyList(),
     val statements: List<SequenceStatement> = emptyList(),
 )
