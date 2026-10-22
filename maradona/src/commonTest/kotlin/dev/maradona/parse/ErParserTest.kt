@@ -132,8 +132,8 @@ class ErParserTest {
                 CUSTOMER ||--many(0) ORDER : places
                 PERSON only one to o{ ADDRESS : uses
                 A }o to one B:uses
-                p[Customer: Account] { string acctId PK }
-                p[Customer: Account] one to one q["Target: Account"] : links
+                p[Customer: Account] { string acctId PK }; p[Customer: Account] one to one q["Target: Account"] : links
+                X { string xId PK }; X ||--|| Y : refs
             """.trimIndent(),
         )
         val cust = assertNotNull(mixed.entity("CUSTOMER"))
@@ -144,7 +144,7 @@ class ErParserTest {
         assertEquals("int", cust.attributes[1].type)
         assertEquals("age", cust.attributes[1].name)
 
-        assertEquals(4, mixed.relationships.size)
+        assertEquals(5, mixed.relationships.size)
         assertEquals(ErCardinality.ExactlyOne, mixed.relationships[0].fromCardinality)
         assertEquals(ErCardinality.ZeroOrMore, mixed.relationships[0].toCardinality)
         assertEquals(ErCardinality.ExactlyOne, mixed.relationships[1].fromCardinality)
@@ -160,5 +160,7 @@ class ErParserTest {
         assertEquals("Customer: Account", mixed.entity("p")?.label)
         assertEquals(1, mixed.entity("p")?.attributes?.size)
         assertEquals("Target: Account", mixed.entity("q")?.label)
+        assertEquals(1, mixed.entity("X")?.attributes?.size)
+        assertEquals("Y", mixed.relationships[4].to)
     }
 }

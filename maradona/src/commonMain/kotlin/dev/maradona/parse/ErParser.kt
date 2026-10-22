@@ -658,88 +658,85 @@ object ErParser {
                 if (trimmed.endsWith("{")) inAccDescrBlock = true
                 continue
             }
-            // Do not split `{` that belongs to a crow's-foot operator (`o{` or `|{`) or after `:`!
-            if (containsSymbolicRelationOutsideQuotes(trimmed)) {
-                out += clean
-                continue
-            }
-            val sb = StringBuilder()
-            var inQuotes = false
-            var inBrackets = 0
-            var i = 0
-            while (i < clean.length) {
-                val c = clean[i]
-                if (c == '\\' && inQuotes && i + 1 < clean.length) {
-                    sb.append(c).append(clean[i + 1])
-                    i += 2
-                    continue
-                }
-                if (c == '"') {
-                    inQuotes = !inQuotes
-                    sb.append(c)
-                    i++
-                    continue
-                }
-                if (!inQuotes && c == '[') {
-                    inBrackets++
-                    sb.append(c)
-                    i++
-                    continue
-                }
-                if (!inQuotes && c == ']' && inBrackets > 0) {
-                    inBrackets--
-                    sb.append(c)
-                    i++
-                    continue
-                }
-                if (!inQuotes && inBrackets == 0 && c == ':') {
-                    if (clean.startsWith(":::", i)) {
-                        sb.append(":::")
-                        i += 3
+            for (stmt in splitSemicolonsOutsideQuotes(clean)) {
+                val sb = StringBuilder()
+                var inQuotes = false
+                var inBrackets = 0
+                var i = 0
+                while (i < stmt.length) {
+                    val c = stmt[i]
+                    if (c == '\\' && inQuotes && i + 1 < stmt.length) {
+                        sb.append(c).append(stmt[i + 1])
+                        i += 2
                         continue
                     }
-                    sb.append(clean.substring(i))
-                    break
-                }
-                if (!inQuotes && inBrackets == 0 && c == '{') {
-                    val isCrowsFoot = i > 0 && (
-                        clean[i - 1] == '|' ||
-                            (clean[i - 1] == 'o' && (i == 1 || !clean[i - 2].isLetterOrDigit()))
-                        )
-                    if (isCrowsFoot) {
+                    if (c == '"') {
+                        inQuotes = !inQuotes
                         sb.append(c)
                         i++
                         continue
                     }
-                    sb.append(" {")
-                    out += sb.toString()
-                    sb.setLength(0)
-                    i++
-                    continue
-                }
-                if (!inQuotes && inBrackets == 0 && c == '}') {
-                    val isCrowsFoot = i + 1 < clean.length && (
-                        clean[i + 1] == '|' ||
-                            (clean[i + 1] == 'o' && (i + 2 == clean.length || !clean[i + 2].isLetterOrDigit()))
-                        )
-                    if (isCrowsFoot) {
+                    if (!inQuotes && c == '[') {
+                        inBrackets++
                         sb.append(c)
                         i++
                         continue
                     }
-                    if (sb.isNotBlank()) {
+                    if (!inQuotes && c == ']' && inBrackets > 0) {
+                        inBrackets--
+                        sb.append(c)
+                        i++
+                        continue
+                    }
+                    if (!inQuotes && inBrackets == 0 && c == ':') {
+                        if (stmt.startsWith(":::", i)) {
+                            sb.append(":::")
+                            i += 3
+                            continue
+                        }
+                        sb.append(stmt.substring(i))
+                        break
+                    }
+                    if (!inQuotes && inBrackets == 0 && c == '{') {
+                        val isCrowsFoot = i > 0 && (
+                            stmt[i - 1] == '|' ||
+                                (stmt[i - 1] == 'o' && (i == 1 || !stmt[i - 2].isLetterOrDigit()))
+                            )
+                        if (isCrowsFoot) {
+                            sb.append(c)
+                            i++
+                            continue
+                        }
+                        sb.append(" {")
                         out += sb.toString()
                         sb.setLength(0)
+                        i++
+                        continue
                     }
-                    out += "}"
+                    if (!inQuotes && inBrackets == 0 && c == '}') {
+                        val isCrowsFoot = i + 1 < stmt.length && (
+                            stmt[i + 1] == '|' ||
+                                (stmt[i + 1] == 'o' && (i + 2 == stmt.length || !stmt[i + 2].isLetterOrDigit()))
+                            )
+                        if (isCrowsFoot) {
+                            sb.append(c)
+                            i++
+                            continue
+                        }
+                        if (sb.isNotBlank()) {
+                            out += sb.toString()
+                            sb.setLength(0)
+                        }
+                        out += "}"
+                        i++
+                        continue
+                    }
+                    sb.append(c)
                     i++
-                    continue
                 }
-                sb.append(c)
-                i++
-            }
-            if (sb.isNotBlank()) {
-                out += sb.toString()
+                if (sb.isNotBlank()) {
+                    out += sb.toString()
+                }
             }
         }
         return out
