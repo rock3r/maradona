@@ -886,7 +886,7 @@ object StateParser {
         inline: NodeStyle?,
         classDefs: Map<String, NodeStyle>,
     ): NodeStyle? {
-        var acc: NodeStyle? = null
+        var acc: NodeStyle? = classDefs["default"]
         for (c in classes) {
             val def = classDefs[c] ?: continue
             acc = acc?.merge(def) ?: def

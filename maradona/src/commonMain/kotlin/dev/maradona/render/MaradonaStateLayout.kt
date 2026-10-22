@@ -86,8 +86,15 @@ fun MaradonaStateLayout(
     Layout(
         modifier = modifier
             .semantics {
-                contentDescription =
+                val accParts = listOfNotNull(
+                    diagram.accTitle?.takeIf { it.isNotBlank() },
+                    diagram.accDescr?.takeIf { it.isNotBlank() },
+                )
+                contentDescription = if (accParts.isNotEmpty()) {
+                    accParts.joinToString(". ")
+                } else {
                     "State diagram. ${diagram.states.size} states, ${diagram.transitions.size} transitions."
+                }
             }
             .drawBehind {
                 holder.layout?.let { drawStateUnderlay(it, compositeIds, theme) }

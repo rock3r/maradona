@@ -203,12 +203,15 @@ class StateParserTest {
         assertEquals(StateKind.Normal, quoted.kind)
         assertEquals("Wait <<choice>> here", quoted.label)
 
-        // Leading blank and comment lines before YAML frontmatter must still parse frontmatter metadata.
+        // Leading blank and comment lines before YAML frontmatter must still parse frontmatter metadata,
+        // and `classDef default` must seed all states' styles unless overridden.
         val leadingBlankFm = StateParser.parse(
-            "\n  \n%% leading comment\n---\ntitle: Leading Blank Title\nhideEmptyDescription: true\n---\nstateDiagram-v2\nA --> B",
+            "\n  \n%% leading comment\n---\ntitle: Leading Blank Title\nhideEmptyDescription: true\n---\nstateDiagram-v2\nclassDef default fill:#ff0000,color:#ffffff\nA --> B",
         )
         assertEquals("Leading Blank Title", leadingBlankFm.title)
         assertTrue(leadingBlankFm.hideEmptyDescription)
         assertEquals(listOf("A", "B"), leadingBlankFm.states.map { it.id })
+        assertEquals("#ff0000", leadingBlankFm.state("A")?.style?.fill)
+        assertEquals("#ffffff", leadingBlankFm.state("B")?.style?.textColor)
     }
 }
