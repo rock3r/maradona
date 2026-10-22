@@ -119,7 +119,7 @@ fun MaradonaClassLayout(
                         )
                     }
                     BasicText(
-                        text = annotatedLabel(c.displayTitle),
+                        text = c.displayTitle,
                         style = TextStyle(
                             color = textColor,
                             fontFamily = theme.fontFamily,
