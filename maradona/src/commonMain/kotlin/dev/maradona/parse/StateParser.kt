@@ -44,6 +44,7 @@ object StateParser {
         var direction: Direction? = null,
         var regionCount: Int = 1,
         var explicitlyOwned: Boolean = false,
+        var styleOnlyPlaceholder: Boolean = false,
         val styleClasses: MutableList<String> = mutableListOf(),
         var inlineStyle: NodeStyle? = null,
     )
@@ -131,6 +132,7 @@ object StateParser {
             parentOverride: String? = currentParentId(),
             regionOverride: Int = currentRegionIndex(),
             isDeclaration: Boolean = false,
+            styleOnly: Boolean = false,
         ): MutableState {
             val (cleanId, inlineClasses) = splitInlineClasses(rawId.trim())
             val id = unquote(cleanId).ifEmpty { cleanId }
@@ -143,8 +145,8 @@ object StateParser {
                     existing.kind = explicitKind
                 }
                 if (
-                    isDeclaration &&
-                    !existing.explicitlyOwned &&
+                    !styleOnly &&
+                    (existing.styleOnlyPlaceholder || (isDeclaration && !existing.explicitlyOwned)) &&
                     parentOverride != null &&
                     existing.parentId == null &&
                     !wouldCreateCycle(existing.id, parentOverride)
@@ -152,20 +154,27 @@ object StateParser {
                     existing.parentId = parentOverride
                     existing.regionIndex = regionOverride
                 }
+                if (!styleOnly) {
+                    if (existing.styleOnlyPlaceholder && parentOverride != null) {
+                        existing.explicitlyOwned = true
+                    }
+                    existing.styleOnlyPlaceholder = false
+                }
                 if (isDeclaration) {
                     existing.explicitlyOwned = true
                 }
                 existing.styleClasses += inlineClasses
                 return existing
             }
-            val safeParent = if (parentOverride != null && !wouldCreateCycle(id, parentOverride)) parentOverride else null
+            val safeParent = if (!styleOnly && parentOverride != null && !wouldCreateCycle(id, parentOverride)) parentOverride else null
             val created = MutableState(
                 id = id,
                 label = explicitLabel ?: id,
                 kind = explicitKind ?: StateKind.Normal,
                 parentId = safeParent,
                 regionIndex = if (safeParent != null) regionOverride else 0,
-                explicitlyOwned = isDeclaration || safeParent != null,
+                explicitlyOwned = !styleOnly && (isDeclaration || safeParent != null),
+                styleOnlyPlaceholder = styleOnly,
             )
             created.styleClasses += inlineClasses
             states[id] = created
@@ -325,7 +334,7 @@ object StateParser {
                         val targets = parts[0].split(',').map { it.trim() }.filter { it.isNotEmpty() }
                         val classNames = parts.drop(1).flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
                         for (t in targets) {
-                            val st = ensureState(t)
+                            val st = ensureState(t, styleOnly = true)
                             st.styleClasses += classNames
                         }
                     }
@@ -337,7 +346,7 @@ object StateParser {
                     if (m != null) {
                         val targets = m.groupValues[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }
                         val cls = m.groupValues[2].trim()
-                        for (t in targets) ensureState(t).styleClasses += cls
+                        for (t in targets) ensureState(t, styleOnly = true).styleClasses += cls
                     }
                     continue
                 }
@@ -347,7 +356,7 @@ object StateParser {
                     if (sp > 0) {
                         val target = rest.substring(0, sp).trim()
                         val style = parseNodeStyle(rest.substring(sp + 1).trim())
-                        ensureState(target).inlineStyle = style
+                        ensureState(target, styleOnly = true).inlineStyle = style
                     }
                     continue
                 }
@@ -413,7 +422,13 @@ object StateParser {
 
                 // Explicit `state ...` declaration or composite state block opener
                 if (lower.startsWith("state ") || line.endsWith("{")) {
-                    if (parseStateDeclaration(line, ::ensureState, scopeStack)) {
+                    if (
+                        parseStateDeclaration(
+                            line = line,
+                            ensureState = { id, lbl, k, p, r, decl -> ensureState(id, lbl, k, p, r, decl) },
+                            scopeStack = scopeStack,
+                        )
+                    ) {
                         continue
                     }
                 }
@@ -464,7 +479,9 @@ object StateParser {
                 }
 
                 // Bare state identifier (`StateId` or `StateId <<choice>>`)
-                parseBareStateLine(line, currentParentId(), currentRegionIndex(), ::ensureState)
+                parseBareStateLine(line, currentParentId(), currentRegionIndex()) { id, lbl, k, p, r, decl ->
+                    ensureState(id, lbl, k, p, r, decl)
+                }
             }
         }
 
@@ -527,31 +544,32 @@ object StateParser {
         val declPart = if (colonIdx >= 0) core.substring(0, colonIdx).trim() else core
         val descPart = if (colonIdx >= 0) normalizeText(unquote(core.substring(colonIdx + 1).trim())) else null
 
-        // Extract optional stereotype `<<choice>>`, `<<fork>>`, `<<join>>`, `[[choice]]`, etc.
+        // Match `"Label" as Id` first so stereotype tokens inside quoted labels stay literal.
         var stereoKind: StateKind? = null
         val stereoRegex = Regex("""(?:<<\s*([a-zA-Z0-9_]+)\s*>>|\[\[\s*([a-zA-Z0-9_]+)\s*]])""")
-        val stereoMatch = stereoRegex.find(declPart)
-        val withoutStereo = if (stereoMatch != null) {
-            val tag = (stereoMatch.groupValues[1].ifEmpty { stereoMatch.groupValues[2] }).lowercase()
+        fun extractStereo(unquotedTarget: String): String {
+            val m = stereoRegex.find(unquotedTarget) ?: return unquotedTarget
+            val tag = (m.groupValues[1].ifEmpty { m.groupValues[2] }).lowercase()
             stereoKind = when (tag) {
                 "choice" -> StateKind.Choice
                 "fork" -> StateKind.Fork
                 "join" -> StateKind.Join
                 else -> null
             }
-            declPart.removeRange(stereoMatch.range).trim()
-        } else {
-            declPart
+            return unquotedTarget.removeRange(m.range).trim()
         }
 
-        // Match `"Label" as Id` or `Id`
         val asRegex = Regex("""^"((?:\\.|[^"\\])*)"\s+as\s+(.+)$""", RegexOption.IGNORE_CASE)
-        val asMatch = asRegex.find(withoutStereo)
+        val asMatch = asRegex.find(declPart)
         val (idRaw, label) = if (asMatch != null) {
             val lbl = unquote("\"${asMatch.groupValues[1]}\"")
-            val idToken = asMatch.groupValues[2].trim()
+            val idToken = extractStereo(asMatch.groupValues[2].trim())
             idToken to lbl
+        } else if (declPart.startsWith('"') && declPart.endsWith('"')) {
+            val unq = unquote(declPart)
+            unq to unq
         } else {
+            val withoutStereo = extractStereo(declPart)
             val (cleanWithoutClasses, _) = splitInlineClasses(withoutStereo)
             val unq = unquote(cleanWithoutClasses)
             withoutStereo to unq

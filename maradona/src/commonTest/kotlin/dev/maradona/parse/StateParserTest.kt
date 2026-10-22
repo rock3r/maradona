@@ -181,5 +181,26 @@ class StateParserTest {
         // Ensure layout completes cleanly without parent cycles.
         val layout = dev.maradona.layout.StateLayout.layout(d)
         assertTrue(layout.width > 0f && layout.height > 0f)
+
+        // Forward styling directives (`class A red` before `state C { A --> B }`) must not prevent A from belonging to C,
+        // and quoted labels containing `<<choice>>` must stay literal normal states.
+        val forwardStyled = StateParser.parse(
+            """
+            stateDiagram-v2
+                classDef red fill:#ffdddd
+                class A red
+                state "Wait <<choice>> here" as QuotedLiteral
+                state C {
+                    A --> B
+                }
+            """.trimIndent(),
+        )
+        val stateA = assertNotNull(forwardStyled.state("A"))
+        assertEquals("C", stateA.parentId)
+        assertEquals("#ffdddd", stateA.style?.fill)
+
+        val quoted = assertNotNull(forwardStyled.state("QuotedLiteral"))
+        assertEquals(StateKind.Normal, quoted.kind)
+        assertEquals("Wait <<choice>> here", quoted.label)
     }
 }
