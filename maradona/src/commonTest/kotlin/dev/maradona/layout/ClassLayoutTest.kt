@@ -114,7 +114,7 @@ class ClassLayoutTest {
             classDiagram
               namespace Empty {
               }
-              namespace First {
+              namespace VeryWideFirstNamespaceTitle {
                 class OutsideA
               }
               namespace VeryWideEnterpriseNamespaceTitleForTesting {
@@ -134,7 +134,7 @@ class ClassLayoutTest {
             namespaceLabelSize = { ns -> DiagramSize(ns.label.length * 14f, 20f) },
         )
         val emptyNs = layout.namespaces.first { it.namespace.id == "Empty" }.rect
-        val firstNs = layout.namespaces.first { it.namespace.id == "First" }.rect
+        val firstNs = layout.namespaces.first { it.namespace.id == "VeryWideFirstNamespaceTitle" }.rect
         val wideNs = layout.namespaces.first { it.namespace.id == "VeryWideEnterpriseNamespaceTitleForTesting" }.rect
         val outA = layout.classNode("OutsideA")!!.rect
         val inB = layout.classNode("InsideB1")!!.rect

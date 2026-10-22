@@ -324,14 +324,18 @@ object ClassLayout {
         // (and sibling namespaces) that overlap a namespace box; Pass 2 recomputes all
         // namespace boxes from the final displaced node coordinates.
         val nsById = diagram.namespaces.associateBy { it.id }
-        fun externalNsPadX(nodeNsId: String?, memberNsIds: Set<String>): Float {
-            var depth = 0
+        fun externalNsPadX(nodeNsId: String?, memberNsIds: Set<String>, nodeWidth: Float = 0f): Float {
+            var pad = 0f
             var cur = nodeNsId
+            var curW = nodeWidth
             while (cur != null && cur !in memberNsIds) {
-                depth++
+                val minW = (nsLabelSizes[cur]?.width ?: 0f) + options.subgraphPaddingX * 2f
+                val step = max(options.subgraphPaddingX, (minW - curW) / 2f)
+                pad += step
+                curW += step * 2f
                 cur = nsById[cur]?.parentId
             }
-            return depth * options.subgraphPaddingX
+            return pad
         }
 
         val builtNsRects = HashMap<String, DiagramRect>()
@@ -370,25 +374,22 @@ object ClassLayout {
                         if (c.namespaceId in memberNsIds) continue
                         val k = "c:${c.id}"
                         val r = finalRects[k] ?: continue
-                        val pad = externalNsPadX(c.namespaceId, memberNsIds)
+                        val pad = externalNsPadX(c.namespaceId, memberNsIds, r.width)
                         add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
                     }
                     for (n in diagram.notes) {
                         if (n.namespaceId in memberNsIds) continue
                         val k = "n:${n.id}"
                         val r = finalRects[k] ?: continue
-                        val pad = externalNsPadX(n.namespaceId, memberNsIds)
+                        val pad = externalNsPadX(n.namespaceId, memberNsIds, r.width)
                         add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
                     }
                     for (emptyNs in leafEmptyNamespaces) {
                         if (emptyNs.id in memberNsIds) continue
                         val k = "ns:${emptyNs.id}"
                         val r = finalRects[k] ?: continue
-                        val basePad = externalNsPadX(emptyNs.id, memberNsIds)
-                        val titleW = (nsLabelSizes[emptyNs.id]?.width ?: 0f) + options.subgraphPaddingX * 2f
-                        val extraTitlePad = max(0f, (titleW - r.width) / 2f)
-                        val pad = basePad + extraTitlePad
-                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - basePad, r.width + pad * 2f, r.height + basePad * 2f)))
+                        val pad = externalNsPadX(emptyNs.id, memberNsIds, r.width)
+                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
                     }
                 }
                 fun verticalOverlap(a: DiagramRect, b: DiagramRect): Boolean =
