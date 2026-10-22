@@ -174,10 +174,27 @@ fun annotatedLabel(label: String): AnnotatedString = buildAnnotatedString {
     }
     while (i < label.length) {
         when {
-            label.startsWith("**", i) -> { flush(); bold = !bold; i += 2 }
-            label[i] == '*' -> { flush(); italic = !italic; i += 1 }
+            label.startsWith("**", i) && (bold || label.indexOf("**", i + 2) >= 0) -> {
+                flush(); bold = !bold; i += 2
+            }
+            label[i] == '*' && !label.startsWith("**", i) && (italic || hasClosingSingleStar(label, i + 1)) -> {
+                flush(); italic = !italic; i += 1
+            }
             else -> { plain.append(label[i]); i += 1 }
         }
     }
     flush()
+}
+
+private fun hasClosingSingleStar(s: String, from: Int): Boolean {
+    var j = from
+    while (j < s.length) {
+        if (s.startsWith("**", j)) {
+            j += 2
+            continue
+        }
+        if (s[j] == '*') return true
+        j++
+    }
+    return false
 }

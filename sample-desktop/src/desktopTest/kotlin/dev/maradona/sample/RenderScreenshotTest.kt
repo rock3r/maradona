@@ -172,4 +172,62 @@ class RenderScreenshotTest {
         assertTrue(outerRectPixels > 2_000, "Outer rect rgb(234, 230, 216) not visible ($outerRectPixels px)")
         assertTrue(innerRectPixels > 2_000, "Inner rect rgb(211, 229, 245) occluded ($innerRectPixels px)")
     }
+
+    @Test
+    fun classDiagram() {
+        val png = renderToPng(
+            "class",
+            """
+            ---
+            title: Order Domain Model
+            ---
+            classDiagram
+              namespace Commerce {
+                class Customer {
+                  +String id
+                  +String email
+                  +placeOrder(Cart cart) Order
+                }
+                class Order {
+                  +String id
+                  +Date placedAt
+                  +total() Money
+                }
+              }
+              class LineItem {
+                +int quantity
+                +subtotal() Money
+              }
+              class PaymentGateway~T~ {
+                <<interface>>
+                +authorize(Money amount)* T
+              }
+              note for Order "Validated before settlement"
+              Customer "1" --> "*" Order : places
+              Order "1" *-- "1..*" LineItem : contains
+              Order ..|> PaymentGateway : settled by
+              style Order fill:#d3e5f5,stroke:#205ea6
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1100,
+            height = 850,
+        )
+        // Verify styled Order fill (#d3e5f5 = rgb(211, 229, 245)) and sticky note fill (#fff5ad = rgb(255, 245, 173))
+        // are both visibly rendered in class.png.
+        val img = ImageIO.read(png)
+        var orderFillPixels = 0
+        var noteFillPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 211) <= 3 && abs(g - 229) <= 3 && abs(b - 245) <= 3) orderFillPixels++
+                if (abs(r - 255) <= 3 && abs(g - 245) <= 3 && abs(b - 173) <= 3) noteFillPixels++
+            }
+        }
+        assertTrue(orderFillPixels > 2_000, "Styled Order box rgb(211, 229, 245) not rendered ($orderFillPixels px)")
+        assertTrue(noteFillPixels > 1_000, "Class note rgb(255, 245, 173) not rendered ($noteFillPixels px)")
+    }
 }

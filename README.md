@@ -8,8 +8,9 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.2 supports flowcharts (`graph` / `flowchart`) and sequence diagrams
-(`sequenceDiagram`). Other Mermaid diagram types are not supported yet.
+Version 0.3 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+(`sequenceDiagram`), and class diagrams (`classDiagram` / `classDiagram-v2`).
+Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
 
@@ -42,8 +43,22 @@ Supported in sequence diagrams:
 - Notes: `Note left of`, `Note right of`, and `Note over` (single or spanning
   participants)
 - Control blocks: `loop`, `alt`/`else`, `opt`, `par`/`and`, `critical`/`option`,
-  `break`, and `rect`
+  `break`, `rect`, and `box` participant groupings
 - `autonumber` badges and `title`
+
+Supported in class diagrams:
+
+- Classes: `class Name`, `class Name["Label"]`, ``class `Name!` ``, generic types
+  (`Square~Shape~` and nested `List~List~int~~`), annotations (`<<interface>>`,
+  `<<enumeration>>`, etc.), `{ ... }` member blocks, and colon members (`A : +int x`)
+- Members: visibility (`+`, `-`, `#`, `~`), attributes and methods with return types,
+  and abstract (`*`, italic) / static (`$`, underlined) classifiers
+- Relationships: inheritance/realization (`<|--`, `--|>`, `<|..`, `..|>`), composition
+  (`*--`, `--*`), aggregation (`o--`, `--o`), association/dependency (`<--`, `-->`,
+  `<..`, `..>`), links (`--`, `..`), lollipop interfaces (`()--`, `--()`), cardinalities
+  (`"1" --> "*"`), and labels (`: label`)
+- Notes (`note "..."` and `note for Class "..."`), `namespace` blocks (hierarchical and
+  flat), directions (`TB`/`TD`, `BT`, `LR`, `RL`), and `style` / `classDef` / `cssClass`
 
 ## How it works
 
@@ -126,7 +141,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts only. Sequence, class, and other types come later.
+- Flowcharts, sequence diagrams, and class diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
