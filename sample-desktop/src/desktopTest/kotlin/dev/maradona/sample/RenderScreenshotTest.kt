@@ -230,4 +230,55 @@ class RenderScreenshotTest {
         assertTrue(orderFillPixels > 2_000, "Styled Order box rgb(211, 229, 245) not rendered ($orderFillPixels px)")
         assertTrue(noteFillPixels > 1_000, "Class note rgb(255, 245, 173) not rendered ($noteFillPixels px)")
     }
+
+    @Test
+    fun stateDiagram() {
+        val png = renderToPng(
+            "state",
+            """
+            ---
+            title: Checkout State Machine
+            ---
+            stateDiagram-v2
+              [*] --> Idle
+              Idle : Waiting for cart
+              Idle --> Processing : submit
+              state "Order Processing" as Processing {
+                [*] --> Validating
+                Validating : Check inventory
+                Validating --> Charging : valid
+                Charging --> [*] : captured
+                --
+                [*] --> Auditing
+                Auditing --> [*] : logged
+              }
+              state Decision <<choice>>
+              Processing --> Decision : settled
+              Decision --> Fulfilled : [approved]
+              Decision --> Declined : [rejected]
+              Fulfilled --> [*]
+              Declined --> [*]
+              note right of Processing : Concurrent payment & audit
+              style Fulfilled fill:#d3e5f5,stroke:#205ea6
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1100,
+            height = 900,
+        )
+        val img = ImageIO.read(png)
+        var fulfilledFillPixels = 0
+        var noteFillPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 211) <= 3 && abs(g - 229) <= 3 && abs(b - 245) <= 3) fulfilledFillPixels++
+                if (abs(r - 255) <= 3 && abs(g - 245) <= 3 && abs(b - 173) <= 3) noteFillPixels++
+            }
+        }
+        assertTrue(fulfilledFillPixels > 1_000, "Styled Fulfilled state rgb(211, 229, 245) not rendered ($fulfilledFillPixels px)")
+        assertTrue(noteFillPixels > 1_000, "State note rgb(255, 245, 173) not rendered ($noteFillPixels px)")
+    }
 }

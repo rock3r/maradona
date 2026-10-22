@@ -1,0 +1,151 @@
+package dev.maradona.parse
+
+import dev.maradona.model.Direction
+import dev.maradona.model.StateKind
+import dev.maradona.model.StateNotePosition
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class StateParserTest {
+
+    @Test
+    fun parsesBasicStateDiagramAndDispatchesFromMaradonaParser() {
+        val src = """
+            ---
+            title: Checkout State Machine
+            ---
+            stateDiagram-v2
+                direction LR
+                [*] --> Idle
+                Idle : Waiting for cart
+                Idle : Cart is empty
+                Idle --> Validating : checkout
+                state "Order Validating" as Validating
+                Validating --> [*] : cancel
+        """.trimIndent()
+
+        val model = MaradonaParser.parse(src)
+        assertIs<MaradonaDiagramModel.StateModel>(model)
+        val d = model.diagram
+        assertEquals("Checkout State Machine", d.title)
+        assertEquals(Direction.LR, d.direction)
+
+        val idle = assertNotNull(d.state("Idle"))
+        assertEquals(listOf("Waiting for cart", "Cart is empty"), idle.descriptions)
+
+        val validating = assertNotNull(d.state("Validating"))
+        assertEquals("Order Validating", validating.label)
+
+        val startState = d.states.firstOrNull { it.kind == StateKind.Start }
+        val endState = d.states.firstOrNull { it.kind == StateKind.End }
+        assertNotNull(startState)
+        assertNotNull(endState)
+        assertEquals(3, d.transitions.size)
+        assertEquals("checkout", d.transitions[1].label)
+        assertEquals("cancel", d.transitions[2].label)
+    }
+
+    @Test
+    fun parsesCompositeStatesConcurrentRegionsChoiceForkJoinAndNotes() {
+        val src = """
+            stateDiagram-v2
+                state fork_state <<fork>>
+                state join_state [[join]]
+                state is_valid <<choice>>
+
+                [*] --> fork_state
+                fork_state --> Active
+                state "Active Session" as Active {
+                    direction TB
+                    [*] --> Auth
+                    Auth --> Ready : token ok
+                    --
+                    [*] --> Syncing
+                    Syncing --> Synced : done
+                }
+                Active --> is_valid
+                is_valid --> join_state : [ok]
+                join_state --> [*]
+
+                note right of Active : Monitored session
+                note left of is_valid
+                    Evaluates fraud
+                    and inventory
+                end note
+                classDef highlight fill:#d3e5f5,stroke:#205ea6
+                class Auth highlight
+        """.trimIndent()
+
+        val d = StateParser.parse(src)
+        assertEquals(StateKind.Fork, assertNotNull(d.state("fork_state")).kind)
+        assertEquals(StateKind.Join, assertNotNull(d.state("join_state")).kind)
+        assertEquals(StateKind.Choice, assertNotNull(d.state("is_valid")).kind)
+
+        val active = assertNotNull(d.state("Active"))
+        assertEquals(StateKind.Composite, active.kind)
+        assertEquals("Active Session", active.label)
+        assertEquals(Direction.TB, active.direction)
+        assertEquals(2, active.regionCount)
+
+        val auth = assertNotNull(d.state("Auth"))
+        assertEquals("Active", auth.parentId)
+        assertEquals(0, auth.regionIndex)
+        assertEquals("#d3e5f5", auth.style?.fill)
+
+        val syncing = assertNotNull(d.state("Syncing"))
+        assertEquals("Active", syncing.parentId)
+        assertEquals(1, syncing.regionIndex)
+
+        assertEquals(2, d.notes.size)
+        assertEquals(StateNotePosition.Right, d.notes[0].position)
+        assertEquals("Active", d.notes[0].forStateId)
+        assertEquals("Monitored session", d.notes[0].text)
+        assertEquals(StateNotePosition.Left, d.notes[1].position)
+        assertEquals("is_valid", d.notes[1].forStateId)
+        assertEquals("Evaluates fraud\nand inventory", d.notes[1].text)
+    }
+
+    @Test
+    fun preservesQuotesArrowsAndBracesInsideQuotedStringsAndUnquotedLabels() {
+        val src = """
+            stateDiagram-v2
+                state "A --> B {quoted} \"ok\"" as S1
+                S1 --> S2 : a --> b : c {payload}
+                S2 : description with {braces}
+                state Container {
+                    BareOne
+                    --
+                    BareChoice <<choice>>
+                }
+                note right of S1
+                    literal {brace} inside note
+                end note
+        """.trimIndent()
+
+        val d = StateParser.parse(src)
+        val s1 = assertNotNull(d.state("S1"))
+        assertEquals("A --> B {quoted} \"ok\"", s1.label)
+        assertEquals(1, d.transitions.size)
+        assertEquals("S1", d.transitions[0].from)
+        assertEquals("S2", d.transitions[0].to)
+        assertEquals("a --> b : c {payload}", d.transitions[0].label)
+
+        val s2 = assertNotNull(d.state("S2"))
+        assertEquals(listOf("description with {braces}"), s2.descriptions)
+
+        val bareOne = assertNotNull(d.state("BareOne"))
+        assertEquals("Container", bareOne.parentId)
+        assertEquals(0, bareOne.regionIndex)
+
+        val bareChoice = assertNotNull(d.state("BareChoice"))
+        assertEquals("Container", bareChoice.parentId)
+        assertEquals(1, bareChoice.regionIndex)
+        assertEquals(StateKind.Choice, bareChoice.kind)
+
+        assertEquals(1, d.notes.size)
+        assertEquals("literal {brace} inside note", d.notes[0].text)
+    }
+}

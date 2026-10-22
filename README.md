@@ -8,8 +8,9 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.3 supports flowcharts (`graph` / `flowchart`), sequence diagrams
-(`sequenceDiagram`), and class diagrams (`classDiagram` / `classDiagram-v2`).
+Version 0.4 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+(`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`), and
+state diagrams (`stateDiagram` / `stateDiagram-v2`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -59,6 +60,20 @@ Supported in class diagrams:
   (`"1" --> "*"`), and labels (`: label`)
 - Notes (`note "..."` and `note for Class "..."`), `namespace` blocks (hierarchical and
   flat), directions (`TB`/`TD`, `BT`, `LR`, `RL`), and `style` / `classDef` / `cssClass`
+
+Supported in state diagrams:
+
+- Headers: `stateDiagram` and `stateDiagram-v2`, YAML frontmatter (`title`,
+  `hideEmptyDescription`), `title`, `accTitle` / `accDescr`, `hide empty description`,
+  and `direction TB|TD|BT|LR|RL` (top-level and per composite state)
+- States: simple states (`StateId`), descriptions (`StateId : description`), aliased
+  declarations (`state "Label" as s1`), and pseudostates (`[*]` start/end per scope,
+  `<<choice>>` / `[[choice]]`, `<<fork>>` / `[[fork]]`, `<<join>>` / `[[join]]`)
+- Composite states (`state Composite { ... }`) with nested states, transitions, notes,
+  and `--` / `---` concurrent regions
+- Transitions (`A --> B : label`, chained `A --> B --> C : label`), notes
+  (`note right of`, `note left of`, multi-line `end note`, standalone `note "..." as N`),
+  and styling (`classDef`, `class`, `cssClass`, `style`, inline `:::className`)
 
 ## How it works
 
@@ -141,7 +156,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, and class diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, and state diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
