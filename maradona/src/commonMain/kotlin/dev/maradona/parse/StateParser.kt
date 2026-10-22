@@ -172,7 +172,7 @@ object StateParser {
             return created
         }
 
-        fun resolvePseudostateEndpoint(token: String, isSource: Boolean): String {
+        fun resolvePseudostateEndpoint(token: String, isSource: Boolean, localOwnership: Boolean = false): String {
             val trimmed = token.trim()
             if (trimmed == "[*]") {
                 val pId = currentParentId()
@@ -186,12 +186,13 @@ object StateParser {
                     explicitKind = kind,
                     parentOverride = pId,
                     regionOverride = reg,
+                    isDeclaration = true,
                 )
                 return id
             }
             val (cleanToken, inlineClasses) = splitInlineClasses(trimmed)
             val unquoted = unquote(cleanToken)
-            val st = ensureState(unquoted)
+            val st = ensureState(unquoted, isDeclaration = localOwnership)
             st.styleClasses += inlineClasses
             return st.id
         }
@@ -428,8 +429,14 @@ object StateParser {
                     } else null
                     val endpoints = arrowParts.dropLast(1).map { it.trim() } + lastTargetRaw
                     for (i in 0 until endpoints.lastIndex) {
-                        val fromId = resolvePseudostateEndpoint(endpoints[i], isSource = true)
-                        val toId = resolvePseudostateEndpoint(endpoints[i + 1], isSource = false)
+                        val rawFrom = endpoints[i]
+                        val rawTo = endpoints[i + 1]
+                        val cleanFrom = unquote(splitInlineClasses(rawFrom).first)
+                        val cleanTo = unquote(splitInlineClasses(rawTo).first)
+                        val localScope = currentParentId() != null &&
+                            (rawFrom == "[*]" || rawTo == "[*]" || cleanFrom == cleanTo)
+                        val fromId = resolvePseudostateEndpoint(rawFrom, isSource = true, localOwnership = localScope)
+                        val toId = resolvePseudostateEndpoint(rawTo, isSource = false, localOwnership = localScope)
                         val lbl = if (i == endpoints.lastIndex - 1) transLabel else null
                         transitions += MutableTransition(from = fromId, to = toId, label = lbl)
                     }
