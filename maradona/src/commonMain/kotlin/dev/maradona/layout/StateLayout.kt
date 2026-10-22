@@ -170,7 +170,9 @@ object StateLayout {
         // Lift `stateId` through `parentId` links until its parent is `scopeParentId` (in `scopeRegion`).
         fun liftToScope(stateId: String, scopeParentId: String?, scopeRegion: Int): String? {
             var cur = stateById[stateId] ?: return null
+            val visited = HashSet<String>()
             while (cur.parentId != scopeParentId) {
+                if (!visited.add(cur.id)) return null
                 val nextParent = cur.parentId ?: return null
                 cur = stateById[nextParent] ?: return null
             }
@@ -654,7 +656,8 @@ object StateLayout {
         fun stateDepth(s: StateNode): Int {
             var d = 0
             var p = s.parentId
-            while (p != null) {
+            val visited = HashSet<String>()
+            while (p != null && visited.add(p)) {
                 d++
                 p = stateById[p]?.parentId
             }

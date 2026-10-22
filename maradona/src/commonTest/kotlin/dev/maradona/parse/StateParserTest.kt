@@ -148,4 +148,38 @@ class StateParserTest {
         assertEquals(1, d.notes.size)
         assertEquals("literal {brace} inside note", d.notes[0].text)
     }
+
+    @Test
+    fun preservesOwnershipOnTransitionReferencesAndStripsInlineClassesFromLabels() {
+        val src = """
+            stateDiagram-v2
+                classDef red fill:#ffdddd,stroke:#cc0000
+                state Outside:::red
+                state Outer {
+                    state Inner {
+                        Leaf --> Outer
+                        Leaf --> Outside
+                    }
+                }
+        """.trimIndent()
+
+        val d = StateParser.parse(src)
+        val outside = assertNotNull(d.state("Outside"))
+        assertEquals("Outside", outside.label)
+        assertEquals("#ffdddd", outside.style?.fill)
+        assertEquals(null, outside.parentId)
+
+        val outer = assertNotNull(d.state("Outer"))
+        assertEquals(null, outer.parentId)
+
+        val inner = assertNotNull(d.state("Inner"))
+        assertEquals("Outer", inner.parentId)
+
+        val leaf = assertNotNull(d.state("Leaf"))
+        assertEquals("Inner", leaf.parentId)
+
+        // Ensure layout completes cleanly without parent cycles.
+        val layout = dev.maradona.layout.StateLayout.layout(d)
+        assertTrue(layout.width > 0f && layout.height > 0f)
+    }
 }
