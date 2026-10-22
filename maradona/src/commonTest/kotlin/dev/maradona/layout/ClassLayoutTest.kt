@@ -281,5 +281,67 @@ class ClassLayoutTest {
         val hdrOverlap = crossLbl.x < hdrRect.right && hdrRect.x < crossLbl.right &&
             crossLbl.y < hdrRect.bottom && hdrRect.y < crossLbl.bottom
         assertTrue(!hdrOverlap, "Relation label $crossLbl must not overlap namespace header $hdrRect")
+
+        // External namespace with a self-relation must include its self-loop envelope when evicted by a sibling namespace.
+        val extSelfNsDiagram = ClassParser.parse(
+            """
+            classDiagram
+                namespace N {
+                    class A
+                    class C
+                }
+                namespace Other {
+                    class B
+                }
+                A --> B : link
+                B --> B : self
+            """.trimIndent(),
+        )
+        val extSelfNsLayout = ClassLayout.layout(
+            diagram = extSelfNsDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+            relationLabelSize = { _, r -> r.label?.let { DiagramSize(100f, 20f) } },
+        )
+        val nsNRect = extSelfNsLayout.namespaces.first { it.namespace.id == "N" }.rect
+        val nsOtherRect = extSelfNsLayout.namespaces.first { it.namespace.id == "Other" }.rect
+        val siblingOverlap = nsNRect.x < nsOtherRect.right && nsOtherRect.x < nsNRect.right &&
+            nsNRect.y < nsOtherRect.bottom && nsOtherRect.y < nsNRect.bottom
+        assertTrue(!siblingOverlap, "Sibling namespaces N ($nsNRect) and Other ($nsOtherRect) must not overlap")
+
+        // LR namespace eviction that reverses endpoint order must reserve label clearance and reroute around intermediate classes.
+        val lrEvictDiagram = ClassParser.parse(
+            """
+            classDiagram
+                direction LR
+                namespace N {
+                    class A
+                    class C
+                }
+                class B
+                A --> B : link
+                B --> C : link
+            """.trimIndent(),
+        )
+        val lrEvictLayout = ClassLayout.layout(
+            diagram = lrEvictDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+            relationLabelSize = { _, r -> r.label?.let { DiagramSize(100f, 20f) } },
+        )
+        val lrRectC = lrEvictLayout.classNode("C")!!.rect
+        val lrRelAB = lrEvictLayout.relations.first { it.relation.from == "A" && it.relation.to == "B" }
+        for (i in 0 until lrRelAB.points.lastIndex) {
+            assertTrue(
+                !ClassLayout.segmentIntersectsRect(lrRelAB.points[i], lrRelAB.points[i + 1], lrRectC),
+                "A->B segment $i (${lrRelAB.points[i]} -> ${lrRelAB.points[i + 1]}) must not pass through C ($lrRectC)",
+            )
+        }
+        for (rel in lrEvictLayout.relations) {
+            val lbl = requireNotNull(rel.labelRect)
+            for (pc in lrEvictLayout.classes) {
+                val cOverlap = lbl.x < pc.rect.right && pc.rect.x < lbl.right &&
+                    lbl.y < pc.rect.bottom && pc.rect.y < lbl.bottom
+                assertTrue(!cOverlap, "Relation ${rel.relation.from}->${rel.relation.to} label $lbl must not overlap class ${pc.node.id} (${pc.rect})")
+            }
+        }
     }
 }

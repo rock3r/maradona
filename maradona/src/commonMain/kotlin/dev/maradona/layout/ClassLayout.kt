@@ -331,19 +331,6 @@ object ClassLayout {
         // (and sibling namespaces) that overlap a namespace box; Pass 2 recomputes all
         // namespace boxes from the final displaced node coordinates.
         val nsById = diagram.namespaces.associateBy { it.id }
-        fun externalNsPadX(nodeNsId: String?, memberNsIds: Set<String>, nodeWidth: Float = 0f): Float {
-            var pad = 0f
-            var cur = nodeNsId
-            var curW = nodeWidth
-            while (cur != null && cur !in memberNsIds) {
-                val minW = (nsLabelSizes[cur]?.width ?: 0f) + options.subgraphPaddingX * 2f
-                val step = max(options.subgraphPaddingX, (minW - curW) / 2f)
-                pad += step
-                curW += step * 2f
-                cur = nsById[cur]?.parentId
-            }
-            return pad
-        }
 
         fun classWithSelfEnvelope(classId: String): DiagramRect? {
             val base = finalRects["c:$classId"] ?: return null
@@ -372,6 +359,42 @@ object ClassLayout {
                 maxY = max(maxY, labelBottom)
             }
             return DiagramRect(minX, minY, maxX - minX, maxY - minY)
+        }
+
+        fun externalNodeEnvelope(
+            baseRect: DiagramRect,
+            classId: String?,
+            nodeNsId: String?,
+            memberNsIds: Set<String>,
+        ): DiagramRect {
+            var env = if (classId != null) {
+                val rawEnv = classWithSelfEnvelope(classId) ?: baseRect
+                val dx = baseRect.x - (finalRects["c:$classId"]?.x ?: baseRect.x)
+                val dy = baseRect.y - (finalRects["c:$classId"]?.y ?: baseRect.y)
+                rawEnv.copy(x = rawEnv.x + dx, y = rawEnv.y + dy)
+            } else {
+                baseRect
+            }
+            var cur = nodeNsId
+            while (cur != null && cur !in memberNsIds) {
+                val titleSz = nsLabelSizes[cur] ?: DiagramSize(0f, 0f)
+                val padX = options.subgraphPaddingX
+                val padBottom = options.subgraphPaddingY * 0.65f
+                val padTop = max(options.subgraphPaddingY, titleSz.height + 12f * options.density)
+                var left = env.x - padX
+                var right = env.right + padX
+                val minW = titleSz.width + padX * 2f
+                if (right - left < minW) {
+                    val mid = (left + right) / 2f
+                    left = mid - minW / 2f
+                    right = mid + minW / 2f
+                }
+                val top = env.y - padTop
+                val bottom = env.bottom + padBottom
+                env = DiagramRect(left, top, right - left, bottom - top)
+                cur = nsById[cur]?.parentId
+            }
+            return env
         }
 
         val builtNsRects = HashMap<String, DiagramRect>()
@@ -403,29 +426,45 @@ object ClassLayout {
 
             if (evict) {
                 val memberNsIds = enclosedNamespaceIds(ns.id)
-                val gap = options.nodeGap * 0.5f
-                data class NonMember(val key: String, val rect: DiagramRect, val paddedRect: DiagramRect)
+                val crossBoundaryLabelClearance = diagram.relations.withIndex()
+                    .filter { (_, rel) ->
+                        rel.from != rel.to &&
+                            ((nsByClass[rel.from] in memberNsIds) != (nsByClass[rel.to] in memberNsIds))
+                    }
+                    .maxOfOrNull { (idx, rel) ->
+                        val lW = relationLabelSize(idx, rel)?.width ?: 0f
+                        val cFromW = rel.fromCardinality?.let { cardinalitySize(idx, true, it).width } ?: 0f
+                        val cToW = rel.toCardinality?.let { cardinalitySize(idx, false, it).width } ?: 0f
+                        if (lW > 0f || cFromW > 0f || cToW > 0f) {
+                            lW + cFromW + cToW + 16f * options.density
+                        } else 0f
+                    } ?: 0f
+                val gap = max(options.nodeGap * 0.5f, crossBoundaryLabelClearance)
+                data class NonMember(
+                    val key: String,
+                    val classId: String?,
+                    val nodeNsId: String?,
+                    val rect: DiagramRect,
+                    val paddedRect: DiagramRect,
+                )
                 val nonMembers = buildList {
                     for (c in diagram.classes) {
                         if (c.namespaceId in memberNsIds) continue
                         val k = "c:${c.id}"
                         val r = finalRects[k] ?: continue
-                        val pad = externalNsPadX(c.namespaceId, memberNsIds, r.width)
-                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
+                        add(NonMember(k, c.id, c.namespaceId, r, externalNodeEnvelope(r, c.id, c.namespaceId, memberNsIds)))
                     }
                     for (n in diagram.notes) {
                         if (n.namespaceId in memberNsIds) continue
                         val k = "n:${n.id}"
                         val r = finalRects[k] ?: continue
-                        val pad = externalNsPadX(n.namespaceId, memberNsIds, r.width)
-                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
+                        add(NonMember(k, null, n.namespaceId, r, externalNodeEnvelope(r, null, n.namespaceId, memberNsIds)))
                     }
                     for (emptyNs in leafEmptyNamespaces) {
                         if (emptyNs.id in memberNsIds) continue
                         val k = "ns:${emptyNs.id}"
                         val r = finalRects[k] ?: continue
-                        val pad = externalNsPadX(emptyNs.id, memberNsIds, r.width)
-                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
+                        add(NonMember(k, null, emptyNs.id, r, externalNodeEnvelope(r, null, emptyNs.id, memberNsIds)))
                     }
                 }
                 fun verticalOverlap(a: DiagramRect, b: DiagramRect): Boolean =
@@ -450,8 +489,7 @@ object ClassLayout {
                 val overlappingLeft = nonMembers
                     .mapNotNull { nm ->
                         val r = finalRects[nm.key] ?: return@mapNotNull null
-                        val pad = (nm.paddedRect.width - nm.rect.width) / 2f
-                        nm.copy(rect = r, paddedRect = DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f))
+                        nm.copy(rect = r, paddedRect = externalNodeEnvelope(r, nm.classId, nm.nodeNsId, memberNsIds))
                     }
                     .filter { rectsOverlap(it.paddedRect, nsRect) && it.rect.centerX < nsRect.centerX }
                     .maxByOrNull { it.paddedRect.right }
@@ -461,8 +499,8 @@ object ClassLayout {
                     if (shiftLeft > 0f) {
                         for (nm in nonMembers) {
                             val r = finalRects[nm.key] ?: continue
-                            val pad = (nm.paddedRect.width - nm.rect.width) / 2f
-                            if (r.right + pad <= maxOverlapRight + 0.5f && verticalOverlap(nm.paddedRect, nsRect)) {
+                            val env = externalNodeEnvelope(r, nm.classId, nm.nodeNsId, memberNsIds)
+                            if (env.right <= maxOverlapRight + 0.5f && verticalOverlap(env, nsRect)) {
                                 finalRects[nm.key] = r.copy(x = r.x - shiftLeft)
                             }
                         }
@@ -483,8 +521,11 @@ object ClassLayout {
             return d
         }
         val sortedNamespaces = diagram.namespaces.sortedBy { nsDepth(it) }
-        for (ns in sortedNamespaces) {
-            buildNamespaceRect(ns, evict = true)
+        repeat(2) {
+            builtNsRects.clear()
+            for (ns in sortedNamespaces) {
+                buildNamespaceRect(ns, evict = true)
+            }
         }
         builtNsRects.clear()
         val positionedNamespaces = sortedNamespaces.mapNotNull { ns ->
@@ -572,22 +613,83 @@ object ClassLayout {
             val dyFrom = fromRect.centerY - origFrom.centerY
             val dxTo = toRect.centerX - origTo.centerX
             val dyTo = toRect.centerY - origTo.centerY
+            val orderReversed =
+                ((origTo.centerX - origFrom.centerX) * (toRect.centerX - fromRect.centerX) < -1f) ||
+                    ((origTo.centerY - origFrom.centerY) * (toRect.centerY - fromRect.centerY) < -1f)
 
             val path = dagreResult.paths["r$idx"]
-            val rawPts = path?.points?.map { transformPoint(DiagramPoint(it.first, it.second)) }
-                ?.takeIf { it.size >= 2 }
-                ?: listOf(DiagramPoint(fromRect.centerX, fromRect.centerY), DiagramPoint(toRect.centerX, toRect.centerY))
-            val pts = rawPts.mapIndexed { k, p ->
-                val t = if (rawPts.size > 1) k.toFloat() / rawPts.lastIndex else 0.5f
-                DiagramPoint(
-                    x = p.x + dxFrom + (dxTo - dxFrom) * t,
-                    y = p.y + dyFrom + (dyTo - dyFrom) * t,
+            val pts = if (orderReversed) {
+                mutableListOf(
+                    DiagramPoint(fromRect.centerX, fromRect.centerY),
+                    DiagramPoint(toRect.centerX, toRect.centerY),
                 )
-            }.toMutableList()
+            } else {
+                val rawPts = path?.points?.map { transformPoint(DiagramPoint(it.first, it.second)) }
+                    ?.takeIf { it.size >= 2 }
+                    ?: listOf(DiagramPoint(fromRect.centerX, fromRect.centerY), DiagramPoint(toRect.centerX, toRect.centerY))
+                rawPts.mapIndexed { k, p ->
+                    val t = if (rawPts.size > 1) k.toFloat() / rawPts.lastIndex else 0.5f
+                    DiagramPoint(
+                        x = p.x + dxFrom + (dxTo - dxFrom) * t,
+                        y = p.y + dyFrom + (dyTo - dyFrom) * t,
+                    )
+                }.toMutableList()
+            }
             pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
             pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
 
-            var reroutedAroundHeader = false
+            var rerouted = orderReversed
+
+            // Route around any unrelated class or note boxes that lie across the relation path.
+            val obstacleBoxes = buildList {
+                for (pc in positionedClasses) {
+                    if (pc.node.id != rel.from && pc.node.id != rel.to) add(pc.rect)
+                }
+                for (pn in positionedNotes) add(pn.rect)
+            }
+            for (obs in obstacleBoxes) {
+                val pad = 8f * options.density
+                val guardRect = DiagramRect(obs.x - pad, obs.y - pad, obs.width + pad * 2f, obs.height + pad * 2f)
+                val hitsObs = (0 until pts.lastIndex).any { i -> segmentIntersectsRect(pts[i], pts[i + 1], guardRect) }
+                if (!hitsObs) continue
+                rerouted = true
+                var k = 1
+                while (k < pts.lastIndex) {
+                    val p = pts[k]
+                    if (p.x in guardRect.x..guardRect.right && p.y in guardRect.y..guardRect.bottom) {
+                        pts.removeAt(k)
+                    } else {
+                        k++
+                    }
+                }
+                var segIdx = 0
+                while (segIdx < pts.lastIndex) {
+                    val p0 = pts[segIdx]
+                    val p1 = pts[segIdx + 1]
+                    if (segmentIntersectsRect(p0, p1, guardRect)) {
+                        val dx = kotlin.math.abs(p1.x - p0.x)
+                        val dy = kotlin.math.abs(p1.y - p0.y)
+                        if (dx >= dy) {
+                            val detourY = if ((p0.y + p1.y) / 2f >= obs.centerY) guardRect.bottom else guardRect.y
+                            val firstX = p0.x.coerceIn(guardRect.x, guardRect.right)
+                            val secondX = p1.x.coerceIn(guardRect.x, guardRect.right)
+                            pts.add(segIdx + 1, DiagramPoint(firstX, detourY))
+                            pts.add(segIdx + 2, DiagramPoint(secondX, detourY))
+                            segIdx += 3
+                        } else {
+                            val detourX = if ((p0.x + p1.x) / 2f <= obs.centerX) guardRect.x else guardRect.right
+                            val firstY = p0.y.coerceIn(guardRect.y, guardRect.bottom)
+                            val secondY = p1.y.coerceIn(guardRect.y, guardRect.bottom)
+                            pts.add(segIdx + 1, DiagramPoint(detourX, firstY))
+                            pts.add(segIdx + 2, DiagramPoint(detourX, secondY))
+                            segIdx += 3
+                        }
+                    } else {
+                        segIdx++
+                    }
+                }
+            }
+
             for (ns in positionedNamespaces) {
                 val hdr = ns.headerRect
                 if (hdr.width <= 0f || hdr.height <= 0f) continue
@@ -603,7 +705,7 @@ object ClassLayout {
                     segmentIntersectsRect(pts[i], pts[i + 1], guardRect)
                 }
                 if (!hitsHeader) continue
-                reroutedAroundHeader = true
+                rerouted = true
 
                 // Remove interior dummy waypoints sitting directly above/below or inside the header
                 // so the detour transitions cleanly without kinking back toward the header center.
@@ -649,7 +751,7 @@ object ClassLayout {
                     }
                 }
             }
-            if (reroutedAroundHeader && pts.size >= 2) {
+            if (rerouted && pts.size >= 2) {
                 pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
                 pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
             }
@@ -669,14 +771,39 @@ object ClassLayout {
                 return candidate
             }
 
+            fun overlapsAnyBoxOrHeader(r: DiagramRect): Boolean {
+                if (positionedClasses.any { rectsOverlap(r, it.rect) }) return true
+                if (positionedNotes.any { rectsOverlap(r, it.rect) }) return true
+                if (positionedNamespaces.any { it.headerRect.width > 0f && it.headerRect.height > 0f && rectsOverlap(r, it.headerRect) }) return true
+                return false
+            }
+
             val labelRect = lSize?.let { size ->
-                val centre = if (!reroutedAroundHeader && path?.labelCentre != null) {
+                val defaultCentre = if (!rerouted && path?.labelCentre != null) {
                     val base = transformPoint(DiagramPoint(path.labelCentre.first, path.labelCentre.second))
                     DiagramPoint(base.x + (dxFrom + dxTo) / 2f, base.y + (dyFrom + dyTo) / 2f)
                 } else {
                     polylineMidpoint(pts)
                 }
-                avoidNamespaceHeaders(DiagramRect(centre.x - size.width / 2f, centre.y - size.height / 2f, size.width, size.height))
+                var candidate = avoidNamespaceHeaders(
+                    DiagramRect(defaultCentre.x - size.width / 2f, defaultCentre.y - size.height / 2f, size.width, size.height),
+                )
+                if (rerouted || overlapsAnyBoxOrHeader(candidate)) {
+                    val segMidCandidates = (0 until pts.lastIndex)
+                        .map { i ->
+                            val a = pts[i]
+                            val b = pts[i + 1]
+                            val len = sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y))
+                            val mid = DiagramPoint((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+                            len to avoidNamespaceHeaders(DiagramRect(mid.x - size.width / 2f, mid.y - size.height / 2f, size.width, size.height))
+                        }
+                        .sortedByDescending { it.first }
+                    val clearCandidate = segMidCandidates.firstOrNull { !overlapsAnyBoxOrHeader(it.second) }?.second
+                    if (clearCandidate != null) {
+                        candidate = clearCandidate
+                    }
+                }
+                candidate
             }
             var fromCardRect = rel.fromCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, true, card)
