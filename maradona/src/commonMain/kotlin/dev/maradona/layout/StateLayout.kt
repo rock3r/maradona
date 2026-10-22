@@ -162,10 +162,25 @@ object StateLayout {
             }
         }
 
-        fun isComposite(s: StateNode): Boolean =
-            s.kind == StateKind.Composite ||
-                diagram.states.any { it.parentId == s.id } ||
-                diagram.notes.any { noteScope(it).first == s.id }
+        val childrenByParent = diagram.states.groupBy { it.parentId }
+        val statesByScope = diagram.states.groupBy { s ->
+            s.parentId to (if (s.parentId == null) 0 else s.regionIndex)
+        }
+        val notesByScope = diagram.notes.withIndex().groupBy { (_, n) ->
+            val (pId, reg) = noteScope(n)
+            pId to (if (pId == null) 0 else reg)
+        }
+        val compositeStateIds = HashSet<String>().apply {
+            for (s in diagram.states) {
+                if (s.kind == StateKind.Composite) add(s.id)
+                s.parentId?.let(::add)
+            }
+            for (n in diagram.notes) {
+                noteScope(n).first?.let(::add)
+            }
+        }
+
+        fun isComposite(s: StateNode): Boolean = s.id in compositeStateIds
 
         // Lift `stateId` through `parentId` links until its parent is `scopeParentId` (in `scopeRegion`).
         fun liftToScope(stateId: String, scopeParentId: String?, scopeRegion: Int): String? {
@@ -202,7 +217,7 @@ object StateLayout {
             return DiagramRect(minX, minY, maxX - minX, maxY - minY)
         }
 
-        val compositePlacements = HashMap<String, RegionPlacement>()
+        val compositeRegionPlacements = HashMap<String, List<Pair<DiagramPoint, RegionPlacement>>>()
         val compositeSizes = HashMap<String, DiagramSize>()
         val compositeHeaderHeights = HashMap<String, Float>()
         val compositeTitleWidths = HashMap<String, Float>()
@@ -215,13 +230,9 @@ object StateLayout {
             scopeRegion: Int,
             scopeDirection: Direction,
         ): RegionPlacement {
-            val directStates = diagram.states.filter {
-                it.parentId == scopeParentId && (scopeParentId == null || it.regionIndex == scopeRegion)
-            }
-            val directNotes = diagram.notes.withIndex().filter { (_, n) ->
-                val (pId, reg) = noteScope(n)
-                pId == scopeParentId && (scopeParentId == null || reg == scopeRegion)
-            }
+            val scopeKey = scopeParentId to (if (scopeParentId == null) 0 else scopeRegion)
+            val directStates = statesByScope[scopeKey].orEmpty()
+            val directNotes = notesByScope[scopeKey].orEmpty()
 
             // First, recursively lay out any composite child states in this scope.
             for (child in directStates) {
@@ -480,18 +491,9 @@ object StateLayout {
                         width = titleW,
                         height = max(1f, hdrH - padHdrY * 2f),
                     )
-                    val inner = compositePlacements.getValue(s.id)
-                    inner.translate(r.x, r.y)
-                    stateRects.putAll(inner.stateRects)
-                    stateHeaderHeights.putAll(inner.stateHeaderHeights)
-                    stateTitleRects.putAll(inner.stateTitleRects)
-                    stateDividers.putAll(inner.stateDividers)
                     stateDividers[s.id] = (compositeDividers[s.id] ?: emptyList()).map { (a, b) ->
                         DiagramPoint(a.x + r.x, a.y + r.y) to DiagramPoint(b.x + r.x, b.y + r.y)
                     }
-                    noteRects.putAll(inner.noteRects)
-                    origStateRects.putAll(inner.origStateRects)
-                    dagrePaths.putAll(inner.dagrePaths)
                 } else {
                     val m = baseMetricsById.getValue(s.id)
                     stateHeaderHeights[s.id] = m.headerHeight
@@ -583,9 +585,8 @@ object StateLayout {
             compositeHeaderHeights[comp.id] = hdrH
             compositeTitleWidths[comp.id] = titleW
 
-            val maxChildReg = diagram.states
-                .filter { it.parentId == comp.id }
-                .maxOfOrNull { it.regionIndex } ?: 0
+            val maxChildReg = childrenByParent[comp.id]
+                ?.maxOfOrNull { it.regionIndex } ?: 0
             val regCount = max(comp.regionCount, maxChildReg + 1)
             val regions = (0 until regCount).map { rIdx ->
                 layoutRegion(comp.id, rIdx, compDirection)
@@ -596,23 +597,11 @@ object StateLayout {
             val padBottom = options.subgraphPaddingY * 0.65f
             val regionGap = 24f * options.density
 
-            val combined = RegionPlacement(
-                width = 0f,
-                height = 0f,
-                stateRects = mutableMapOf(),
-                stateHeaderHeights = mutableMapOf(),
-                stateTitleRects = mutableMapOf(),
-                stateDividers = mutableMapOf(),
-                noteRects = mutableMapOf(),
-                origStateRects = mutableMapOf(),
-                dagrePaths = mutableMapOf(),
-            )
-
             val nonEmptyRegions = regions.filter { it.stateRects.isNotEmpty() || it.noteRects.isNotEmpty() }
             if (nonEmptyRegions.isEmpty()) {
                 val w = max(120f * options.density, titleW + padX * 2f)
                 val h = hdrH + 36f * options.density
-                compositePlacements[comp.id] = combined
+                compositeRegionPlacements[comp.id] = emptyList()
                 compositeSizes[comp.id] = DiagramSize(w, h)
                 compositeDividers[comp.id] = emptyList()
                 return
@@ -627,16 +616,10 @@ object StateLayout {
             val startX = (compWidth - innerWidth) / 2f
             var curX = startX
             val dividers = mutableListOf<Pair<DiagramPoint, DiagramPoint>>()
+            val positionedRegs = mutableListOf<Pair<DiagramPoint, RegionPlacement>>()
             for ((idx, reg) in nonEmptyRegions.withIndex()) {
                 val regY = hdrH + padTop
-                reg.translate(curX, regY)
-                combined.stateRects.putAll(reg.stateRects)
-                combined.stateHeaderHeights.putAll(reg.stateHeaderHeights)
-                combined.stateTitleRects.putAll(reg.stateTitleRects)
-                combined.stateDividers.putAll(reg.stateDividers)
-                combined.noteRects.putAll(reg.noteRects)
-                combined.origStateRects.putAll(reg.origStateRects)
-                combined.dagrePaths.putAll(reg.dagrePaths)
+                positionedRegs += DiagramPoint(curX, regY) to reg
                 curX += reg.width
                 if (idx < nonEmptyRegions.lastIndex) {
                     val divX = curX + regionGap / 2f
@@ -645,7 +628,7 @@ object StateLayout {
                 }
             }
 
-            compositePlacements[comp.id] = combined
+            compositeRegionPlacements[comp.id] = positionedRegs
             compositeSizes[comp.id] = DiagramSize(compWidth, compHeight)
             compositeDividers[comp.id] = dividers
         }
@@ -686,6 +669,21 @@ object StateLayout {
         }
 
         val rootPlacement = layoutRegion(null, 0, rootDirection)
+
+        // Single top-down O(N) pass to translate each composite's direct children into global coordinates.
+        for (comp in compositesDeepestFirst.asReversed()) {
+            val compRect = rootPlacement.stateRects[comp.id] ?: continue
+            for ((offset, reg) in compositeRegionPlacements[comp.id].orEmpty()) {
+                reg.translate(compRect.x + offset.x, compRect.y + offset.y)
+                rootPlacement.stateRects.putAll(reg.stateRects)
+                rootPlacement.stateHeaderHeights.putAll(reg.stateHeaderHeights)
+                rootPlacement.stateTitleRects.putAll(reg.stateTitleRects)
+                rootPlacement.stateDividers.putAll(reg.stateDividers)
+                rootPlacement.noteRects.putAll(reg.noteRects)
+                rootPlacement.origStateRects.putAll(reg.origStateRects)
+                rootPlacement.dagrePaths.putAll(reg.dagrePaths)
+            }
+        }
 
         val orderedStates = diagram.states.sortedWith(
             compareBy<StateNode> { if (isComposite(it)) 0 else 1 }.thenBy { stateDepth(it) },

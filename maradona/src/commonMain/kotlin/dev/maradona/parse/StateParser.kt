@@ -588,7 +588,6 @@ object StateParser {
             st.descriptions += descPart
         }
         if (opensBlock) {
-            require(scopeStack.size < 64) { "Composite state nesting exceeds maximum depth (64)" }
             st.kind = StateKind.Composite
             scopeStack.addLast(ScopeFrame(st.id))
         }
