@@ -155,11 +155,11 @@ object ClassLayout {
             val effLabel = if (rawLabel != null || fromCardSz != null || toCardSz != null) {
                 val cardW = (fromCardSz?.width ?: 0f) + (toCardSz?.width ?: 0f) +
                     (if (fromCardSz != null || toCardSz != null) 28f * options.density else 0f)
-                val cardH = max(fromCardSz?.height ?: 0f, toCardSz?.height ?: 0f) +
-                    (if (fromCardSz != null || toCardSz != null) 16f * options.density else 0f)
+                val cardH = (fromCardSz?.height ?: 0f) + (toCardSz?.height ?: 0f) +
+                    (if (fromCardSz != null || toCardSz != null) 28f * options.density else 0f)
                 DiagramSize(
-                    width = max(rawLabel?.width ?: 0f, (rawLabel?.width ?: 0f) + cardW),
-                    height = max(rawLabel?.height ?: 0f, cardH),
+                    width = (rawLabel?.width ?: 0f) + cardW,
+                    height = (rawLabel?.height ?: 0f) + cardH,
                 ).maybeSwapped()
             } else null
             dagreEdges += dev.maradona.layout.dagre.Dagre.EdgeSpec(
@@ -338,11 +338,40 @@ object ClassLayout {
             return pad
         }
 
+        fun classWithSelfEnvelope(classId: String): DiagramRect? {
+            val base = finalRects["c:$classId"] ?: return null
+            var minX = base.x
+            var minY = base.y
+            var maxX = base.right
+            var maxY = base.bottom
+            for ((idx, rel) in diagram.relations.withIndex()) {
+                if (rel.from != classId || rel.to != classId) continue
+                val selfOrd = selfOrdByRelIdx[idx] ?: 0
+                val lSize = relationLabelSize(idx, rel)
+                val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
+                val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+                val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
+                val outY = (28f + selfOrd * 20f) * options.density
+                val endX = (base.centerX + base.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(base.x + 8f * options.density)
+                val labelRight = base.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
+                val fromCardRight = fromCardSz?.let { base.right + 4f * options.density + it.width } ?: base.right
+                val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: base.right
+                val topY = base.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
+                val labelBottom = lSize?.let {
+                    base.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density) + it.height
+                } ?: base.bottom
+                minY = min(minY, topY)
+                maxX = maxOf(maxX, labelRight, fromCardRight, toCardRight)
+                maxY = max(maxY, labelBottom)
+            }
+            return DiagramRect(minX, minY, maxX - minX, maxY - minY)
+        }
+
         val builtNsRects = HashMap<String, DiagramRect>()
         fun buildNamespaceRect(ns: ClassNamespace, evict: Boolean): DiagramRect? {
             builtNsRects[ns.id]?.let { return it }
             val childNsRects = diagram.namespaces.filter { it.parentId == ns.id }.mapNotNull { buildNamespaceRect(it, evict) }
-            val directClassRects = diagram.classes.filter { it.namespaceId == ns.id }.mapNotNull { finalRects["c:${it.id}"] }
+            val directClassRects = diagram.classes.filter { it.namespaceId == ns.id }.mapNotNull { classWithSelfEnvelope(it.id) }
             val directNoteRects = diagram.notes.filter { it.namespaceId == ns.id }.mapNotNull { finalRects["n:${it.id}"] }
             val syntheticLeaf = if (directClassRects.isEmpty() && directNoteRects.isEmpty() && childNsRects.isEmpty()) {
                 listOfNotNull(finalRects["ns:${ns.id}"])

@@ -222,5 +222,35 @@ class ClassLayoutTest {
                 assertTrue(pt.y > topA.bottom, "Self-loop point $pt on B intrudes into preceding class A ($topA)")
             }
         }
+
+        // Self-loop inside a namespace stays below the namespace's top header band, and multiline TB cardinalities do not overlap the relation label.
+        val nsSelfDiagram = ClassParser.parse(
+            """
+            classDiagram
+              namespace CommerceDomain {
+                class A
+              }
+              class B
+              A --> A : self
+              A "one<br/>two<br/>three" --> "one<br/>two<br/>three" B : link
+            """.trimIndent(),
+        )
+        val nsSelfLayout = ClassLayout.layout(
+            diagram = nsSelfDiagram,
+            classBoxSize = ::fakeMetrics,
+            relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(100f, 20f) } },
+            cardinalitySize = { _, _, _ -> DiagramSize(35f, 42f) },
+        )
+        val nsRect = nsSelfLayout.namespaces.single().rect
+        val selfRel = nsSelfLayout.relations.first { it.relation.from == "A" && it.relation.to == "A" }
+        for (pt in selfRel.points) {
+            assertTrue(pt.y >= nsRect.y + 30f, "Self-loop point $pt intrudes into namespace header band (${nsRect.y}..${nsRect.y + 30f})")
+        }
+        val abRel = nsSelfLayout.relations.first { it.relation.to == "B" }
+        val abLabel = requireNotNull(abRel.labelRect)
+        val abFromCard = requireNotNull(abRel.fromCardinalityRect)
+        val abToCard = requireNotNull(abRel.toCardinalityRect)
+        assertTrue(abFromCard.bottom <= abLabel.y || abFromCard.x >= abLabel.right || abLabel.x >= abFromCard.right)
+        assertTrue(abLabel.bottom <= abToCard.y || abToCard.x >= abLabel.right || abLabel.x >= abToCard.right)
     }
 }
