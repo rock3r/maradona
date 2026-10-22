@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.SequenceDiagramLayout
+import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
@@ -101,6 +102,8 @@ fun MaradonaDiagram(
     onSequenceLayout: (SequenceDiagramLayout) -> Unit = {},
     /** Reports the computed class diagram layout (see [MaradonaClassLayout.onLayout]). */
     onClassLayout: (ClassDiagramLayout) -> Unit = {},
+    /** Reports the computed state diagram layout (see [MaradonaStateLayout.onLayout]). */
+    onStateLayout: (StateDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -330,6 +333,16 @@ fun MaradonaDiagram(
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
                                 onLayout = onClassLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.StateModel ->
+                            MaradonaStateLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                autoDirection = autoDirection,
+                                layoutOptions = layoutOptions,
+                                availableWidthPx = layoutWidthPx,
+                                onLayout = onStateLayout,
                                 modifier = contentModifier,
                             )
                     }

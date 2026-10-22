@@ -1037,7 +1037,7 @@ object ClassLayout {
     private fun rectsOverlap(a: DiagramRect, b: DiagramRect): Boolean =
         a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom
 
-    private fun detourAroundRect(
+    internal fun detourAroundRect(
         pts: MutableList<DiagramPoint>,
         guardRect: DiagramRect,
         innerRect: DiagramRect,

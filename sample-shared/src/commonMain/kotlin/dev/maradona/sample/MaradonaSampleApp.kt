@@ -118,6 +118,19 @@ private val examples = linkedMapOf(
           Order "1" *-- "*" LineItem : contains
           Order ..|> Payment : settled by
     """.trimIndent(),
+    "State" to """
+        stateDiagram-v2
+          [*] --> Idle
+          Idle --> Processing : submit
+          state Processing {
+            [*] --> Validating
+            Validating --> Charging : valid
+            Charging --> [*] : paid
+          }
+          Processing --> Completed : success
+          Processing --> Failed : error
+          Completed --> [*]
+    """.trimIndent(),
 )
 
 private class SampleState(
