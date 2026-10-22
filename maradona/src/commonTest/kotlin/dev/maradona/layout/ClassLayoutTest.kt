@@ -164,6 +164,7 @@ class ClassLayoutTest {
               class A
               class B
               A --> A : self-reference-with-long-label
+              A --> A : second-self-reference
             """.trimIndent(),
         )
         val layout = ClassLayout.layout(
@@ -172,9 +173,14 @@ class ClassLayoutTest {
             relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(140f, 20f) } },
         )
         val rectB = layout.classNode("B")!!.rect
-        val selfLabel = requireNotNull(layout.relations.single().labelRect)
-        val overlaps = selfLabel.x < rectB.right && rectB.x < selfLabel.right &&
-            selfLabel.y < rectB.bottom && rectB.y < selfLabel.bottom
-        assertTrue(!overlaps, "Self-relation label ($selfLabel) overlaps neighbor class B ($rectB)")
+        val l0 = requireNotNull(layout.relations[0].labelRect)
+        val l1 = requireNotNull(layout.relations[1].labelRect)
+        val l0OverlapsL1 = l0.x < l1.right && l1.x < l0.right && l0.y < l1.bottom && l1.y < l0.bottom
+        assertTrue(!l0OverlapsL1, "Multiple self-relation labels overlap: $l0 vs $l1")
+        for (selfLabel in listOf(l0, l1)) {
+            val overlaps = selfLabel.x < rectB.right && rectB.x < selfLabel.right &&
+                selfLabel.y < rectB.bottom && rectB.y < selfLabel.bottom
+            assertTrue(!overlaps, "Self-relation label ($selfLabel) overlaps neighbor class B ($rectB)")
+        }
     }
 }

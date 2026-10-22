@@ -212,16 +212,27 @@ object ClassLayout {
         val origRects = rawRects.mapValues { (_, r) -> transformRect(r) }
         val finalRects = origRects.toMutableMap()
 
-        // Reserve horizontal space to the right of any class with a self-relation so its
-        // self-loop and label never overlap neighboring classes or notes on the same rank.
+        // Reserve horizontal space to the right of any class with self-relations so their
+        // self-loops and labels never overlap neighboring classes or notes on the same rank.
+        val selfOrdByRelIdx = HashMap<Int, Int>()
+        val selfCountByClass = HashMap<String, Int>()
+        for ((idx, rel) in diagram.relations.withIndex()) {
+            if (rel.from == rel.to) {
+                val ord = selfCountByClass[rel.from] ?: 0
+                selfOrdByRelIdx[idx] = ord
+                selfCountByClass[rel.from] = ord + 1
+            }
+        }
         for ((idx, rel) in diagram.relations.withIndex()) {
             if (rel.from != rel.to) continue
+            val selfOrd = selfOrdByRelIdx[idx] ?: 0
             val selfKey = "c:${rel.from}"
             val selfRect = finalRects[selfKey] ?: continue
             val lSize = relationLabelSize(idx, rel)
-            val out = 28f * options.density
-            val neededRight = selfRect.right + out + (lSize?.let { 4f * options.density + it.width } ?: 0f) + options.nodeGap * 0.5f
-            val selfBand = DiagramRect(selfRect.x, selfRect.y - out, neededRight - selfRect.x, selfRect.height + out)
+            val outX = (28f + selfOrd * 22f) * options.density
+            val outY = (28f + selfOrd * 20f) * options.density
+            val neededRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f) + options.nodeGap * 0.5f
+            val selfBand = DiagramRect(selfRect.x, selfRect.y - outY, neededRight - selfRect.x, selfRect.height + outY + selfOrd * 24f * options.density)
             val rightNeighborMinX = finalRects.entries
                 .filter { (k, r) -> k != selfKey && r.x > selfRect.x && r.y < selfBand.bottom && selfBand.y < r.bottom }
                 .minOfOrNull { it.value.x }
@@ -421,24 +432,29 @@ object ClassLayout {
                 return@mapIndexed PositionedClassRelation(idx, rel, emptyList(), null, null, null)
             }
             if (rel.from == rel.to) {
-                val out = 28f * options.density
+                val selfOrd = selfOrdByRelIdx[idx] ?: 0
+                val outX = (28f + selfOrd * 22f) * options.density
+                val outY = (28f + selfOrd * 20f) * options.density
+                val startY = (fromRect.centerY + selfOrd * 10f * options.density).coerceAtMost(fromRect.bottom - 6f * options.density)
+                val endX = (fromRect.centerX + fromRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(fromRect.x + 8f * options.density)
                 val pts = listOf(
-                    DiagramPoint(fromRect.right, fromRect.centerY),
-                    DiagramPoint(fromRect.right + out, fromRect.centerY),
-                    DiagramPoint(fromRect.right + out, fromRect.y - out),
-                    DiagramPoint(fromRect.centerX + fromRect.width / 4f, fromRect.y - out),
-                    DiagramPoint(fromRect.centerX + fromRect.width / 4f, fromRect.y),
+                    DiagramPoint(fromRect.right, startY),
+                    DiagramPoint(fromRect.right + outX, startY),
+                    DiagramPoint(fromRect.right + outX, fromRect.y - outY),
+                    DiagramPoint(endX, fromRect.y - outY),
+                    DiagramPoint(endX, fromRect.y),
                 )
                 val labelRect = lSize?.let {
-                    DiagramRect(fromRect.right + out + 4f * options.density, fromRect.centerY - it.height / 2f, it.width, it.height)
+                    val labelY = fromRect.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density)
+                    DiagramRect(fromRect.right + outX + 4f * options.density, labelY, it.width, it.height)
                 }
                 val fromCardRect = rel.fromCardinality?.let { card ->
                     val cSz = cardinalitySize(idx, true, card)
-                    DiagramRect(fromRect.right + 4f * options.density, fromRect.centerY + 4f * options.density, cSz.width, cSz.height)
+                    DiagramRect(fromRect.right + 4f * options.density, startY + 4f * options.density, cSz.width, cSz.height)
                 }
                 val toCardRect = rel.toCardinality?.let { card ->
                     val cSz = cardinalitySize(idx, false, card)
-                    DiagramRect(fromRect.centerX + fromRect.width / 4f + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
+                    DiagramRect(endX + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
                 }
                 return@mapIndexed PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
             }
