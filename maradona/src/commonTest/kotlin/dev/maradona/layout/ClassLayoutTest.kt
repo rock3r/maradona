@@ -163,7 +163,7 @@ class ClassLayoutTest {
             classDiagram
               class A
               class B
-              A --> A : self-reference-with-long-label
+              A "zero-or-many" --> A : self-reference-with-long-label
               A --> A : second-self-reference
             """.trimIndent(),
         )
@@ -174,7 +174,10 @@ class ClassLayoutTest {
         )
         val rectB = layout.classNode("B")!!.rect
         val l0 = requireNotNull(layout.relations[0].labelRect)
+        val c0 = requireNotNull(layout.relations[0].fromCardinalityRect)
         val l1 = requireNotNull(layout.relations[1].labelRect)
+        val c0OverlapsL0 = c0.x < l0.right && l0.x < c0.right && c0.y < l0.bottom && l0.y < c0.bottom
+        assertTrue(!c0OverlapsL0, "Self-relation cardinality ($c0) overlaps its label ($l0)")
         val l0OverlapsL1 = l0.x < l1.right && l1.x < l0.right && l0.y < l1.bottom && l1.y < l0.bottom
         assertTrue(!l0OverlapsL1, "Multiple self-relation labels overlap: $l0 vs $l1")
         for (selfLabel in listOf(l0, l1)) {

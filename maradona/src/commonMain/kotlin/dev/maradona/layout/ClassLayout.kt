@@ -241,12 +241,13 @@ object ClassLayout {
             val selfKey = "c:${rel.from}"
             var selfRect = finalRects[selfKey] ?: continue
             val lSize = relationLabelSize(idx, rel)
-            val outX = (28f + selfOrd * 22f) * options.density
+            val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
+            val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+            val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
             val outY = (28f + selfOrd * 20f) * options.density
             val endX = (selfRect.centerX + selfRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(selfRect.x + 8f * options.density)
             val labelRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
-            val fromCardRight = rel.fromCardinality?.let { selfRect.right + 4f * options.density + cardinalitySize(idx, true, it).width } ?: selfRect.right
-            val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+            val fromCardRight = fromCardSz?.let { selfRect.right + 4f * options.density + it.width } ?: selfRect.right
             val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: selfRect.right
             val gap = options.nodeGap * 0.5f
             val neededRight = maxOf(labelRight, fromCardRight, toCardRight) + gap
@@ -491,7 +492,9 @@ object ClassLayout {
             }
             if (rel.from == rel.to) {
                 val selfOrd = selfOrdByRelIdx[idx] ?: 0
-                val outX = (28f + selfOrd * 22f) * options.density
+                val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
+                val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+                val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
                 val outY = (28f + selfOrd * 20f) * options.density
                 val startY = (fromRect.centerY + selfOrd * 10f * options.density).coerceAtMost(fromRect.bottom - 6f * options.density)
                 val endX = (fromRect.centerX + fromRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(fromRect.x + 8f * options.density)
@@ -502,17 +505,15 @@ object ClassLayout {
                     DiagramPoint(endX, fromRect.y - outY),
                     DiagramPoint(endX, fromRect.y),
                 )
+                val fromCardRect = fromCardSz?.let { cSz ->
+                    DiagramRect(fromRect.right + 4f * options.density, startY + 4f * options.density, cSz.width, cSz.height)
+                }
+                val toCardRect = toCardSz?.let { cSz ->
+                    DiagramRect(endX + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
+                }
                 val labelRect = lSize?.let {
                     val labelY = fromRect.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density)
                     DiagramRect(fromRect.right + outX + 4f * options.density, labelY, it.width, it.height)
-                }
-                val fromCardRect = rel.fromCardinality?.let { card ->
-                    val cSz = cardinalitySize(idx, true, card)
-                    DiagramRect(fromRect.right + 4f * options.density, startY + 4f * options.density, cSz.width, cSz.height)
-                }
-                val toCardRect = rel.toCardinality?.let { card ->
-                    val cSz = cardinalitySize(idx, false, card)
-                    DiagramRect(endX + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
                 }
                 return@mapIndexed PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
             }
