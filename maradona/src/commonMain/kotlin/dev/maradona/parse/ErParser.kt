@@ -665,6 +665,7 @@ object ErParser {
             }
             val sb = StringBuilder()
             var inQuotes = false
+            var inBrackets = 0
             var i = 0
             while (i < clean.length) {
                 val c = clean[i]
@@ -679,7 +680,19 @@ object ErParser {
                     i++
                     continue
                 }
-                if (!inQuotes && c == ':') {
+                if (!inQuotes && c == '[') {
+                    inBrackets++
+                    sb.append(c)
+                    i++
+                    continue
+                }
+                if (!inQuotes && c == ']' && inBrackets > 0) {
+                    inBrackets--
+                    sb.append(c)
+                    i++
+                    continue
+                }
+                if (!inQuotes && inBrackets == 0 && c == ':') {
                     if (clean.startsWith(":::", i)) {
                         sb.append(":::")
                         i += 3
@@ -688,7 +701,7 @@ object ErParser {
                     sb.append(clean.substring(i))
                     break
                 }
-                if (!inQuotes && c == '{') {
+                if (!inQuotes && inBrackets == 0 && c == '{') {
                     val isCrowsFoot = i > 0 && (
                         clean[i - 1] == '|' ||
                             (clean[i - 1] == 'o' && (i == 1 || !clean[i - 2].isLetterOrDigit()))
@@ -704,7 +717,7 @@ object ErParser {
                     i++
                     continue
                 }
-                if (!inQuotes && c == '}') {
+                if (!inQuotes && inBrackets == 0 && c == '}') {
                     val isCrowsFoot = i + 1 < clean.length && (
                         clean[i + 1] == '|' ||
                             (clean[i + 1] == 'o' && (i + 2 == clean.length || !clean[i + 2].isLetterOrDigit()))

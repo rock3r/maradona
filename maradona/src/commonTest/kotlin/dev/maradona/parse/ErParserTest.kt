@@ -132,6 +132,7 @@ class ErParserTest {
                 CUSTOMER ||--many(0) ORDER : places
                 PERSON only one to o{ ADDRESS : uses
                 A }o to one B:uses
+                p[Customer: Account] { string acctId PK }
                 p[Customer: Account] one to one q["Target: Account"] : links
             """.trimIndent(),
         )
@@ -157,6 +158,7 @@ class ErParserTest {
         assertEquals("q", mixed.relationships[3].to)
         assertEquals("links", mixed.relationships[3].label)
         assertEquals("Customer: Account", mixed.entity("p")?.label)
+        assertEquals(1, mixed.entity("p")?.attributes?.size)
         assertEquals("Target: Account", mixed.entity("q")?.label)
     }
 }
