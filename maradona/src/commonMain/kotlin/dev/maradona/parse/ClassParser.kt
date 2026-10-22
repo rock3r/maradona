@@ -199,8 +199,8 @@ object ClassParser {
                 if ('}' in line) inMultilineAccDescr = false
                 return
             }
-            if (line.trim().lowercase().startsWith("accdescr") && '{' in line && '}' !in line) {
-                inMultilineAccDescr = true
+            if (line.trim().lowercase().startsWith("accdescr") && '{' in line) {
+                if ('}' !in line) inMultilineAccDescr = true
                 return
             }
             // Split line around `{` and `}` outside quotes and backticks so single-line

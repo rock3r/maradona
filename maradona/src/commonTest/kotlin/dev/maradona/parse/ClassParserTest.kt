@@ -169,6 +169,7 @@ class ClassParserTest {
         val diagram = ClassParser.parse(
             """
             classDiagram
+              accDescr {Commerce domain model}
               class A; class B { #id; +name; +run() }
               class C["value:::important"]
               class D["<<interface>>"]
