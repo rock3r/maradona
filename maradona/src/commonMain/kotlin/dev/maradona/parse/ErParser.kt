@@ -359,7 +359,7 @@ object ErParser {
         """(?:\|o|o\||\|\||\}o|o\{|\}\||\|\{|only\s+one|zero\s+or\s+one|one\s+or\s+zero|zero\s+or\s+more|zero\s+or\s+many|one\s+or\s+more|one\s+or\s+many|many\(0\)|many\(1\)|many|one|0\.\.1|0\.\.\*|1\.\.\*|0\+|1\+|1)"""
 
     private val WORD_REL_REGEX = Regex(
-        """^(\S+|"[^"]+")\s*($WORD_CARD_PATTERN)\s*(optionally\s+to|to|--|\.\.)\s*($WORD_CARD_PATTERN)\s*(\S+|"[^"]+")(?:\s*:\s*(.*))?$""",
+        """^(\S+|"[^"]+")\s*($WORD_CARD_PATTERN)\s*(optionally\s+to|to|--|\.\.)\s*($WORD_CARD_PATTERN)\s*(.+)$""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -419,17 +419,20 @@ object ErParser {
             )
         }
 
-        // 2. Natural-language syntax (`CAR 1 to zero or more NAMED-DRIVER : allows`)
-        val wordMatch = WORD_REL_REGEX.find(line)
+        // 2. Natural-language / mixed syntax (`CAR 1 to zero or more NAMED-DRIVER : allows`, `A }o to one B:uses`)
+        val colonAt = findColonOutsideQuotes(line)
+        val relBody = if (colonAt >= 0) line.substring(0, colonAt).trim() else line.trim()
+        val labelRaw = if (colonAt >= 0) {
+            normalizeText(unquote(line.substring(colonAt + 1).trim())).takeIf { it.isNotEmpty() }
+        } else null
+        val wordMatch = WORD_REL_REGEX.find(relBody)
         if (wordMatch != null) {
             val leftRaw = wordMatch.groupValues[1].trim()
             val leftCard = parseWordCardinality(wordMatch.groupValues[2].trim()) ?: return null
             val connStr = wordMatch.groupValues[3].trim().lowercase()
             val rightCard = parseWordCardinality(wordMatch.groupValues[4].trim()) ?: return null
             val rightRaw = wordMatch.groupValues[5].trim()
-            val labelRaw = wordMatch.groupValues.getOrNull(6)?.trim()
-                ?.let { normalizeText(unquote(it)) }
-                ?.takeIf { it.isNotEmpty() }
+            if (rightRaw.isEmpty()) return null
 
             val localSelf = currentSgId != null &&
                 parseEntityIdAndAlias(splitInlineClasses(leftRaw).first).first ==
@@ -699,6 +702,15 @@ object ErParser {
                     continue
                 }
                 if (!inQuotes && c == '}') {
+                    val isCrowsFoot = i + 1 < clean.length && (
+                        clean[i + 1] == '|' ||
+                            (clean[i + 1] == 'o' && (i + 2 == clean.length || !clean[i + 2].isLetterOrDigit()))
+                        )
+                    if (isCrowsFoot) {
+                        sb.append(c)
+                        i++
+                        continue
+                    }
                     if (sb.isNotBlank()) {
                         out += sb.toString()
                         sb.setLength(0)
