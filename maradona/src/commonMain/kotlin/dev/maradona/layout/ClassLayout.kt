@@ -680,6 +680,42 @@ object ClassLayout {
             PositionedClassNote(idx, note, nRect, connPts)
         }
 
+        val occupiedTextRects = mutableListOf<DiagramRect>().apply {
+            for (pc in positionedClasses) add(pc.rect)
+            for (pn in positionedNotes) add(pn.rect)
+            for (ns in positionedNamespaces) {
+                if (ns.headerRect.width > 0f && ns.headerRect.height > 0f) add(ns.headerRect)
+            }
+        }
+        fun deconflictTextRect(initial: DiagramRect): DiagramRect {
+            val pad = 4f * options.density
+            var cur = initial
+            repeat(24) {
+                val hit = occupiedTextRects.firstOrNull { rectsOverlap(cur, it) } ?: return cur
+                val candidates = listOf(
+                    cur.copy(y = hit.bottom + pad),
+                    cur.copy(y = hit.y - cur.height - pad),
+                    cur.copy(x = hit.right + pad),
+                    cur.copy(x = hit.x - cur.width - pad),
+                )
+                val nonOverlapping = candidates
+                    .filter { cand -> occupiedTextRects.none { rectsOverlap(cand, it) } }
+                    .minByOrNull { cand ->
+                        val dx = cand.centerX - initial.centerX
+                        val dy = cand.centerY - initial.centerY
+                        dx * dx + dy * dy
+                    }
+                if (nonOverlapping != null) return nonOverlapping
+                cur = candidates.minBy { cand ->
+                    val overlaps = occupiedTextRects.count { rectsOverlap(cand, it) }
+                    val dx = cand.centerX - initial.centerX
+                    val dy = cand.centerY - initial.centerY
+                    overlaps * 1_000_000f + dx * dx + dy * dy
+                }
+            }
+            return cur
+        }
+
         val positionedRelations = diagram.relations.mapIndexed { idx, rel ->
             val fromRect = classRectById[rel.from]
             val toRect = classRectById[rel.to]
@@ -704,15 +740,21 @@ object ClassLayout {
                 )
                 val fromCardOff = selfFromCardOffsetYByRelIdx[idx] ?: 0f
                 val fromCardRect = fromCardSz?.let { cSz ->
-                    DiagramRect(fromRect.right + 4f * options.density, fromRect.centerY + 4f * options.density + fromCardOff, cSz.width, cSz.height)
+                    deconflictTextRect(
+                        DiagramRect(fromRect.right + 4f * options.density, fromRect.centerY + 4f * options.density + fromCardOff, cSz.width, cSz.height),
+                    ).also(occupiedTextRects::add)
                 }
                 val toCardOff = selfToCardOffsetYByRelIdx[idx] ?: 0f
                 val toCardRect = toCardSz?.let { cSz ->
-                    DiagramRect(endX + 4f * options.density, fromRect.y - 4f * options.density - toCardOff - cSz.height, cSz.width, cSz.height)
+                    deconflictTextRect(
+                        DiagramRect(endX + 4f * options.density, fromRect.y - 4f * options.density - toCardOff - cSz.height, cSz.width, cSz.height),
+                    ).also(occupiedTextRects::add)
                 }
                 val labelRect = lSize?.let {
                     val labelY = fromRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f)
-                    DiagramRect(fromRect.right + outX + 4f * options.density, labelY, it.width, it.height)
+                    deconflictTextRect(
+                        DiagramRect(fromRect.right + outX + 4f * options.density, labelY, it.width, it.height),
+                    ).also(occupiedTextRects::add)
                 }
                 return@mapIndexed PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
             }
@@ -861,15 +903,17 @@ object ClassLayout {
                         candidate = clearCandidate
                     }
                 }
-                candidate
+                deconflictTextRect(candidate).also(occupiedTextRects::add)
             }
-            var fromCardRect = rel.fromCardinality?.let { card ->
+            val fromCardRect = rel.fromCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, true, card)
-                avoidNamespaceHeaders(placeCardinality(pts.first(), pts[1], fromRect, cSz, options.density))
+                deconflictTextRect(avoidNamespaceHeaders(placeCardinality(pts.first(), pts[1], fromRect, cSz, options.density)))
+                    .also(occupiedTextRects::add)
             }
-            var toCardRect = rel.toCardinality?.let { card ->
+            val toCardRect = rel.toCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, false, card)
-                avoidNamespaceHeaders(placeCardinality(pts.last(), pts[pts.lastIndex - 1], toRect, cSz, options.density))
+                deconflictTextRect(avoidNamespaceHeaders(placeCardinality(pts.last(), pts[pts.lastIndex - 1], toRect, cSz, options.density)))
+                    .also(occupiedTextRects::add)
             }
             PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
         }

@@ -458,5 +458,37 @@ class ClassLayoutTest {
         val tcOverlap = tc0.x < tc1.right && tc1.x < tc0.right && tc0.y < tc1.bottom && tc1.y < tc0.bottom
         assertTrue(!fcOverlap, "Self-relation source cardinalities must not overlap: $fc0 vs $fc1")
         assertTrue(!tcOverlap, "Self-relation target cardinalities must not overlap: $tc0 vs $tc1")
+
+        // Parallel non-self relations sharing endpoints must not overlap each other's cardinalities or labels.
+        val parallelCardDiagram = ClassParser.parse(
+            """
+            classDiagram
+                A "zero-or-many" --> "zero-or-many" B : link1
+                A "zero-or-many" --> "zero-or-many" B : link2
+                A "zero-or-many" --> "zero-or-many" B : link3
+                A "zero-or-many" --> "zero-or-many" B : link4
+                A "zero-or-many" --> "zero-or-many" B : link5
+            """.trimIndent(),
+        )
+        val parallelCardLayout = ClassLayout.layout(
+            diagram = parallelCardDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+            relationLabelSize = { _, r -> r.label?.let { DiagramSize(100f, 20f) } },
+        )
+        val allTextRects = buildList {
+            for (rel in parallelCardLayout.relations) {
+                rel.labelRect?.let(::add)
+                rel.fromCardinalityRect?.let(::add)
+                rel.toCardinalityRect?.let(::add)
+            }
+        }
+        for (i in allTextRects.indices) {
+            for (j in i + 1 until allTextRects.size) {
+                val a = allTextRects[i]
+                val b = allTextRects[j]
+                val overlap = a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom
+                assertTrue(!overlap, "Parallel relation text rects $i ($a) and $j ($b) must not overlap")
+            }
+        }
     }
 }
