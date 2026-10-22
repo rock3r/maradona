@@ -28,6 +28,7 @@ class ClassParserTest {
               class Square~Shape~ {
                 -List~int~ position
                 +List~int~[] items
+                +Map~List~int~, List~string~~ values
                 +getDistanceMatrix() List~List~int~~
               }
               Square : +setMessages(List~string~ messages)
@@ -56,6 +57,7 @@ class ClassParserTest {
         assertEquals("Square<Shape>", square.displayTitle)
         assertEquals("-List<int> position", square.attributes[0].displayText)
         assertEquals("+List<int>[] items", square.attributes[1].displayText)
+        assertEquals("+Map<List<int>, List<string>> values", square.attributes[2].displayText)
         assertEquals("+getDistanceMatrix() : List<List<int>>", square.methods[0].displayText)
         assertEquals("+setMessages(List<string> messages)", square.methods[1].displayText)
 

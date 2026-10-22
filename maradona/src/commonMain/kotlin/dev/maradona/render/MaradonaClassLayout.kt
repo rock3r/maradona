@@ -431,7 +431,7 @@ private fun MemberLine(
     theme: MaradonaTheme,
 ) {
     BasicText(
-        text = annotatedLabel(member.displayText),
+        text = member.displayText,
         style = TextStyle(
             color = textColor,
             fontFamily = theme.fontFamily,

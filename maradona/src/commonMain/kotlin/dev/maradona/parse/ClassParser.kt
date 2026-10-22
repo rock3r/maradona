@@ -870,37 +870,48 @@ object ClassParser {
 
     /**
      * Converts Mermaid's `~T~` generic syntax (including nested `List~List~int~~`,
-     * multi-parameter `Map~String, List~int~~`, and suffixed `List~int~[]` / `List~int~?`)
-     * into `<T>` (`List<List<int>>`, `Map<String, List<int>>`, `List<int>[]`).
+     * sibling generic arguments `Map~List~int~, List~string~~`, and suffixed `List~int~[]`)
+     * into `<T>` (`List<List<int>>`, `Map<List<int>, List<string>>`, `List<int>[]`).
      */
     internal fun convertGenerics(input: String): String {
-        if ('~' !in input) return input
-        val parts = input.split(',')
+        if (input.count { it == '~' } < 2) return input
+        val commaGroups = splitBalancedTildes(input, ',')
+        if (commaGroups.size > 1) {
+            return commaGroups.joinToString(",") { convertGenerics(it) }
+        }
+        val spaceGroups = splitBalancedTildes(input, ' ')
+        if (spaceGroups.size > 1) {
+            return spaceGroups.joinToString(" ") { convertGenerics(it) }
+        }
+        val first = input.indexOf('~')
+        val last = input.lastIndexOf('~')
+        if (first < 0 || last <= first) return input
+        val inner = convertGenerics(input.substring(first + 1, last))
+        return input.substring(0, first) + "<" + inner + ">" + input.substring(last + 1)
+    }
+
+    private fun splitBalancedTildes(input: String, delimiter: Char): List<String> {
+        if (delimiter !in input) return listOf(input)
+        val rawParts = input.split(delimiter)
         val groups = mutableListOf<String>()
         var acc = ""
-        for (part in parts) {
-            acc = if (acc.isEmpty()) part else "$acc,$part"
+        var hasPrev = false
+        for (part in rawParts) {
+            acc = if (!hasPrev) part else "$acc$delimiter$part"
+            hasPrev = true
             if (acc.count { it == '~' } % 2 == 0) {
                 groups += acc
                 acc = ""
+                hasPrev = false
             }
         }
-        if (acc.isNotEmpty()) groups += acc
-        return groups.joinToString(",") { convertGenericGroup(it) }
-    }
-
-    private fun convertGenericGroup(group: String): String {
-        val tildeCount = group.count { it == '~' }
-        if (tildeCount <= 1) return group
-        val chars = group.toCharArray()
-        var first = chars.indexOf('~')
-        var last = chars.lastIndexOf('~')
-        while (first != -1 && last != -1 && first < last) {
-            chars[first] = '<'
-            chars[last] = '>'
-            first = chars.indexOf('~')
-            last = chars.lastIndexOf('~')
+        if (hasPrev) {
+            if (groups.isNotEmpty()) {
+                groups[groups.lastIndex] = groups.last() + delimiter + acc
+            } else {
+                groups += acc
+            }
         }
-        return chars.concatToString()
+        return groups
     }
 }
