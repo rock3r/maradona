@@ -227,12 +227,18 @@ object ClassLayout {
         // Reserve horizontal space to the right of any class with self-relations so their
         // self-loops and labels never overlap neighboring classes or notes on the same rank.
         val selfOrdByRelIdx = HashMap<Int, Int>()
+        val selfLabelOffsetYByRelIdx = HashMap<Int, Float>()
         val selfCountByClass = HashMap<String, Int>()
+        val selfCumOffsetYByClass = HashMap<String, Float>()
         for ((idx, rel) in diagram.relations.withIndex()) {
             if (rel.from == rel.to) {
                 val ord = selfCountByClass[rel.from] ?: 0
                 selfOrdByRelIdx[idx] = ord
                 selfCountByClass[rel.from] = ord + 1
+                val curOff = selfCumOffsetYByClass[rel.from] ?: 0f
+                selfLabelOffsetYByRelIdx[idx] = curOff
+                val lH = relationLabelSize(idx, rel)?.height ?: (16f * options.density)
+                selfCumOffsetYByClass[rel.from] = curOff + lH + 6f * options.density
             }
         }
         for ((idx, rel) in diagram.relations.withIndex()) {
@@ -273,7 +279,7 @@ object ClassLayout {
 
             // Reserve vertical clearance below `selfRect` if staggered self-relation labels extend past `selfRect.bottom`.
             val labelBottom = lSize?.let {
-                selfRect.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density) + it.height
+                selfRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
             } ?: selfRect.bottom
             val neededBottomY = max(selfRect.bottom, labelBottom)
             val belowMinTop = finalRects.entries
@@ -358,7 +364,7 @@ object ClassLayout {
                 val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: base.right
                 val topY = base.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
                 val labelBottom = lSize?.let {
-                    base.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density) + it.height
+                    base.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
                 } ?: base.bottom
                 minY = min(minY, topY)
                 maxX = maxOf(maxX, labelRight, fromCardRight, toCardRight)
@@ -542,7 +548,7 @@ object ClassLayout {
                     DiagramRect(endX + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
                 }
                 val labelRect = lSize?.let {
-                    val labelY = fromRect.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density)
+                    val labelY = fromRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f)
                     DiagramRect(fromRect.right + outX + 4f * options.density, labelY, it.width, it.height)
                 }
                 return@mapIndexed PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)

@@ -170,7 +170,7 @@ class ClassLayoutTest {
         val layout = ClassLayout.layout(
             diagram = diagram,
             classBoxSize = ::fakeMetrics,
-            relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(140f, 20f) } },
+            relationLabelSize = { idx, rel -> rel.label?.let { DiagramSize(140f, if (idx == 0) 100f else 20f) } },
         )
         val rectB = layout.classNode("B")!!.rect
         val l0 = requireNotNull(layout.relations[0].labelRect)
