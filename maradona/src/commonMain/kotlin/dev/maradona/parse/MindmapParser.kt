@@ -439,11 +439,10 @@ object MindmapParser {
     }
 
     private fun normalizeLabel(s: String): String {
-        val unq = unquote(s)
+        return unquote(s)
             .replace(Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE), "\n")
-        // Convert markdown **bold** and *italic* to HTML tags supported by annotatedLabel.
-        val withBold = Regex("""\*\*(.+?)\*\*""").replace(unq) { "<b>${it.groupValues[1]}</b>" }
-        return Regex("""(?<!\*)\*([^*\n]+)\*(?!\*)""").replace(withBold) { "<i>${it.groupValues[1]}</i>" }
+            .replace(Regex("""<(b|strong)>(.*?)</\1>""", RegexOption.IGNORE_CASE), "**$2**")
+            .replace(Regex("""<(i|em)>(.*?)</\1>""", RegexOption.IGNORE_CASE), "*$2*")
     }
 
     private fun parseNodeStyle(spec: String): NodeStyle {

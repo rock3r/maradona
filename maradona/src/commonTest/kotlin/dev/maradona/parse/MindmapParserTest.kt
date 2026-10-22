@@ -71,7 +71,7 @@ class MindmapParserTest {
         assertEquals(listOf("featured"), inlineChild.classes)
 
         val id1 = assertNotNull(d.node("id1"))
-        assertEquals("<b>Root</b> with\n50%% complete\nand <i>italic</i> text", id1.label)
+        assertEquals("**Root** with\n50%% complete\nand *italic* text", id1.label)
     }
 
     @Test

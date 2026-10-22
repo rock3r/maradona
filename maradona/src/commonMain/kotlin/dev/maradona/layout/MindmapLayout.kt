@@ -309,7 +309,7 @@ object MindmapLayout {
     }
 
     internal fun defaultNodeSize(node: MindmapNode, density: Float): DiagramSize {
-        val lines = node.label.lines()
+        val lines = node.label.replace("**", "").replace("*", "").lines()
         val maxLen = lines.maxOfOrNull { it.length } ?: 4
         val padX = when (node.shape) {
             MindmapShape.Circle, MindmapShape.Bang -> 20f * density
