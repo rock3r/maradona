@@ -209,7 +209,8 @@ object ClassLayout {
             Direction.RL -> DiagramRect(canonH - r.y - r.height, r.x, r.height, r.width)
         }
 
-        val finalRects = rawRects.mapValues { (_, r) -> transformRect(r) }.toMutableMap()
+        val origRects = rawRects.mapValues { (_, r) -> transformRect(r) }
+        val finalRects = origRects.toMutableMap()
 
         // Helper: all namespace IDs enclosed by `rootNsId` (itself + descendants).
         fun enclosedNamespaceIds(rootNsId: String): Set<String> {
@@ -409,17 +410,32 @@ object ClassLayout {
                 return@mapIndexed PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
             }
 
+            val origFrom = origRects.getValue("c:${rel.from}")
+            val origTo = origRects.getValue("c:${rel.to}")
+            val dxFrom = fromRect.centerX - origFrom.centerX
+            val dyFrom = fromRect.centerY - origFrom.centerY
+            val dxTo = toRect.centerX - origTo.centerX
+            val dyTo = toRect.centerY - origTo.centerY
+
             val path = dagreResult.paths["r$idx"]
             val rawPts = path?.points?.map { transformPoint(DiagramPoint(it.first, it.second)) }
                 ?.takeIf { it.size >= 2 }
                 ?: listOf(DiagramPoint(fromRect.centerX, fromRect.centerY), DiagramPoint(toRect.centerX, toRect.centerY))
-            val pts = rawPts.toMutableList()
+            val pts = rawPts.mapIndexed { k, p ->
+                val t = if (rawPts.size > 1) k.toFloat() / rawPts.lastIndex else 0.5f
+                DiagramPoint(
+                    x = p.x + dxFrom + (dxTo - dxFrom) * t,
+                    y = p.y + dyFrom + (dyTo - dyFrom) * t,
+                )
+            }.toMutableList()
             pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
             pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
 
             val labelRect = lSize?.let { size ->
-                val centre = path?.labelCentre?.let { transformPoint(DiagramPoint(it.first, it.second)) }
-                    ?: pts[pts.size / 2]
+                val centre = path?.labelCentre?.let {
+                    val base = transformPoint(DiagramPoint(it.first, it.second))
+                    DiagramPoint(base.x + (dxFrom + dxTo) / 2f, base.y + (dyFrom + dyTo) / 2f)
+                } ?: pts[pts.size / 2]
                 DiagramRect(centre.x - size.width / 2f, centre.y - size.height / 2f, size.width, size.height)
             }
             val fromCardRect = rel.fromCardinality?.let { card ->

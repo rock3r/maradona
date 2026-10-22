@@ -116,29 +116,38 @@ class ClassLayoutTest {
                 class OutsideA
               }
               namespace VeryWideEnterpriseNamespaceTitleForTesting {
-                class InsideB
+                class InsideB1
+                class InsideB2
               }
               class OutsideC
+              class OutsideD
+              InsideB1 --> InsideB2
+              OutsideC --> OutsideD : link
             """.trimIndent(),
         )
         val layout = ClassLayout.layout(
             diagram = diagram,
             classBoxSize = ::fakeMetrics,
+            relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(it.length * 8f, 16f) } },
             namespaceLabelSize = { ns -> DiagramSize(ns.label.length * 14f, 20f) },
         )
         val firstNs = layout.namespaces.first { it.namespace.id == "First" }.rect
         val wideNs = layout.namespaces.first { it.namespace.id == "VeryWideEnterpriseNamespaceTitleForTesting" }.rect
         val outA = layout.classNode("OutsideA")!!.rect
-        val inB = layout.classNode("InsideB")!!.rect
+        val inB = layout.classNode("InsideB1")!!.rect
         val outC = layout.classNode("OutsideC")!!.rect
         // `First` must still enclose `OutsideA` after `VeryWide...` evicts it, and the two sibling namespaces must not overlap.
         assertTrue(outA.x >= firstNs.x && outA.right <= firstNs.right, "OutsideA ($outA) not inside First ($firstNs)")
-        assertTrue(inB.x >= wideNs.x && inB.right <= wideNs.right, "InsideB ($inB) not inside WideNs ($wideNs)")
+        assertTrue(inB.x >= wideNs.x && inB.right <= wideNs.right, "InsideB1 ($inB) not inside WideNs ($wideNs)")
         val nsOverlap = firstNs.x < wideNs.right && wideNs.x < firstNs.right && firstNs.y < wideNs.bottom && wideNs.y < firstNs.bottom
         val cOverlapsWide = outC.x < wideNs.right && wideNs.x < outC.right && outC.y < wideNs.bottom && wideNs.y < outC.bottom
         val aOverlapsC = outA.x < outC.right && outC.x < outA.right && outA.y < outC.bottom && outC.y < outA.bottom
         assertTrue(!nsOverlap, "Sibling namespaces overlap: First ($firstNs) vs WideNs ($wideNs)")
         assertTrue(!cOverlapsWide, "OutsideC ($outC) overlaps WideNs ($wideNs)")
         assertTrue(!aOverlapsC, "OutsideA ($outA) and OutsideC ($outC) overlap")
+        val extRel = layout.relations.first { it.relation.from == "OutsideC" }
+        val extLabel = requireNotNull(extRel.labelRect)
+        assertTrue(extLabel.x >= wideNs.right, "Displaced relation label $extLabel remained inside WideNs $wideNs")
+        assertTrue(extRel.points.all { it.x >= wideNs.right }, "Displaced relation points ${extRel.points} remained inside WideNs $wideNs")
     }
 }

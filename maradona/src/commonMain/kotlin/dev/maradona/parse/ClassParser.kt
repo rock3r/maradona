@@ -263,11 +263,11 @@ object ClassParser {
                     scopeStack.addLast(Scope.Namespace(nsId))
                 }
                 lower.startsWith("class ") -> {
-                    val c = declareClassSpec(blockHeader.substring("class ".length).trim(), lineNo)
+                    val c = declareClassSpec(blockHeader.substring("class ".length).trim(), lineNo, assignNamespace = true)
                     scopeStack.addLast(Scope.ClassBody(c.id))
                 }
                 else -> {
-                    val c = declareClassSpec(blockHeader, lineNo)
+                    val c = declareClassSpec(blockHeader, lineNo, assignNamespace = true)
                     scopeStack.addLast(Scope.ClassBody(c.id))
                 }
             }
@@ -346,7 +346,7 @@ object ClassParser {
                     pendingBrace = PendingBrace.Namespace(nsId)
                 }
                 lower.startsWith("class ") -> {
-                    val c = declareClassSpec(stmt.substring("class ".length).trim(), lineNo)
+                    val c = declareClassSpec(stmt.substring("class ".length).trim(), lineNo, assignNamespace = true)
                     pendingBrace = PendingBrace.ClassBody(c.id)
                 }
                 stmt.startsWith("<<") && ">>" in stmt -> {
@@ -409,7 +409,7 @@ object ClassParser {
             return qualifiedId
         }
 
-        private fun declareClassSpec(raw: String, lineNo: Int): MutableClass {
+        private fun declareClassSpec(raw: String, lineNo: Int, assignNamespace: Boolean = false): MutableClass {
             var s = raw.trim()
             var annotation: String? = null
             val openAnn = findSubstringOutsideQuotesAndBackticks(s, "<<")
@@ -452,14 +452,16 @@ object ClassParser {
             if (styleClass != null && styleClass !in node.styleClasses) {
                 node.styleClasses += styleClass
             }
-            val nsId = currentNamespaceId()
-            if (nsId != null) node.namespaceId = nsId
+            if (assignNamespace) {
+                val nsId = currentNamespaceId()
+                if (nsId != null) node.namespaceId = nsId
+            }
             return node
         }
 
         private fun ensureClass(id: String): MutableClass {
             return classes.getOrPut(id) {
-                MutableClass(id = id, label = id, namespaceId = currentNamespaceId())
+                MutableClass(id = id, label = id, namespaceId = null)
             }
         }
 

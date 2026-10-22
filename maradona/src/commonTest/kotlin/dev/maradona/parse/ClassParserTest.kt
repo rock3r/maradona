@@ -175,5 +175,20 @@ class ClassParserTest {
         val d = diagram.classes.first { it.id == "D" }
         assertEquals("<<interface>>", d.label)
         assertTrue(d.annotations.isEmpty())
+
+        val nsPreserve = ClassParser.parse(
+            """
+            classDiagram
+              namespace First {
+                class X
+              }
+              namespace Second {
+                class Y
+                X --> Y
+              }
+            """.trimIndent(),
+        )
+        assertEquals("First", nsPreserve.classes.first { it.id == "X" }.namespaceId)
+        assertEquals("Second", nsPreserve.classes.first { it.id == "Y" }.namespaceId)
     }
 }
