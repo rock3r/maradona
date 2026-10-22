@@ -27,6 +27,7 @@ class ClassParserTest {
               }
               class Square~Shape~ {
                 -List~int~ position
+                +List~int~[] items
                 +getDistanceMatrix() List~List~int~~
               }
               Square : +setMessages(List~string~ messages)
@@ -53,7 +54,8 @@ class ClassParserTest {
         val square = diagram.classes.first { it.id == "Square" }
         assertEquals("Shape", square.genericType)
         assertEquals("Square<Shape>", square.displayTitle)
-        assertEquals("-List<int> position", square.attributes.single().displayText)
+        assertEquals("-List<int> position", square.attributes[0].displayText)
+        assertEquals("+List<int>[] items", square.attributes[1].displayText)
         assertEquals("+getDistanceMatrix() : List<List<int>>", square.methods[0].displayText)
         assertEquals("+setMessages(List<string> messages)", square.methods[1].displayText)
 

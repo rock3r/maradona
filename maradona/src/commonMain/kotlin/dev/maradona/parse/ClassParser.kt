@@ -869,34 +869,38 @@ object ClassParser {
     }
 
     /**
-     * Converts Mermaid's `~T~` generic syntax (including nested `List~List~int~~`)
-     * into `<T>` (`List<List<int>>`).
+     * Converts Mermaid's `~T~` generic syntax (including nested `List~List~int~~`,
+     * multi-parameter `Map~String, List~int~~`, and suffixed `List~int~[]` / `List~int~?`)
+     * into `<T>` (`List<List<int>>`, `Map<String, List<int>>`, `List<int>[]`).
      */
     internal fun convertGenerics(input: String): String {
         if ('~' !in input) return input
-        val totalTildes = input.count { it == '~' }
-        if (totalTildes < 2) return input
-        val sb = StringBuilder(input.length)
-        var i = 0
-        var openCount = 0
-        while (i < input.length) {
-            val c = input[i]
-            if (c == '~') {
-                // Consecutive trailing tildes or tildes followed by `)`, `,`, whitespace, or end-of-string close open generics.
-                val next = if (i + 1 < input.length) input[i + 1] else '\u0000'
-                val isClosing = openCount > 0 && (next == '~' || next == ')' || next == ',' || next == '>' || next.isWhitespace() || next == '\u0000')
-                if (isClosing) {
-                    sb.append('>')
-                    openCount--
-                } else {
-                    sb.append('<')
-                    openCount++
-                }
-            } else {
-                sb.append(c)
+        val parts = input.split(',')
+        val groups = mutableListOf<String>()
+        var acc = ""
+        for (part in parts) {
+            acc = if (acc.isEmpty()) part else "$acc,$part"
+            if (acc.count { it == '~' } % 2 == 0) {
+                groups += acc
+                acc = ""
             }
-            i++
         }
-        return sb.toString()
+        if (acc.isNotEmpty()) groups += acc
+        return groups.joinToString(",") { convertGenericGroup(it) }
+    }
+
+    private fun convertGenericGroup(group: String): String {
+        val tildeCount = group.count { it == '~' }
+        if (tildeCount <= 1) return group
+        val chars = group.toCharArray()
+        var first = chars.indexOf('~')
+        var last = chars.lastIndexOf('~')
+        while (first != -1 && last != -1 && first < last) {
+            chars[first] = '<'
+            chars[last] = '>'
+            first = chars.indexOf('~')
+            last = chars.lastIndexOf('~')
+        }
+        return chars.concatToString()
     }
 }

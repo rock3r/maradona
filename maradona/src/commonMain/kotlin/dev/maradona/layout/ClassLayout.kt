@@ -287,6 +287,16 @@ object ClassLayout {
                         val pad = externalNsPadX(n.namespaceId, memberNsIds)
                         add(NonMember(k, r, DiagramRect(r.x - pad, r.y - pad, r.width + pad * 2f, r.height + pad * 2f)))
                     }
+                    for (emptyNs in leafEmptyNamespaces) {
+                        if (emptyNs.id in memberNsIds) continue
+                        val k = "ns:${emptyNs.id}"
+                        val r = finalRects[k] ?: continue
+                        val basePad = externalNsPadX(emptyNs.id, memberNsIds)
+                        val titleW = (nsLabelSizes[emptyNs.id]?.width ?: 0f) + options.subgraphPaddingX * 2f
+                        val extraTitlePad = max(0f, (titleW - r.width) / 2f)
+                        val pad = basePad + extraTitlePad
+                        add(NonMember(k, r, DiagramRect(r.x - pad, r.y - basePad, r.width + pad * 2f, r.height + basePad * 2f)))
+                    }
                 }
                 fun verticalOverlap(a: DiagramRect, b: DiagramRect): Boolean =
                     a.y < b.bottom && b.y < a.bottom

@@ -112,6 +112,8 @@ class ClassLayoutTest {
         val diagram = ClassParser.parse(
             """
             classDiagram
+              namespace Empty {
+              }
               namespace First {
                 class OutsideA
               }
@@ -131,14 +133,17 @@ class ClassLayoutTest {
             relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(it.length * 8f, 16f) } },
             namespaceLabelSize = { ns -> DiagramSize(ns.label.length * 14f, 20f) },
         )
+        val emptyNs = layout.namespaces.first { it.namespace.id == "Empty" }.rect
         val firstNs = layout.namespaces.first { it.namespace.id == "First" }.rect
         val wideNs = layout.namespaces.first { it.namespace.id == "VeryWideEnterpriseNamespaceTitleForTesting" }.rect
         val outA = layout.classNode("OutsideA")!!.rect
         val inB = layout.classNode("InsideB1")!!.rect
         val outC = layout.classNode("OutsideC")!!.rect
-        // `First` must still enclose `OutsideA` after `VeryWide...` evicts it, and the two sibling namespaces must not overlap.
+        // `First` must still enclose `OutsideA` after `VeryWide...` evicts it, and sibling namespaces (including `Empty`) must not overlap.
         assertTrue(outA.x >= firstNs.x && outA.right <= firstNs.right, "OutsideA ($outA) not inside First ($firstNs)")
         assertTrue(inB.x >= wideNs.x && inB.right <= wideNs.right, "InsideB1 ($inB) not inside WideNs ($wideNs)")
+        val emptyOverlapsWide = emptyNs.x < wideNs.right && wideNs.x < emptyNs.right && emptyNs.y < wideNs.bottom && wideNs.y < emptyNs.bottom
+        assertTrue(!emptyOverlapsWide, "Empty namespace ($emptyNs) overlaps WideNs ($wideNs)")
         val nsOverlap = firstNs.x < wideNs.right && wideNs.x < firstNs.right && firstNs.y < wideNs.bottom && wideNs.y < firstNs.bottom
         val cOverlapsWide = outC.x < wideNs.right && wideNs.x < outC.right && outC.y < wideNs.bottom && wideNs.y < outC.bottom
         val aOverlapsC = outA.x < outC.right && outC.x < outA.right && outA.y < outC.bottom && outC.y < outA.bottom
