@@ -106,10 +106,11 @@ class ErLayoutTest {
         val overlap = l0.x < l1.right && l1.x < l0.right && l0.y < l1.bottom && l1.y < l0.bottom
         assertTrue(!overlap, "Self-relationship labels must not overlap: $l0 vs $l1")
 
-        // Parallel cross-subgraph relationships between the same endpoints must receive distinct routes.
+        // Parallel and reciprocal cross-subgraph relationships between the same endpoints must receive distinct routes.
         val parallelCross = ErParser.parse(
             """
             erDiagram
+                direction LR
                 subgraph left
                     A
                 end
@@ -117,12 +118,12 @@ class ErLayoutTest {
                     B
                 end
                 A ||--o{ B : owns
-                A |o..|| B : reviews
+                B |o..|| A : reviews
             """.trimIndent(),
         )
         val pcLayout = ErLayout.layout(parallelCross)
         val p0 = pcLayout.relationships[0].points
         val p1 = pcLayout.relationships[1].points
-        assertTrue(p0 != p1, "Parallel cross-subgraph relationships must have distinct routes: $p0 vs $p1")
+        assertTrue(p0 != p1 && p0 != p1.asReversed(), "Reciprocal cross-subgraph relationships must have distinct non-reversed routes: $p0 vs $p1")
     }
 }

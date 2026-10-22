@@ -132,6 +132,7 @@ class ErParserTest {
                 CUSTOMER ||--many(0) ORDER : places
                 PERSON only one to o{ ADDRESS : uses
                 A }o to one B:uses
+                p[Customer: Account] one to one q["Target: Account"] : links
             """.trimIndent(),
         )
         val cust = assertNotNull(mixed.entity("CUSTOMER"))
@@ -142,7 +143,7 @@ class ErParserTest {
         assertEquals("int", cust.attributes[1].type)
         assertEquals("age", cust.attributes[1].name)
 
-        assertEquals(3, mixed.relationships.size)
+        assertEquals(4, mixed.relationships.size)
         assertEquals(ErCardinality.ExactlyOne, mixed.relationships[0].fromCardinality)
         assertEquals(ErCardinality.ZeroOrMore, mixed.relationships[0].toCardinality)
         assertEquals(ErCardinality.ExactlyOne, mixed.relationships[1].fromCardinality)
@@ -152,5 +153,10 @@ class ErParserTest {
         assertEquals(ErCardinality.ZeroOrMore, mixed.relationships[2].fromCardinality)
         assertEquals(ErCardinality.ExactlyOne, mixed.relationships[2].toCardinality)
         assertEquals("uses", mixed.relationships[2].label)
+        assertEquals("p", mixed.relationships[3].from)
+        assertEquals("q", mixed.relationships[3].to)
+        assertEquals("links", mixed.relationships[3].label)
+        assertEquals("Customer: Account", mixed.entity("p")?.label)
+        assertEquals("Target: Account", mixed.entity("q")?.label)
     }
 }

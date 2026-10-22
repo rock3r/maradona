@@ -358,8 +358,11 @@ object ErParser {
     private val WORD_CARD_PATTERN =
         """(?:\|o|o\||\|\||\}o|o\{|\}\||\|\{|only\s+one|zero\s+or\s+one|one\s+or\s+zero|zero\s+or\s+more|zero\s+or\s+many|one\s+or\s+more|one\s+or\s+many|many\(0\)|many\(1\)|many|one|0\.\.1|0\.\.\*|1\.\.\*|0\+|1\+|1)"""
 
+    private val ENDPOINT_TOKEN_PATTERN =
+        """(?:(?:"(?:\\.|[^"\\])*"|\[[^\]]*]|\S)+?)"""
+
     private val WORD_REL_REGEX = Regex(
-        """^(\S+|"[^"]+")\s*($WORD_CARD_PATTERN)\s*(optionally\s+to|to|--|\.\.)\s*($WORD_CARD_PATTERN)\s*(.+)$""",
+        """^($ENDPOINT_TOKEN_PATTERN)\s*($WORD_CARD_PATTERN)\s*(optionally\s+to|to|--|\.\.)\s*($WORD_CARD_PATTERN)\s*(.+)$""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -731,6 +734,7 @@ object ErParser {
 
     private fun findColonOutsideQuotes(s: String): Int {
         var inQuotes = false
+        var inBrackets = 0
         var i = 0
         while (i < s.length) {
             val c = s[i]
@@ -743,12 +747,24 @@ object ErParser {
                 i++
                 continue
             }
-            if (!inQuotes && c == ':') {
-                if (s.startsWith(":::", i)) {
-                    i += 3
+            if (!inQuotes) {
+                if (c == '[') {
+                    inBrackets++
+                    i++
                     continue
                 }
-                return i
+                if (c == ']' && inBrackets > 0) {
+                    inBrackets--
+                    i++
+                    continue
+                }
+                if (inBrackets == 0 && c == ':') {
+                    if (s.startsWith(":::", i)) {
+                        i += 3
+                        continue
+                    }
+                    return i
+                }
             }
             i++
         }

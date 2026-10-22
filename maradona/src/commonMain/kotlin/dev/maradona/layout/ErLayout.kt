@@ -646,8 +646,10 @@ object ErLayout {
             val path = rootPlacement.dagrePaths[idx]
             val pts = if (orderReversed || path == null || path.points.size < 2) {
                 if (pairTotal > 1) {
-                    val vx = toRect.centerX - fromRect.centerX
-                    val vy = toRect.centerY - fromRect.centerY
+                    val canonFrom = itemRectById.getValue(pairKey.first)
+                    val canonTo = itemRectById.getValue(pairKey.second)
+                    val vx = canonTo.centerX - canonFrom.centerX
+                    val vy = canonTo.centerY - canonFrom.centerY
                     val vLen = sqrt(vx * vx + vy * vy).coerceAtLeast(1f)
                     val nx = -vy / vLen
                     val ny = vx / vLen
