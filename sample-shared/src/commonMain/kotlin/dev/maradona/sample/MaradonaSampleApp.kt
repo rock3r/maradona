@@ -151,6 +151,24 @@ private val examples = linkedMapOf(
             float pricePerUnit
           }
     """.trimIndent(),
+    "Mindmap" to """
+        mindmap
+          root((Maradona))
+            Diagrams
+              Flowcharts
+              Sequence
+              Class
+              State
+              ER
+            Architecture
+              Pure Kotlin Parser
+              Sugiyama & Tidy Tree
+              Compose Multiplatform
+            Targets
+              Desktop
+              Android
+              iOS
+    """.trimIndent(),
 )
 
 private class SampleState(

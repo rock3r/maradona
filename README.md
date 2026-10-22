@@ -8,10 +8,10 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.5 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.6 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
-state diagrams (`stateDiagram` / `stateDiagram-v2`), and entity-relationship
-diagrams (`erDiagram`).
+state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
+diagrams (`erDiagram`), and mindmaps (`mindmap`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -87,6 +87,15 @@ Supported in entity-relationship (`erDiagram`) diagrams:
   `zero or more`, `many(0)`, `1`, `0+`, `1+` with `to` / `optionally to`)
 - Nested `subgraph id [title] ... end` clusters (including relationships incident on subgraph IDs)
   and styling (`classDef`, `classDef default`, `class`, `cssClass`, `style`, inline `:::className`)
+
+Supported in mindmaps (`mindmap`):
+
+- Headers: `mindmap`, YAML frontmatter (`title`), `title`, and `accTitle` / `accDescr`
+- Indentation-driven hierarchy (spaces and tabs, tolerant of uneven sibling indentation)
+- Shapes: default, square (`[Label]`), rounded (`(Label)`), circle (`((Label))`),
+  bang (`))Label((`), cloud (`)Label(`), and hexagon (`{{Label}}`)
+- Multi-line markdown labels (`` ["`**Bold** and *italic*`"] ``), `::icon(...)` and
+  `:::class1 class2` decorators, and `classDef` / `class` / `style`
 
 ## How it works
 
@@ -169,7 +178,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, and ER diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, and mindmaps only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
