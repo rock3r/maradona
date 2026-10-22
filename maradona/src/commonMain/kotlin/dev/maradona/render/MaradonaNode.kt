@@ -189,7 +189,6 @@ fun annotatedLabel(label: String): AnnotatedString = buildAnnotatedString {
 private fun hasClosingSingleStar(s: String, from: Int): Boolean {
     var j = from
     while (j < s.length) {
-        if (s[j] == '\n') return false
         if (s.startsWith("**", j)) {
             j += 2
             continue

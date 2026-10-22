@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -118,8 +119,13 @@ fun MaradonaClassLayout(
                             ),
                         )
                     }
+                    val titleText = if (c.genericType.isNullOrBlank()) {
+                        annotatedLabel(c.label)
+                    } else {
+                        annotatedLabel(c.label) + AnnotatedString("<${c.genericType}>")
+                    }
                     BasicText(
-                        text = c.displayTitle,
+                        text = titleText,
                         style = TextStyle(
                             color = textColor,
                             fontFamily = theme.fontFamily,
