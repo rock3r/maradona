@@ -253,12 +253,13 @@ class ClassLayoutTest {
         assertTrue(abFromCard.bottom <= abLabel.y || abFromCard.x >= abLabel.right || abLabel.x >= abFromCard.right)
         assertTrue(abLabel.bottom <= abToCard.y || abToCard.x >= abLabel.right || abLabel.x >= abToCard.right)
 
-        // Cross-namespace TB relation entering a namespace from above must route around the centered namespace header.
+        // Cross-namespace TB relation entering a namespace from above must route around the centered namespace header,
+        // including when smoothed with basisSpline across a wide 30-character namespace header.
         val crossHdrDiagram = ClassParser.parse(
             """
             classDiagram
                 class A
-                namespace CommerceDomain {
+                namespace VeryWideCommerceDomainTitle30C {
                     class B
                 }
                 A --> B : enters
@@ -275,6 +276,13 @@ class ClassLayoutTest {
             assertTrue(
                 !ClassLayout.segmentIntersectsRect(crossRel.points[i], crossRel.points[i + 1], hdrRect),
                 "Relation segment $i (${crossRel.points[i]} -> ${crossRel.points[i + 1]}) must not pass through namespace header $hdrRect",
+            )
+        }
+        val splineSamples = ClassLayout.basisSplineSamples(crossRel.points)
+        for (i in 0 until splineSamples.lastIndex) {
+            assertTrue(
+                !ClassLayout.segmentIntersectsRect(splineSamples[i], splineSamples[i + 1], hdrRect),
+                "Smoothed spline segment $i (${splineSamples[i]} -> ${splineSamples[i + 1]}) must not pass through namespace header $hdrRect",
             )
         }
         val crossLbl = requireNotNull(crossRel.labelRect)

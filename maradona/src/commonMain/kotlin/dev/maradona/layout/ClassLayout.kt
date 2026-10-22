@@ -979,11 +979,22 @@ object ClassLayout {
                     }
                     .minByOrNull { wp -> chainLen(p0, wp, p1) }
                 if (bestWp != null) {
-                    for ((offset, pt) in bestWp.withIndex()) {
+                    val doubleWp = bestWp.flatMap { listOf(it, it) }
+                    val testPts = buildList {
+                        addAll(pts.subList(0, segIdx + 1))
+                        addAll(doubleWp)
+                        addAll(pts.subList(segIdx + 1, pts.size))
+                    }
+                    val samples = basisSplineSamples(testPts)
+                    val doubleClear = (0 until samples.lastIndex).none { i ->
+                        segmentIntersectsRect(samples[i], samples[i + 1], innerRect)
+                    }
+                    val inserted = if (doubleClear) doubleWp else bestWp.flatMap { listOf(it, it, it) }
+                    for ((offset, pt) in inserted.withIndex()) {
                         pts.add(segIdx + 1 + offset, pt)
                     }
                     changed = true
-                    segIdx += bestWp.size + 1
+                    segIdx += inserted.size + 1
                 } else {
                     segIdx++
                 }
@@ -992,6 +1003,50 @@ object ClassLayout {
             }
         }
         return changed
+    }
+
+    internal fun basisSplineSamples(points: List<DiagramPoint>, stepsPerSpan: Int = 16): List<DiagramPoint> {
+        val n = points.size
+        if (n <= 2) return points
+        val out = ArrayList<DiagramPoint>((n * stepsPerSpan) + 2)
+        val p0 = points[0]
+        val p1 = points[1]
+        out.add(p0)
+        var curX = (5f * p0.x + p1.x) / 6f
+        var curY = (5f * p0.y + p1.y) / 6f
+        out.add(DiagramPoint(curX, curY))
+        fun sampleCubic(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
+            val x0 = curX
+            val y0 = curY
+            for (s in 1..stepsPerSpan) {
+                val t = s.toFloat() / stepsPerSpan
+                val u = 1f - t
+                val bx = u * u * u * x0 + 3f * u * u * t * x1 + 3f * u * t * t * x2 + t * t * t * x3
+                val by = u * u * u * y0 + 3f * u * u * t * y1 + 3f * u * t * t * y2 + t * t * t * y3
+                out.add(DiagramPoint(bx, by))
+            }
+            curX = x3
+            curY = y3
+        }
+        for (i in 1 until n - 1) {
+            val a = points[i - 1]
+            val b = points[i]
+            val c = points[i + 1]
+            sampleCubic(
+                (2f * a.x + b.x) / 3f, (2f * a.y + b.y) / 3f,
+                (a.x + 2f * b.x) / 3f, (a.y + 2f * b.y) / 3f,
+                (a.x + 4f * b.x + c.x) / 6f, (a.y + 4f * b.y + c.y) / 6f,
+            )
+        }
+        val prev = points[n - 2]
+        val last = points[n - 1]
+        sampleCubic(
+            (2f * prev.x + last.x) / 3f, (2f * prev.y + last.y) / 3f,
+            (prev.x + 2f * last.x) / 3f, (prev.y + 2f * last.y) / 3f,
+            (prev.x + 5f * last.x) / 6f, (prev.y + 5f * last.y) / 6f,
+        )
+        out.add(last)
+        return out
     }
 
     internal fun segmentIntersectsRect(a: DiagramPoint, b: DiagramPoint, r: DiagramRect): Boolean {

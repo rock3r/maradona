@@ -494,7 +494,30 @@ private fun DrawScope.drawClassUnderlay(
         val endTrim = classEndTrim(r.endEnd, unit)
         val trimmed = trimPath(pts, startBy = startTrim, endBy = endTrim)
         if (trimmed.size >= 2) {
-            val path = basisSpline(trimmed)
+            val samples = ClassLayout.basisSplineSamples(trimmed)
+            val splineHitsObstacle = (0 until samples.lastIndex).any { i ->
+                val a = samples[i]
+                val b = samples[i + 1]
+                layout.namespaces.any { ns ->
+                    ns.headerRect.width > 0f && ns.headerRect.height > 0f &&
+                        ClassLayout.segmentIntersectsRect(a, b, ns.headerRect)
+                } || layout.classes.any { pc ->
+                    pc.node.id != r.from && pc.node.id != r.to &&
+                        ClassLayout.segmentIntersectsRect(a, b, pc.rect)
+                } || layout.notes.any { pn ->
+                    ClassLayout.segmentIntersectsRect(a, b, pn.rect)
+                }
+            }
+            val path = if (!splineHitsObstacle) {
+                basisSpline(trimmed)
+            } else {
+                Path().apply {
+                    moveTo(trimmed.first().x, trimmed.first().y)
+                    for (k in 1 until trimmed.size) {
+                        lineTo(trimmed[k].x, trimmed[k].y)
+                    }
+                }
+            }
             drawPath(
                 path = path,
                 color = theme.edge,
@@ -504,17 +527,19 @@ private fun DrawScope.drawClassUnderlay(
                 ),
             )
         }
+        val startFrom = pts.drop(1).firstOrNull { it != pts.first() } ?: pts[1]
+        val endFrom = pts.dropLast(1).lastOrNull { it != pts.last() } ?: pts[pts.lastIndex - 1]
         drawClassRelationEnd(
             end = r.startEnd,
             tip = pts.first(),
-            from = pts[1],
+            from = startFrom,
             theme = theme,
             unit = unit,
         )
         drawClassRelationEnd(
             end = r.endEnd,
             tip = pts.last(),
-            from = pts[pts.lastIndex - 1],
+            from = endFrom,
             theme = theme,
             unit = unit,
         )
