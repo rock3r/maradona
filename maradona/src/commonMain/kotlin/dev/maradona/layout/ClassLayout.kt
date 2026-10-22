@@ -367,30 +367,56 @@ object ClassLayout {
             nodeNsId: String?,
             memberNsIds: Set<String>,
         ): DiagramRect {
+            val origBase = if (classId != null) finalRects["c:$classId"] ?: baseRect else baseRect
+            val dx = baseRect.x - origBase.x
+            val dy = baseRect.y - origBase.y
             var env = if (classId != null) {
                 val rawEnv = classWithSelfEnvelope(classId) ?: baseRect
-                val dx = baseRect.x - (finalRects["c:$classId"]?.x ?: baseRect.x)
-                val dy = baseRect.y - (finalRects["c:$classId"]?.y ?: baseRect.y)
                 rawEnv.copy(x = rawEnv.x + dx, y = rawEnv.y + dy)
             } else {
                 baseRect
             }
             var cur = nodeNsId
             while (cur != null && cur !in memberNsIds) {
+                val curMembers = enclosedNamespaceIds(cur)
+                var minX = env.x
+                var minY = env.y
+                var maxX = env.right
+                var maxY = env.bottom
+                for (mc in diagram.classes) {
+                    if (mc.namespaceId in curMembers) {
+                        val mEnv = classWithSelfEnvelope(mc.id)?.let {
+                            if (mc.id == classId) it.copy(x = it.x + dx, y = it.y + dy) else it
+                        } ?: continue
+                        minX = min(minX, mEnv.x)
+                        minY = min(minY, mEnv.y)
+                        maxX = max(maxX, mEnv.right)
+                        maxY = max(maxY, mEnv.bottom)
+                    }
+                }
+                for (mn in diagram.notes) {
+                    if (mn.namespaceId in curMembers) {
+                        val mRect = finalRects["n:${mn.id}"] ?: continue
+                        minX = min(minX, mRect.x)
+                        minY = min(minY, mRect.y)
+                        maxX = max(maxX, mRect.right)
+                        maxY = max(maxY, mRect.bottom)
+                    }
+                }
                 val titleSz = nsLabelSizes[cur] ?: DiagramSize(0f, 0f)
                 val padX = options.subgraphPaddingX
                 val padBottom = options.subgraphPaddingY * 0.65f
                 val padTop = max(options.subgraphPaddingY, titleSz.height + 12f * options.density)
-                var left = env.x - padX
-                var right = env.right + padX
+                var left = minX - padX
+                var right = maxX + padX
                 val minW = titleSz.width + padX * 2f
                 if (right - left < minW) {
                     val mid = (left + right) / 2f
                     left = mid - minW / 2f
                     right = mid + minW / 2f
                 }
-                val top = env.y - padTop
-                val bottom = env.bottom + padBottom
+                val top = minY - padTop
+                val bottom = maxY + padBottom
                 env = DiagramRect(left, top, right - left, bottom - top)
                 cur = nsById[cur]?.parentId
             }
@@ -521,11 +547,8 @@ object ClassLayout {
             return d
         }
         val sortedNamespaces = diagram.namespaces.sortedBy { nsDepth(it) }
-        repeat(2) {
-            builtNsRects.clear()
-            for (ns in sortedNamespaces) {
-                buildNamespaceRect(ns, evict = true)
-            }
+        for (ns in sortedNamespaces) {
+            buildNamespaceRect(ns, evict = true)
         }
         builtNsRects.clear()
         val positionedNamespaces = sortedNamespaces.mapNotNull { ns ->
