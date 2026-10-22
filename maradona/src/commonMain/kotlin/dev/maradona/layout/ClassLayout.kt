@@ -278,11 +278,13 @@ object ClassLayout {
                 selfRect = finalRects.getValue(selfKey)
             }
 
-            // Reserve vertical clearance below `selfRect` if staggered self-relation labels extend past `selfRect.bottom`.
+            // Reserve vertical clearance below `selfRect` if staggered self-relation labels or source cardinalities extend past `selfRect.bottom`.
+            val startY = (selfRect.centerY + selfOrd * 10f * options.density).coerceAtMost(selfRect.bottom - 6f * options.density)
+            val fromCardBottom = fromCardSz?.let { startY + 4f * options.density + it.height } ?: selfRect.bottom
             val labelBottom = lSize?.let {
                 selfRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
             } ?: selfRect.bottom
-            val neededBottomY = max(selfRect.bottom, labelBottom)
+            val neededBottomY = maxOf(selfRect.bottom, labelBottom, fromCardBottom)
             val belowMinTop = finalRects.entries
                 .filter { (k, r) ->
                     k != selfKey && r.centerY > selfRect.centerY &&
@@ -351,12 +353,14 @@ object ClassLayout {
                 val fromCardRight = fromCardSz?.let { base.right + 4f * options.density + it.width } ?: base.right
                 val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: base.right
                 val topY = base.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
+                val startY = (base.centerY + selfOrd * 10f * options.density).coerceAtMost(base.bottom - 6f * options.density)
+                val fromCardBottom = fromCardSz?.let { startY + 4f * options.density + it.height } ?: base.bottom
                 val labelBottom = lSize?.let {
                     base.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
                 } ?: base.bottom
                 minY = min(minY, topY)
                 maxX = maxOf(maxX, labelRight, fromCardRight, toCardRight)
-                maxY = max(maxY, labelBottom)
+                maxY = maxOf(maxY, labelBottom, fromCardBottom)
             }
             return DiagramRect(minX, minY, maxX - minX, maxY - minY)
         }
@@ -663,120 +667,68 @@ object ClassLayout {
 
             var rerouted = orderReversed
 
-            // Route around any unrelated class or note boxes that lie across the relation path.
-            val obstacleBoxes = buildList {
-                for (pc in positionedClasses) {
-                    if (pc.node.id != rel.from && pc.node.id != rel.to) add(pc.rect)
-                }
-                for (pn in positionedNotes) add(pn.rect)
-            }
-            for (obs in obstacleBoxes) {
+            // Route around any unrelated class/note boxes or namespace headers that lie across the relation path.
+            data class DetourObstacle(val innerRect: DiagramRect, val guardRect: DiagramRect)
+            val detourObstacles = buildList {
                 val pad = 8f * options.density
-                val guardRect = DiagramRect(obs.x - pad, obs.y - pad, obs.width + pad * 2f, obs.height + pad * 2f)
-                val hitsObs = (0 until pts.lastIndex).any { i -> segmentIntersectsRect(pts[i], pts[i + 1], guardRect) }
-                if (!hitsObs) continue
-                rerouted = true
-                var k = 1
-                while (k < pts.lastIndex) {
-                    val p = pts[k]
-                    if (p.x in guardRect.x..guardRect.right && p.y in guardRect.y..guardRect.bottom) {
-                        pts.removeAt(k)
-                    } else {
-                        k++
+                for (pc in positionedClasses) {
+                    if (pc.node.id != rel.from && pc.node.id != rel.to) {
+                        val obs = pc.rect
+                        add(
+                            DetourObstacle(
+                                innerRect = obs,
+                                guardRect = DiagramRect(obs.x - pad, obs.y - pad, obs.width + pad * 2f, obs.height + pad * 2f),
+                            ),
+                        )
                     }
                 }
-                var segIdx = 0
-                while (segIdx < pts.lastIndex) {
-                    val p0 = pts[segIdx]
-                    val p1 = pts[segIdx + 1]
-                    if (segmentIntersectsRect(p0, p1, guardRect)) {
-                        val dx = kotlin.math.abs(p1.x - p0.x)
-                        val dy = kotlin.math.abs(p1.y - p0.y)
-                        if (dx >= dy) {
-                            val detourY = if ((p0.y + p1.y) / 2f >= obs.centerY) guardRect.bottom else guardRect.y
-                            val firstX = p0.x.coerceIn(guardRect.x, guardRect.right)
-                            val secondX = p1.x.coerceIn(guardRect.x, guardRect.right)
-                            pts.add(segIdx + 1, DiagramPoint(firstX, detourY))
-                            pts.add(segIdx + 2, DiagramPoint(secondX, detourY))
-                            segIdx += 3
-                        } else {
-                            val detourX = if ((p0.x + p1.x) / 2f <= obs.centerX) guardRect.x else guardRect.right
-                            val firstY = p0.y.coerceIn(guardRect.y, guardRect.bottom)
-                            val secondY = p1.y.coerceIn(guardRect.y, guardRect.bottom)
-                            pts.add(segIdx + 1, DiagramPoint(detourX, firstY))
-                            pts.add(segIdx + 2, DiagramPoint(detourX, secondY))
-                            segIdx += 3
-                        }
-                    } else {
-                        segIdx++
-                    }
+                for (pn in positionedNotes) {
+                    val obs = pn.rect
+                    add(
+                        DetourObstacle(
+                            innerRect = obs,
+                            guardRect = DiagramRect(obs.x - pad, obs.y - pad, obs.width + pad * 2f, obs.height + pad * 2f),
+                        ),
+                    )
+                }
+                for (ns in positionedNamespaces) {
+                    val hdr = ns.headerRect
+                    if (hdr.width <= 0f || hdr.height <= 0f) continue
+                    val clearPadX = min(8f * options.density, max(4f * options.density, (ns.rect.width - hdr.width) * 0.25f))
+                    val clearPadY = 6f * options.density
+                    add(
+                        DetourObstacle(
+                            innerRect = hdr,
+                            guardRect = DiagramRect(
+                                x = hdr.x - clearPadX,
+                                y = hdr.y - clearPadY,
+                                width = hdr.width + clearPadX * 2f,
+                                height = hdr.height + clearPadY * 2f,
+                            ),
+                        ),
+                    )
                 }
             }
 
-            for (ns in positionedNamespaces) {
-                val hdr = ns.headerRect
-                if (hdr.width <= 0f || hdr.height <= 0f) continue
-                val clearPadX = min(8f * options.density, max(4f * options.density, (ns.rect.width - hdr.width) * 0.25f))
-                val clearPadY = 6f * options.density
-                val guardRect = DiagramRect(
-                    x = hdr.x - clearPadX,
-                    y = hdr.y - clearPadY,
-                    width = hdr.width + clearPadX * 2f,
-                    height = hdr.height + clearPadY * 2f,
-                )
-                val hitsHeader = (0 until pts.lastIndex).any { i ->
-                    segmentIntersectsRect(pts[i], pts[i + 1], guardRect)
-                }
-                if (!hitsHeader) continue
-                rerouted = true
-
-                // Remove interior dummy waypoints sitting directly above/below or inside the header
-                // so the detour transitions cleanly without kinking back toward the header center.
-                val approachMarginY = 16f * options.density
-                var k = 1
-                while (k < pts.lastIndex) {
-                    val p = pts[k]
-                    if (
-                        p.x in guardRect.x..guardRect.right &&
-                        p.y in (guardRect.y - approachMarginY)..(guardRect.bottom + approachMarginY)
-                    ) {
-                        pts.removeAt(k)
-                    } else {
-                        k++
+            repeat(2) {
+                var passChanged = false
+                for (obstacle in detourObstacles) {
+                    if (detourAroundRect(pts, obstacle.guardRect, obstacle.innerRect, options.density)) {
+                        rerouted = true
+                        passChanged = true
                     }
                 }
-
-                var segIdx = 0
-                while (segIdx < pts.lastIndex) {
-                    val p0 = pts[segIdx]
-                    val p1 = pts[segIdx + 1]
-                    if (segmentIntersectsRect(p0, p1, guardRect)) {
-                        val midX = (p0.x + p1.x) / 2f
-                        val detourX = if (midX <= hdr.centerX) guardRect.x else guardRect.right
-                        val dy = kotlin.math.abs(p1.y - p0.y)
-                        val dx = kotlin.math.abs(p1.x - p0.x)
-                        if (dy >= dx || (p0.y <= guardRect.y && p1.y >= guardRect.bottom) || (p0.y >= guardRect.bottom && p1.y <= guardRect.y)) {
-                            val firstY = p0.y.coerceIn(guardRect.y, guardRect.bottom)
-                            val secondY = p1.y.coerceIn(guardRect.y, guardRect.bottom)
-                            pts.add(segIdx + 1, DiagramPoint(detourX, firstY))
-                            pts.add(segIdx + 2, DiagramPoint(detourX, secondY))
-                            segIdx += 3
-                        } else {
-                            val detourY = guardRect.bottom
-                            val firstX = p0.x.coerceIn(guardRect.x, guardRect.right)
-                            val secondX = p1.x.coerceIn(guardRect.x, guardRect.right)
-                            pts.add(segIdx + 1, DiagramPoint(firstX, detourY))
-                            pts.add(segIdx + 2, DiagramPoint(secondX, detourY))
-                            segIdx += 3
-                        }
-                    } else {
-                        segIdx++
+                if ((passChanged || rerouted) && pts.size >= 2) {
+                    val newStart = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
+                    if (detourObstacles.none { segmentIntersectsRect(newStart, pts[1], it.innerRect) }) {
+                        pts[0] = newStart
+                    }
+                    val newEnd = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
+                    if (detourObstacles.none { segmentIntersectsRect(pts[pts.lastIndex - 1], newEnd, it.innerRect) }) {
+                        pts[pts.lastIndex] = newEnd
                     }
                 }
-            }
-            if (rerouted && pts.size >= 2) {
-                pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
-                pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
+                if (!passChanged) return@repeat
             }
 
             fun avoidNamespaceHeaders(r: DiagramRect): DiagramRect {
@@ -957,6 +909,90 @@ object ClassLayout {
 
     private fun rectsOverlap(a: DiagramRect, b: DiagramRect): Boolean =
         a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom
+
+    private fun detourAroundRect(
+        pts: MutableList<DiagramPoint>,
+        guardRect: DiagramRect,
+        innerRect: DiagramRect,
+        density: Float,
+    ): Boolean {
+        val hits = (0 until pts.lastIndex).any { i -> segmentIntersectsRect(pts[i], pts[i + 1], innerRect) }
+        if (!hits) return false
+
+        val approachMarginY = 12f * density
+        var k = 1
+        while (k < pts.lastIndex) {
+            val p = pts[k]
+            if (
+                p.x in guardRect.x..guardRect.right &&
+                p.y in (guardRect.y - approachMarginY)..(guardRect.bottom + approachMarginY)
+            ) {
+                pts.removeAt(k)
+            } else {
+                k++
+            }
+        }
+
+        val tl = DiagramPoint(guardRect.x, guardRect.y)
+        val tr = DiagramPoint(guardRect.right, guardRect.y)
+        val br = DiagramPoint(guardRect.right, guardRect.bottom)
+        val bl = DiagramPoint(guardRect.x, guardRect.bottom)
+        val cw = listOf(tl, tr, br, bl)
+        val ccw = listOf(tl, bl, br, tr)
+        val candidates = buildList {
+            add(listOf(tl))
+            add(listOf(tr))
+            add(listOf(br))
+            add(listOf(bl))
+            for (i in 0 until 4) {
+                add(listOf(cw[i], cw[(i + 1) % 4]))
+                add(listOf(ccw[i], ccw[(i + 1) % 4]))
+            }
+            for (i in 0 until 4) {
+                add(listOf(cw[i], cw[(i + 1) % 4], cw[(i + 2) % 4]))
+                add(listOf(ccw[i], ccw[(i + 1) % 4], ccw[(i + 2) % 4]))
+            }
+        }
+
+        fun dist(a: DiagramPoint, b: DiagramPoint): Float {
+            val dx = b.x - a.x
+            val dy = b.y - a.y
+            return sqrt(dx * dx + dy * dy)
+        }
+
+        fun chainLen(p0: DiagramPoint, wp: List<DiagramPoint>, p1: DiagramPoint): Float {
+            var sum = dist(p0, wp.first()) + dist(wp.last(), p1)
+            for (i in 0 until wp.lastIndex) sum += dist(wp[i], wp[i + 1])
+            return sum
+        }
+
+        var changed = false
+        var segIdx = 0
+        while (segIdx < pts.lastIndex) {
+            val p0 = pts[segIdx]
+            val p1 = pts[segIdx + 1]
+            if (segmentIntersectsRect(p0, p1, innerRect)) {
+                val bestWp = candidates
+                    .filter { wp ->
+                        !segmentIntersectsRect(p0, wp.first(), innerRect) &&
+                            !segmentIntersectsRect(wp.last(), p1, innerRect)
+                    }
+                    .minByOrNull { wp -> chainLen(p0, wp, p1) }
+                if (bestWp != null) {
+                    for ((offset, pt) in bestWp.withIndex()) {
+                        pts.add(segIdx + 1 + offset, pt)
+                    }
+                    changed = true
+                    segIdx += bestWp.size + 1
+                } else {
+                    segIdx++
+                }
+            } else {
+                segIdx++
+            }
+        }
+        return changed
+    }
 
     internal fun segmentIntersectsRect(a: DiagramPoint, b: DiagramPoint, r: DiagramRect): Boolean {
         if (r.width <= 0f || r.height <= 0f) return false

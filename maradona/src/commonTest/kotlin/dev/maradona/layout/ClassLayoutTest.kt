@@ -343,5 +343,66 @@ class ClassLayoutTest {
                 assertTrue(!cOverlap, "Relation ${rel.relation.from}->${rel.relation.to} label $lbl must not overlap class ${pc.node.id} (${pc.rect})")
             }
         }
+
+        // Tall source cardinality on a self-relation must reserve vertical clearance above classes below it.
+        val tallSelfCardDiagram = ClassParser.parse(
+            """
+            classDiagram
+                A --> B
+                A "one<br/>two<br/>three<br/>four<br/>five<br/>six" --> A
+            """.trimIndent(),
+        )
+        val tallSelfCardLayout = ClassLayout.layout(
+            diagram = tallSelfCardDiagram,
+            classBoxSize = { c ->
+                if (c.id == "A") ClassBoxMetrics(100f, 50f, 24f, 13f, 13f)
+                else ClassBoxMetrics(300f, 50f, 24f, 13f, 13f)
+            },
+            cardinalitySize = { _, _, _ -> DiagramSize(35f, 84f) },
+        )
+        val tallSelfRectB = tallSelfCardLayout.classNode("B")!!.rect
+        val tallSelfCardRect = requireNotNull(
+            tallSelfCardLayout.relations.first { it.relation.from == "A" && it.relation.to == "A" }.fromCardinalityRect,
+        )
+        val cardOverlapsB = tallSelfCardRect.x < tallSelfRectB.right && tallSelfRectB.x < tallSelfCardRect.right &&
+            tallSelfCardRect.y < tallSelfRectB.bottom && tallSelfRectB.y < tallSelfCardRect.bottom
+        assertTrue(!cardOverlapsB, "Self-relation source cardinality $tallSelfCardRect must not overlap class B ($tallSelfRectB)")
+
+        // Diagonal detour around an intermediate class box must verify both entry and exit segments.
+        val btDetourDiagram = ClassParser.parse(
+            """
+            classDiagram
+                direction BT
+                namespace N {
+                    class C0
+                    class C1
+                }
+                class C2
+                class C3
+                class C4
+                class C5
+                class C6
+                C3 --> C6 : link
+                C1 --> C2 : link
+                C4 --> C2 : link
+                C6 --> C5 : link
+            """.trimIndent(),
+        )
+        val btDetourLayout = ClassLayout.layout(
+            diagram = btDetourDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+            relationLabelSize = { _, r -> r.label?.let { DiagramSize(100f, 20f) } },
+        )
+        for (rel in btDetourLayout.relations) {
+            for (pc in btDetourLayout.classes) {
+                if (pc.node.id == rel.relation.from || pc.node.id == rel.relation.to) continue
+                for (i in 0 until rel.points.lastIndex) {
+                    assertTrue(
+                        !ClassLayout.segmentIntersectsRect(rel.points[i], rel.points[i + 1], pc.rect),
+                        "Relation ${rel.relation.from}->${rel.relation.to} segment $i (${rel.points[i]} -> ${rel.points[i + 1]}) must not intersect unrelated class ${pc.node.id} (${pc.rect})",
+                    )
+                }
+            }
+        }
     }
 }
