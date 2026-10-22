@@ -31,6 +31,7 @@ object ClassParser {
     private const val MAX_SOURCE_LENGTH = 50_000
     private const val MAX_CLASSES = 500
     private const val MAX_RELATIONS = 2_000
+    private val namedEntities = setOf("quot", "amp", "lt", "gt", "apos", "nbsp")
 
     private data class RelOp(
         val token: String,
@@ -315,7 +316,13 @@ object ClassParser {
             var j = semiIdx - 1
             while (j >= 0 && line[j].isLetterOrDigit()) j--
             if (j < 0 || j == semiIdx - 1) return false
-            return line[j] == '&' || line[j] == '#'
+            if (line[j] == '&') return true
+            if (line[j] == '#') {
+                if (j > 0 && line[j - 1] == '&') return true
+                val token = line.substring(j + 1, semiIdx).lowercase()
+                return token.all { it.isDigit() } || token in namedEntities
+            }
+            return false
         }
 
         private fun statement(stmt: String, lineNo: Int) {

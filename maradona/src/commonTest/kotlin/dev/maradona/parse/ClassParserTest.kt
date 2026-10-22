@@ -169,12 +169,13 @@ class ClassParserTest {
         val diagram = ClassParser.parse(
             """
             classDiagram
-              class A; class B { +run() }
+              class A; class B { #id; +name; +run() }
               class C["value:::important"]
               class D["<<interface>>"]
             """.trimIndent(),
         )
         assertEquals(listOf("A", "B", "C", "D"), diagram.classes.map { it.id })
+        assertEquals(listOf("#id", "+name"), diagram.classes.first { it.id == "B" }.attributes.map { it.displayText })
         assertEquals(listOf("+run()"), diagram.classes.first { it.id == "B" }.methods.map { it.displayText })
         val c = diagram.classes.first { it.id == "C" }
         assertEquals("value:::important", c.label)
