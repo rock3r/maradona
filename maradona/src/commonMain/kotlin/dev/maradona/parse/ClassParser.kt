@@ -127,13 +127,24 @@ object ClassParser {
         return state.build()
     }
 
+    private fun isUnescapedQuote(s: String, idx: Int): Boolean {
+        if (idx !in s.indices || s[idx] != '"') return false
+        var backslashes = 0
+        var j = idx - 1
+        while (j >= 0 && s[j] == '\\') {
+            backslashes++
+            j--
+        }
+        return backslashes % 2 == 0
+    }
+
     private fun stripComment(line: String): String {
         var inQuote = false
         var inBacktick = false
         var i = 0
         while (i < line.length - 1) {
             when (line[i]) {
-                '"' -> if (!inBacktick) inQuote = !inQuote
+                '"' -> if (!inBacktick && isUnescapedQuote(line, i)) inQuote = !inQuote
                 '`' -> if (!inQuote) inBacktick = !inBacktick
                 '%' -> if (!inQuote && !inBacktick && line[i + 1] == '%') return line.substring(0, i)
             }
@@ -211,7 +222,7 @@ object ClassParser {
             var i = 0
             while (i < line.length) {
                 when (val c = line[i]) {
-                    '"' -> if (!inBacktick) inQuote = !inQuote
+                    '"' -> if (!inBacktick && isUnescapedQuote(line, i)) inQuote = !inQuote
                     '`' -> if (!inQuote) inBacktick = !inBacktick
                     '{' -> if (!inQuote && !inBacktick) {
                         val before = line.substring(pos, i).trim()
@@ -298,7 +309,7 @@ object ClassParser {
             var inBacktick = false
             for (i in text.indices) {
                 when (text[i]) {
-                    '"' -> if (!inBacktick) inQuote = !inQuote
+                    '"' -> if (!inBacktick && isUnescapedQuote(text, i)) inQuote = !inQuote
                     '`' -> if (!inQuote) inBacktick = !inBacktick
                     ';' -> if (!inQuote && !inBacktick && !isEntitySemicolon(text, i)) {
                         val part = text.substring(start, i).trim()
@@ -541,7 +552,7 @@ object ClassParser {
             var i = 0
             while (i < stmt.length) {
                 when (stmt[i]) {
-                    '"' -> if (!inBacktick) inQuote = !inQuote
+                    '"' -> if (!inBacktick && isUnescapedQuote(stmt, i)) inQuote = !inQuote
                     '`' -> if (!inQuote) inBacktick = !inBacktick
                     '~' -> if (!inQuote && !inBacktick) tildeDepth = if (tildeDepth == 0) 1 else 0
                     ':' -> if (!inQuote && !inBacktick && tildeDepth == 0) {
@@ -576,7 +587,7 @@ object ClassParser {
             var j = 0
             while (j < afterOp.length) {
                 when (afterOp[j]) {
-                    '"' -> if (!inBacktick) inQuote = !inQuote
+                    '"' -> if (!inBacktick && isUnescapedQuote(afterOp, j)) inQuote = !inQuote
                     '`' -> if (!inQuote) inBacktick = !inBacktick
                     ':' -> if (!inQuote && !inBacktick) {
                         if (afterOp.startsWith(":::", j)) {
@@ -664,7 +675,7 @@ object ClassParser {
             var i = 0
             while (i < stmt.length) {
                 when (stmt[i]) {
-                    '"' -> if (!inBacktick) inQuote = !inQuote
+                    '"' -> if (!inBacktick && isUnescapedQuote(stmt, i)) inQuote = !inQuote
                     '`' -> if (!inQuote) inBacktick = !inBacktick
                     ':' -> if (!inQuote && !inBacktick) {
                         if (stmt.startsWith(":::", i)) {
@@ -844,7 +855,7 @@ object ClassParser {
         for (i in s.indices) {
             when (s[i]) {
                 '`' -> if (!inQuote) inBacktick = !inBacktick
-                '"' -> if (!inBacktick) inQuote = !inQuote
+                '"' -> if (!inBacktick && isUnescapedQuote(s, i)) inQuote = !inQuote
                 target -> if (!inBacktick && !inQuote) return i
             }
         }
@@ -857,7 +868,7 @@ object ClassParser {
         for (i in 0..s.length - needle.length) {
             when (s[i]) {
                 '`' -> if (!inQuote) inBacktick = !inBacktick
-                '"' -> if (!inBacktick) inQuote = !inQuote
+                '"' -> if (!inBacktick && isUnescapedQuote(s, i)) inQuote = !inQuote
                 else -> if (i >= fromIndex && !inBacktick && !inQuote && s.startsWith(needle, i)) return i
             }
         }

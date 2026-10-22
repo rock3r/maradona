@@ -173,9 +173,10 @@ class ClassParserTest {
               class A; class B { #id; +name; +run() }
               class C["value:::important"]
               class D["<<interface>>"]
+              class E["say \"{hello}\""]
             """.trimIndent(),
         )
-        assertEquals(listOf("A", "B", "C", "D"), diagram.classes.map { it.id })
+        assertEquals(listOf("A", "B", "C", "D", "E"), diagram.classes.map { it.id })
         assertEquals(listOf("#id", "+name"), diagram.classes.first { it.id == "B" }.attributes.map { it.displayText })
         assertEquals(listOf("+run()"), diagram.classes.first { it.id == "B" }.methods.map { it.displayText })
         val c = diagram.classes.first { it.id == "C" }
@@ -183,6 +184,8 @@ class ClassParserTest {
         val d = diagram.classes.first { it.id == "D" }
         assertEquals("<<interface>>", d.label)
         assertTrue(d.annotations.isEmpty())
+        val e = diagram.classes.first { it.id == "E" }
+        assertEquals("say \"{hello}\"", e.label)
 
         val nsPreserve = ClassParser.parse(
             """
