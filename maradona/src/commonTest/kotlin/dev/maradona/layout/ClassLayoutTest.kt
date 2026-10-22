@@ -182,5 +182,24 @@ class ClassLayoutTest {
                 selfLabel.y < rectB.bottom && rectB.y < selfLabel.bottom
             assertTrue(!overlaps, "Self-relation label ($selfLabel) overlaps neighbor class B ($rectB)")
         }
+
+        // Wide cardinality on an LR relation stays outside both endpoint class boxes.
+        val lrDiagram = ClassParser.parse(
+            """
+            classDiagram
+              direction LR
+              A "zero-or-many" --> "exactly-one" B
+            """.trimIndent(),
+        )
+        val lrLayout = ClassLayout.layout(diagram = lrDiagram, classBoxSize = ::fakeMetrics)
+        val lrRel = lrLayout.relations.single()
+        val lrA = lrLayout.classNode("A")!!.rect
+        val lrB = lrLayout.classNode("B")!!.rect
+        val lrFrom = requireNotNull(lrRel.fromCardinalityRect)
+        val lrTo = requireNotNull(lrRel.toCardinalityRect)
+        val fromOverlapsA = lrFrom.x < lrA.right && lrA.x < lrFrom.right && lrFrom.y < lrA.bottom && lrA.y < lrFrom.bottom
+        val toOverlapsB = lrTo.x < lrB.right && lrB.x < lrTo.right && lrTo.y < lrB.bottom && lrB.y < lrTo.bottom
+        assertTrue(!fromOverlapsA, "Wide LR fromCardinality ($lrFrom) overlaps A ($lrA)")
+        assertTrue(!toOverlapsB, "Wide LR toCardinality ($lrTo) overlaps B ($lrB)")
     }
 }

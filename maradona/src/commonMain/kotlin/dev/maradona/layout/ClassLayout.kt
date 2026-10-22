@@ -149,14 +149,26 @@ object ClassLayout {
             val fromKey = "c:${rel.from}"
             val toKey = "c:${rel.to}"
             if (fromKey !in dagreNodeSizes || toKey !in dagreNodeSizes) continue
-            val lSz = relationLabelSize(idx, rel)?.maybeSwapped()
+            val rawLabel = relationLabelSize(idx, rel)
+            val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
+            val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+            val effLabel = if (rawLabel != null || fromCardSz != null || toCardSz != null) {
+                val cardW = (fromCardSz?.width ?: 0f) + (toCardSz?.width ?: 0f) +
+                    (if (fromCardSz != null || toCardSz != null) 28f * options.density else 0f)
+                val cardH = max(fromCardSz?.height ?: 0f, toCardSz?.height ?: 0f) +
+                    (if (fromCardSz != null || toCardSz != null) 16f * options.density else 0f)
+                DiagramSize(
+                    width = max(rawLabel?.width ?: 0f, (rawLabel?.width ?: 0f) + cardW),
+                    height = max(rawLabel?.height ?: 0f, cardH),
+                ).maybeSwapped()
+            } else null
             dagreEdges += dev.maradona.layout.dagre.Dagre.EdgeSpec(
                 from = fromKey,
                 to = toKey,
                 name = "r$idx",
                 minlen = minlenFor(rel.from, rel.to),
-                labelWidth = lSz?.width ?: 0f,
-                labelHeight = lSz?.height ?: 0f,
+                labelWidth = effLabel?.width ?: 0f,
+                labelHeight = effLabel?.height ?: 0f,
             )
         }
         for ((idx, note) in diagram.notes.withIndex()) {
@@ -489,11 +501,11 @@ object ClassLayout {
             }
             val fromCardRect = rel.fromCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, true, card)
-                placeCardinality(pts.first(), pts[1], cSz, options.density)
+                placeCardinality(pts.first(), pts[1], fromRect, cSz, options.density)
             }
             val toCardRect = rel.toCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, false, card)
-                placeCardinality(pts.last(), pts[pts.lastIndex - 1], cSz, options.density)
+                placeCardinality(pts.last(), pts[pts.lastIndex - 1], toRect, cSz, options.density)
             }
             PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
         }
@@ -578,6 +590,7 @@ object ClassLayout {
     private fun placeCardinality(
         anchor: DiagramPoint,
         toward: DiagramPoint,
+        endpointRect: DiagramRect,
         size: DiagramSize,
         density: Float,
     ): DiagramRect {
@@ -593,11 +606,22 @@ object ClassLayout {
             nx = -nx
             ny = -ny
         }
-        val along = 18f * density + size.width * 0.25f
-        val perp = 14f * density + size.height * 0.45f
+        val along = 12f * density + kotlin.math.abs(ux) * (size.width / 2f) + kotlin.math.abs(uy) * (size.height / 2f)
+        val perp = 12f * density + kotlin.math.abs(nx) * (size.width / 2f) + kotlin.math.abs(ny) * (size.height / 2f)
         val cx = anchor.x + ux * along + nx * perp
         val cy = anchor.y + uy * along + ny * perp
-        return DiagramRect(cx - size.width / 2f, cy - size.height / 2f, size.width, size.height)
+        var rect = DiagramRect(cx - size.width / 2f, cy - size.height / 2f, size.width, size.height)
+        if (rectsOverlap(rect, endpointRect)) {
+            val pad = 4f * density
+            rect = if (kotlin.math.abs(ux) >= kotlin.math.abs(uy)) {
+                if (ux >= 0f) rect.copy(x = max(rect.x, endpointRect.right + pad))
+                else rect.copy(x = min(rect.x, endpointRect.x - rect.width - pad))
+            } else {
+                if (uy >= 0f) rect.copy(y = max(rect.y, endpointRect.bottom + pad))
+                else rect.copy(y = min(rect.y, endpointRect.y - rect.height - pad))
+            }
+        }
+        return rect
     }
 
     private fun rectsOverlap(a: DiagramRect, b: DiagramRect): Boolean =
