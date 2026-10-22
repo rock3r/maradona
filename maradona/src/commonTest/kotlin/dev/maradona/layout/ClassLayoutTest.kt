@@ -201,5 +201,23 @@ class ClassLayoutTest {
         val toOverlapsB = lrTo.x < lrB.right && lrB.x < lrTo.right && lrTo.y < lrB.bottom && lrB.y < lrTo.bottom
         assertTrue(!fromOverlapsA, "Wide LR fromCardinality ($lrFrom) overlaps A ($lrA)")
         assertTrue(!toOverlapsB, "Wide LR toCardinality ($lrTo) overlaps B ($lrB)")
+
+        // Three self-relations on a child class B below A reserve vertical clearance above B so loops do not enter A.
+        val multiSelfDiagram = ClassParser.parse(
+            """
+            classDiagram
+              A --> B
+              B --> B : r1
+              B --> B : r2
+              B --> B : r3
+            """.trimIndent(),
+        )
+        val multiSelfLayout = ClassLayout.layout(diagram = multiSelfDiagram, classBoxSize = ::fakeMetrics)
+        val topA = multiSelfLayout.classNode("A")!!.rect
+        for (rel in multiSelfLayout.relations.filter { it.relation.from == "B" }) {
+            for (pt in rel.points) {
+                assertTrue(pt.y > topA.bottom, "Self-loop point $pt on B intrudes into preceding class A ($topA)")
+            }
+        }
     }
 }

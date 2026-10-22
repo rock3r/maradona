@@ -239,16 +239,58 @@ object ClassLayout {
             if (rel.from != rel.to) continue
             val selfOrd = selfOrdByRelIdx[idx] ?: 0
             val selfKey = "c:${rel.from}"
-            val selfRect = finalRects[selfKey] ?: continue
+            var selfRect = finalRects[selfKey] ?: continue
             val lSize = relationLabelSize(idx, rel)
             val outX = (28f + selfOrd * 22f) * options.density
             val outY = (28f + selfOrd * 20f) * options.density
             val endX = (selfRect.centerX + selfRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(selfRect.x + 8f * options.density)
             val labelRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
             val fromCardRight = rel.fromCardinality?.let { selfRect.right + 4f * options.density + cardinalitySize(idx, true, it).width } ?: selfRect.right
-            val toCardRight = rel.toCardinality?.let { endX + 4f * options.density + cardinalitySize(idx, false, it).width } ?: selfRect.right
-            val neededRight = maxOf(labelRight, fromCardRight, toCardRight) + options.nodeGap * 0.5f
-            val selfBand = DiagramRect(selfRect.x, selfRect.y - outY, neededRight - selfRect.x, selfRect.height + outY + selfOrd * 24f * options.density)
+            val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+            val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: selfRect.right
+            val gap = options.nodeGap * 0.5f
+            val neededRight = maxOf(labelRight, fromCardRight, toCardRight) + gap
+            val neededTopY = selfRect.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
+
+            // Reserve vertical clearance above `selfRect` so expanded self-loops never pass through preceding classes.
+            val aboveMaxBottom = finalRects.entries
+                .filter { (k, r) ->
+                    k != selfKey && r.centerY < selfRect.centerY &&
+                        r.x < neededRight && selfRect.x < r.right
+                }
+                .maxOfOrNull { it.value.bottom }
+            if (aboveMaxBottom != null && aboveMaxBottom + gap > neededTopY) {
+                val shiftDown = (aboveMaxBottom + gap) - neededTopY
+                val thresholdY = selfRect.y - 0.5f
+                for ((k, r) in finalRects.entries.toList()) {
+                    if (r.y >= thresholdY) {
+                        finalRects[k] = r.copy(y = r.y + shiftDown)
+                    }
+                }
+                selfRect = finalRects.getValue(selfKey)
+            }
+
+            // Reserve vertical clearance below `selfRect` if staggered self-relation labels extend past `selfRect.bottom`.
+            val labelBottom = lSize?.let {
+                selfRect.centerY - it.height / 2f + selfOrd * (it.height + 6f * options.density) + it.height
+            } ?: selfRect.bottom
+            val neededBottomY = max(selfRect.bottom, labelBottom)
+            val belowMinTop = finalRects.entries
+                .filter { (k, r) ->
+                    k != selfKey && r.centerY > selfRect.centerY &&
+                        r.x < neededRight && selfRect.x < r.right
+                }
+                .minOfOrNull { it.value.y }
+            if (belowMinTop != null && belowMinTop < neededBottomY + gap) {
+                val shiftDown = (neededBottomY + gap) - belowMinTop
+                for ((k, r) in finalRects.entries.toList()) {
+                    if (k != selfKey && r.y >= belowMinTop - 0.5f) {
+                        finalRects[k] = r.copy(y = r.y + shiftDown)
+                    }
+                }
+            }
+
+            val selfBand = DiagramRect(selfRect.x, selfRect.y - outY, neededRight - selfRect.x, (neededBottomY - (selfRect.y - outY)))
             val rightNeighborMinX = finalRects.entries
                 .filter { (k, r) -> k != selfKey && r.x > selfRect.x && r.y < selfBand.bottom && selfBand.y < r.bottom }
                 .minOfOrNull { it.value.x }
