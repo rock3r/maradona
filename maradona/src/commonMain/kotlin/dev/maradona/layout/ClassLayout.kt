@@ -177,11 +177,15 @@ object ClassLayout {
             val fromKey = "n:${note.id}"
             val toKey = "c:$targetId"
             if (fromKey in dagreNodeSizes && toKey in dagreNodeSizes) {
+                val targetNs = nsByClass[targetId]
+                val noteMinlen = if (boundaryRanks > 0 && note.namespaceId != targetNs && (note.namespaceId != null || targetNs != null)) {
+                    1 + boundaryRanks
+                } else 1
                 dagreEdges += dev.maradona.layout.dagre.Dagre.EdgeSpec(
                     from = fromKey,
                     to = toKey,
                     name = "nc$idx",
-                    minlen = 1,
+                    minlen = noteMinlen,
                 )
             }
         }
@@ -229,18 +233,47 @@ object ClassLayout {
         // self-loops and labels never overlap neighboring classes or notes on the same rank.
         val selfOrdByRelIdx = HashMap<Int, Int>()
         val selfLabelOffsetYByRelIdx = HashMap<Int, Float>()
+        val selfFromCardOffsetYByRelIdx = HashMap<Int, Float>()
+        val selfToCardOffsetYByRelIdx = HashMap<Int, Float>()
         val selfCountByClass = HashMap<String, Int>()
         val selfCumOffsetYByClass = HashMap<String, Float>()
+        val selfCumFromCardOffsetYByClass = HashMap<String, Float>()
+        val selfCumToCardOffsetYByClass = HashMap<String, Float>()
+        val maxFromCardWidthByClass = HashMap<String, Float>()
         for ((idx, rel) in diagram.relations.withIndex()) {
             if (rel.from == rel.to) {
                 val ord = selfCountByClass[rel.from] ?: 0
                 selfOrdByRelIdx[idx] = ord
                 selfCountByClass[rel.from] = ord + 1
+
                 val curOff = selfCumOffsetYByClass[rel.from] ?: 0f
                 selfLabelOffsetYByRelIdx[idx] = curOff
                 val lH = relationLabelSize(idx, rel)?.height ?: (16f * options.density)
                 selfCumOffsetYByClass[rel.from] = curOff + lH + 6f * options.density
+
+                val curFromOff = selfCumFromCardOffsetYByClass[rel.from] ?: 0f
+                selfFromCardOffsetYByRelIdx[idx] = curFromOff
+                val fromSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
+                val fromH = fromSz?.height ?: (10f * options.density)
+                selfCumFromCardOffsetYByClass[rel.from] = curFromOff + fromH + 6f * options.density
+                if (fromSz != null) {
+                    maxFromCardWidthByClass[rel.from] = max(maxFromCardWidthByClass[rel.from] ?: 0f, fromSz.width)
+                }
+
+                val curToOff = selfCumToCardOffsetYByClass[rel.from] ?: 0f
+                selfToCardOffsetYByRelIdx[idx] = curToOff
+                val toSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
+                val toH = toSz?.height ?: (14f * options.density)
+                selfCumToCardOffsetYByClass[rel.from] = curToOff + toH + 6f * options.density
             }
+        }
+        fun selfOutX(classId: String, selfOrd: Int, fromCardSz: DiagramSize?): Float {
+            val maxFromW = max(fromCardSz?.width ?: 0f, maxFromCardWidthByClass[classId] ?: 0f)
+            return max((28f + selfOrd * 22f) * options.density, maxFromW + (12f + selfOrd * 22f) * options.density)
+        }
+        fun selfOutY(idx: Int, selfOrd: Int, toCardSz: DiagramSize?): Float {
+            val toOff = selfToCardOffsetYByRelIdx[idx] ?: 0f
+            return max((28f + selfOrd * 20f) * options.density, toOff + (toCardSz?.height ?: 0f) + 12f * options.density)
         }
         for ((idx, rel) in diagram.relations.withIndex()) {
             if (rel.from != rel.to) continue
@@ -250,15 +283,15 @@ object ClassLayout {
             val lSize = relationLabelSize(idx, rel)
             val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
             val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
-            val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
-            val outY = (28f + selfOrd * 20f) * options.density
+            val outX = selfOutX(rel.from, selfOrd, fromCardSz)
+            val outY = selfOutY(idx, selfOrd, toCardSz)
             val endX = (selfRect.centerX + selfRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(selfRect.x + 8f * options.density)
             val labelRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
             val fromCardRight = fromCardSz?.let { selfRect.right + 4f * options.density + it.width } ?: selfRect.right
             val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: selfRect.right
             val gap = options.nodeGap * 0.5f
             val neededRight = maxOf(labelRight, fromCardRight, toCardRight) + gap
-            val neededTopY = selfRect.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
+            val neededTopY = selfRect.y - outY
 
             // Reserve vertical clearance above `selfRect` so expanded self-loops never pass through preceding classes.
             val aboveMaxBottom = finalRects.entries
@@ -279,8 +312,8 @@ object ClassLayout {
             }
 
             // Reserve vertical clearance below `selfRect` if staggered self-relation labels or source cardinalities extend past `selfRect.bottom`.
-            val startY = (selfRect.centerY + selfOrd * 10f * options.density).coerceAtMost(selfRect.bottom - 6f * options.density)
-            val fromCardBottom = fromCardSz?.let { startY + 4f * options.density + it.height } ?: selfRect.bottom
+            val fromCardOff = selfFromCardOffsetYByRelIdx[idx] ?: 0f
+            val fromCardBottom = fromCardSz?.let { selfRect.centerY + 4f * options.density + fromCardOff + it.height } ?: selfRect.bottom
             val labelBottom = lSize?.let {
                 selfRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
             } ?: selfRect.bottom
@@ -346,15 +379,15 @@ object ClassLayout {
                 val lSize = relationLabelSize(idx, rel)
                 val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
                 val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
-                val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
-                val outY = (28f + selfOrd * 20f) * options.density
+                val outX = selfOutX(classId, selfOrd, fromCardSz)
+                val outY = selfOutY(idx, selfOrd, toCardSz)
                 val endX = (base.centerX + base.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(base.x + 8f * options.density)
                 val labelRight = base.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
                 val fromCardRight = fromCardSz?.let { base.right + 4f * options.density + it.width } ?: base.right
                 val toCardRight = toCardSz?.let { endX + 4f * options.density + it.width } ?: base.right
-                val topY = base.y - max(outY, (toCardSz?.height ?: 0f) + 8f * options.density)
-                val startY = (base.centerY + selfOrd * 10f * options.density).coerceAtMost(base.bottom - 6f * options.density)
-                val fromCardBottom = fromCardSz?.let { startY + 4f * options.density + it.height } ?: base.bottom
+                val topY = base.y - outY
+                val fromCardOff = selfFromCardOffsetYByRelIdx[idx] ?: 0f
+                val fromCardBottom = fromCardSz?.let { base.centerY + 4f * options.density + fromCardOff + it.height } ?: base.bottom
                 val labelBottom = lSize?.let {
                     base.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f) + it.height
                 } ?: base.bottom
@@ -584,8 +617,9 @@ object ClassLayout {
         }
         val classRectById = positionedClasses.associate { it.node.id to it.rect }
 
+        val noteRects = diagram.notes.map { finalRects.getValue("n:${it.id}") }
         val positionedNotes = diagram.notes.mapIndexed { idx, note ->
-            val nRect = finalRects.getValue("n:${note.id}")
+            val nRect = noteRects[idx]
             val targetRect = note.forClassId?.let { classRectById[it] }
             val connPts = if (targetRect != null) {
                 val pts = mutableListOf(
@@ -594,6 +628,53 @@ object ClassLayout {
                 )
                 pts[0] = NodeOutline.intersect(NodeShape.Rect, nRect, pts[1], options.density)
                 pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, targetRect, pts[pts.lastIndex - 1], options.density)
+                val pad = 8f * options.density
+                val noteObstacles = buildList {
+                    for (pc in positionedClasses) {
+                        if (pc.node.id != note.forClassId) {
+                            val obs = pc.rect
+                            add(obs to DiagramRect(obs.x - pad, obs.y - pad, obs.width + pad * 2f, obs.height + pad * 2f))
+                        }
+                    }
+                    for ((otherIdx, otherRect) in noteRects.withIndex()) {
+                        if (otherIdx != idx) {
+                            add(otherRect to DiagramRect(otherRect.x - pad, otherRect.y - pad, otherRect.width + pad * 2f, otherRect.height + pad * 2f))
+                        }
+                    }
+                    for (ns in positionedNamespaces) {
+                        val hdr = ns.headerRect
+                        if (hdr.width <= 0f || hdr.height <= 0f) continue
+                        val clearPadX = min(8f * options.density, max(4f * options.density, (ns.rect.width - hdr.width) * 0.25f))
+                        val clearPadY = 6f * options.density
+                        add(
+                            hdr to DiagramRect(
+                                x = hdr.x - clearPadX,
+                                y = hdr.y - clearPadY,
+                                width = hdr.width + clearPadX * 2f,
+                                height = hdr.height + clearPadY * 2f,
+                            ),
+                        )
+                    }
+                }
+                repeat(2) {
+                    var passChanged = false
+                    for ((innerRect, guardRect) in noteObstacles) {
+                        if (detourAroundRect(pts, guardRect, innerRect, options.density)) {
+                            passChanged = true
+                        }
+                    }
+                    if (passChanged && pts.size >= 2) {
+                        val newStart = NodeOutline.intersect(NodeShape.Rect, nRect, pts[1], options.density)
+                        if (noteObstacles.none { (inner, _) -> segmentIntersectsRect(newStart, pts[1], inner) }) {
+                            pts[0] = newStart
+                        }
+                        val newEnd = NodeOutline.intersect(NodeShape.Rect, targetRect, pts[pts.lastIndex - 1], options.density)
+                        if (noteObstacles.none { (inner, _) -> segmentIntersectsRect(pts[pts.lastIndex - 1], newEnd, inner) }) {
+                            pts[pts.lastIndex] = newEnd
+                        }
+                    }
+                    if (!passChanged) return@repeat
+                }
                 pts
             } else emptyList()
             PositionedClassNote(idx, note, nRect, connPts)
@@ -610,8 +691,8 @@ object ClassLayout {
                 val selfOrd = selfOrdByRelIdx[idx] ?: 0
                 val fromCardSz = rel.fromCardinality?.let { cardinalitySize(idx, true, it) }
                 val toCardSz = rel.toCardinality?.let { cardinalitySize(idx, false, it) }
-                val outX = max((28f + selfOrd * 22f) * options.density, (fromCardSz?.width ?: 0f) + 12f * options.density)
-                val outY = (28f + selfOrd * 20f) * options.density
+                val outX = selfOutX(rel.from, selfOrd, fromCardSz)
+                val outY = selfOutY(idx, selfOrd, toCardSz)
                 val startY = (fromRect.centerY + selfOrd * 10f * options.density).coerceAtMost(fromRect.bottom - 6f * options.density)
                 val endX = (fromRect.centerX + fromRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(fromRect.x + 8f * options.density)
                 val pts = listOf(
@@ -621,11 +702,13 @@ object ClassLayout {
                     DiagramPoint(endX, fromRect.y - outY),
                     DiagramPoint(endX, fromRect.y),
                 )
+                val fromCardOff = selfFromCardOffsetYByRelIdx[idx] ?: 0f
                 val fromCardRect = fromCardSz?.let { cSz ->
-                    DiagramRect(fromRect.right + 4f * options.density, startY + 4f * options.density, cSz.width, cSz.height)
+                    DiagramRect(fromRect.right + 4f * options.density, fromRect.centerY + 4f * options.density + fromCardOff, cSz.width, cSz.height)
                 }
+                val toCardOff = selfToCardOffsetYByRelIdx[idx] ?: 0f
                 val toCardRect = toCardSz?.let { cSz ->
-                    DiagramRect(endX + 4f * options.density, fromRect.y - cSz.height - 4f * options.density, cSz.width, cSz.height)
+                    DiagramRect(endX + 4f * options.density, fromRect.y - 4f * options.density - toCardOff - cSz.height, cSz.width, cSz.height)
                 }
                 val labelRect = lSize?.let {
                     val labelY = fromRect.y + (selfLabelOffsetYByRelIdx[idx] ?: 0f)

@@ -412,5 +412,51 @@ class ClassLayoutTest {
                 }
             }
         }
+
+        // Top-level note targeting a class inside a namespace must route its connector around the namespace header.
+        val noteHdrDiagram = ClassParser.parse(
+            """
+            classDiagram
+                namespace CommerceDomain {
+                    class B
+                }
+                note for B "hello"
+            """.trimIndent(),
+        )
+        val noteHdrLayout = ClassLayout.layout(
+            diagram = noteHdrDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+        )
+        val noteNsHdr = noteHdrLayout.namespaces.single().headerRect
+        val noteConn = noteHdrLayout.notes.single().connectorPoints
+        for (i in 0 until noteConn.lastIndex) {
+            assertTrue(
+                !ClassLayout.segmentIntersectsRect(noteConn[i], noteConn[i + 1], noteNsHdr),
+                "Note connector segment $i (${noteConn[i]} -> ${noteConn[i + 1]}) must not cross namespace header $noteNsHdr",
+            )
+        }
+
+        // Multiple self-relations with source and target cardinalities must allocate non-overlapping cardinality slots.
+        val multiSelfCardDiagram = ClassParser.parse(
+            """
+            classDiagram
+                A "parents" --> "children" A : ancestors
+                A "owners" --> "assets" A : owns
+            """.trimIndent(),
+        )
+        val multiSelfCardLayout = ClassLayout.layout(
+            diagram = multiSelfCardDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+        )
+        val sr0 = multiSelfCardLayout.relations[0]
+        val sr1 = multiSelfCardLayout.relations[1]
+        val fc0 = requireNotNull(sr0.fromCardinalityRect)
+        val fc1 = requireNotNull(sr1.fromCardinalityRect)
+        val tc0 = requireNotNull(sr0.toCardinalityRect)
+        val tc1 = requireNotNull(sr1.toCardinalityRect)
+        val fcOverlap = fc0.x < fc1.right && fc1.x < fc0.right && fc0.y < fc1.bottom && fc1.y < fc0.bottom
+        val tcOverlap = tc0.x < tc1.right && tc1.x < tc0.right && tc0.y < tc1.bottom && tc1.y < tc0.bottom
+        assertTrue(!fcOverlap, "Self-relation source cardinalities must not overlap: $fc0 vs $fc1")
+        assertTrue(!tcOverlap, "Self-relation target cardinalities must not overlap: $tc0 vs $tc1")
     }
 }

@@ -474,8 +474,30 @@ private fun DrawScope.drawClassUnderlay(
     // 2. Dotted note connectors behind class boxes and notes.
     val dottedEffect = PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)
     for (note in layout.notes) {
-        if (note.connectorPoints.size >= 2) {
-            val path = basisSpline(note.connectorPoints)
+        val nPts = note.connectorPoints
+        if (nPts.size >= 2) {
+            val samples = ClassLayout.basisSplineSamples(nPts)
+            val splineHitsObstacle = (0 until samples.lastIndex).any { i ->
+                val a = samples[i]
+                val b = samples[i + 1]
+                layout.namespaces.any { ns ->
+                    ns.headerRect.width > 0f && ns.headerRect.height > 0f &&
+                        ClassLayout.segmentIntersectsRect(a, b, ns.headerRect)
+                } || layout.classes.any { pc ->
+                    pc.node.id != note.note.forClassId &&
+                        ClassLayout.segmentIntersectsRect(a, b, pc.rect)
+                }
+            }
+            val path = if (!splineHitsObstacle) {
+                basisSpline(nPts)
+            } else {
+                Path().apply {
+                    moveTo(nPts.first().x, nPts.first().y)
+                    for (k in 1 until nPts.size) {
+                        lineTo(nPts[k].x, nPts[k].y)
+                    }
+                }
+            }
             drawPath(
                 path = path,
                 color = theme.edge,
