@@ -252,5 +252,34 @@ class ClassLayoutTest {
         val abToCard = requireNotNull(abRel.toCardinalityRect)
         assertTrue(abFromCard.bottom <= abLabel.y || abFromCard.x >= abLabel.right || abLabel.x >= abFromCard.right)
         assertTrue(abLabel.bottom <= abToCard.y || abToCard.x >= abLabel.right || abLabel.x >= abToCard.right)
+
+        // Cross-namespace TB relation entering a namespace from above must route around the centered namespace header.
+        val crossHdrDiagram = ClassParser.parse(
+            """
+            classDiagram
+                class A
+                namespace CommerceDomain {
+                    class B
+                }
+                A --> B : enters
+            """.trimIndent(),
+        )
+        val crossHdrLayout = ClassLayout.layout(
+            diagram = crossHdrDiagram,
+            classBoxSize = { ClassBoxMetrics(100f, 50f, 24f, 13f, 13f) },
+            relationLabelSize = { _, r -> r.label?.let { DiagramSize(48f, 16f) } },
+        )
+        val hdrRect = crossHdrLayout.namespaces.single().headerRect
+        val crossRel = crossHdrLayout.relations.single()
+        for (i in 0 until crossRel.points.lastIndex) {
+            assertTrue(
+                !ClassLayout.segmentIntersectsRect(crossRel.points[i], crossRel.points[i + 1], hdrRect),
+                "Relation segment $i (${crossRel.points[i]} -> ${crossRel.points[i + 1]}) must not pass through namespace header $hdrRect",
+            )
+        }
+        val crossLbl = requireNotNull(crossRel.labelRect)
+        val hdrOverlap = crossLbl.x < hdrRect.right && hdrRect.x < crossLbl.right &&
+            crossLbl.y < hdrRect.bottom && hdrRect.y < crossLbl.bottom
+        assertTrue(!hdrOverlap, "Relation label $crossLbl must not overlap namespace header $hdrRect")
     }
 }

@@ -46,6 +46,7 @@ data class PositionedClassNote(
 data class PositionedClassNamespace(
     val namespace: ClassNamespace,
     val rect: DiagramRect,
+    val headerRect: DiagramRect = DiagramRect(rect.x, rect.y, 0f, 0f),
 )
 
 data class ClassDiagramLayout(
@@ -488,7 +489,18 @@ object ClassLayout {
         builtNsRects.clear()
         val positionedNamespaces = sortedNamespaces.mapNotNull { ns ->
             val rect = buildNamespaceRect(ns, evict = false) ?: return@mapNotNull null
-            PositionedClassNamespace(ns, rect)
+            val titleSz = nsLabelSizes[ns.id] ?: DiagramSize(0f, 0f)
+            val headerRect = if (titleSz.width > 0f && titleSz.height > 0f) {
+                DiagramRect(
+                    x = rect.centerX - titleSz.width / 2f,
+                    y = rect.y,
+                    width = titleSz.width,
+                    height = titleSz.height + 4f * options.density,
+                )
+            } else {
+                DiagramRect(rect.centerX, rect.y, 0f, 0f)
+            }
+            PositionedClassNamespace(ns, rect, headerRect)
         }
 
         val positionedClasses = diagram.classes.map { c ->
@@ -575,20 +587,104 @@ object ClassLayout {
             pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
             pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
 
+            var reroutedAroundHeader = false
+            for (ns in positionedNamespaces) {
+                val hdr = ns.headerRect
+                if (hdr.width <= 0f || hdr.height <= 0f) continue
+                val clearPadX = min(8f * options.density, max(4f * options.density, (ns.rect.width - hdr.width) * 0.25f))
+                val clearPadY = 6f * options.density
+                val guardRect = DiagramRect(
+                    x = hdr.x - clearPadX,
+                    y = hdr.y - clearPadY,
+                    width = hdr.width + clearPadX * 2f,
+                    height = hdr.height + clearPadY * 2f,
+                )
+                val hitsHeader = (0 until pts.lastIndex).any { i ->
+                    segmentIntersectsRect(pts[i], pts[i + 1], guardRect)
+                }
+                if (!hitsHeader) continue
+                reroutedAroundHeader = true
+
+                // Remove interior dummy waypoints sitting directly above/below or inside the header
+                // so the detour transitions cleanly without kinking back toward the header center.
+                val approachMarginY = 16f * options.density
+                var k = 1
+                while (k < pts.lastIndex) {
+                    val p = pts[k]
+                    if (
+                        p.x in guardRect.x..guardRect.right &&
+                        p.y in (guardRect.y - approachMarginY)..(guardRect.bottom + approachMarginY)
+                    ) {
+                        pts.removeAt(k)
+                    } else {
+                        k++
+                    }
+                }
+
+                var segIdx = 0
+                while (segIdx < pts.lastIndex) {
+                    val p0 = pts[segIdx]
+                    val p1 = pts[segIdx + 1]
+                    if (segmentIntersectsRect(p0, p1, guardRect)) {
+                        val midX = (p0.x + p1.x) / 2f
+                        val detourX = if (midX <= hdr.centerX) guardRect.x else guardRect.right
+                        val dy = kotlin.math.abs(p1.y - p0.y)
+                        val dx = kotlin.math.abs(p1.x - p0.x)
+                        if (dy >= dx || (p0.y <= guardRect.y && p1.y >= guardRect.bottom) || (p0.y >= guardRect.bottom && p1.y <= guardRect.y)) {
+                            val firstY = p0.y.coerceIn(guardRect.y, guardRect.bottom)
+                            val secondY = p1.y.coerceIn(guardRect.y, guardRect.bottom)
+                            pts.add(segIdx + 1, DiagramPoint(detourX, firstY))
+                            pts.add(segIdx + 2, DiagramPoint(detourX, secondY))
+                            segIdx += 3
+                        } else {
+                            val detourY = guardRect.bottom
+                            val firstX = p0.x.coerceIn(guardRect.x, guardRect.right)
+                            val secondX = p1.x.coerceIn(guardRect.x, guardRect.right)
+                            pts.add(segIdx + 1, DiagramPoint(firstX, detourY))
+                            pts.add(segIdx + 2, DiagramPoint(secondX, detourY))
+                            segIdx += 3
+                        }
+                    } else {
+                        segIdx++
+                    }
+                }
+            }
+            if (reroutedAroundHeader && pts.size >= 2) {
+                pts[0] = NodeOutline.intersect(NodeShape.Rect, fromRect, pts[1], options.density)
+                pts[pts.lastIndex] = NodeOutline.intersect(NodeShape.Rect, toRect, pts[pts.lastIndex - 1], options.density)
+            }
+
+            fun avoidNamespaceHeaders(r: DiagramRect): DiagramRect {
+                var candidate = r
+                for (ns in positionedNamespaces) {
+                    val hdr = ns.headerRect
+                    if (hdr.width > 0f && hdr.height > 0f && rectsOverlap(candidate, hdr)) {
+                        candidate = if (candidate.centerX <= hdr.centerX) {
+                            candidate.copy(x = hdr.x - candidate.width - 4f * options.density)
+                        } else {
+                            candidate.copy(x = hdr.right + 4f * options.density)
+                        }
+                    }
+                }
+                return candidate
+            }
+
             val labelRect = lSize?.let { size ->
-                val centre = path?.labelCentre?.let {
-                    val base = transformPoint(DiagramPoint(it.first, it.second))
+                val centre = if (!reroutedAroundHeader && path?.labelCentre != null) {
+                    val base = transformPoint(DiagramPoint(path.labelCentre.first, path.labelCentre.second))
                     DiagramPoint(base.x + (dxFrom + dxTo) / 2f, base.y + (dyFrom + dyTo) / 2f)
-                } ?: pts[pts.size / 2]
-                DiagramRect(centre.x - size.width / 2f, centre.y - size.height / 2f, size.width, size.height)
+                } else {
+                    polylineMidpoint(pts)
+                }
+                avoidNamespaceHeaders(DiagramRect(centre.x - size.width / 2f, centre.y - size.height / 2f, size.width, size.height))
             }
-            val fromCardRect = rel.fromCardinality?.let { card ->
+            var fromCardRect = rel.fromCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, true, card)
-                placeCardinality(pts.first(), pts[1], fromRect, cSz, options.density)
+                avoidNamespaceHeaders(placeCardinality(pts.first(), pts[1], fromRect, cSz, options.density))
             }
-            val toCardRect = rel.toCardinality?.let { card ->
+            var toCardRect = rel.toCardinality?.let { card ->
                 val cSz = cardinalitySize(idx, false, card)
-                placeCardinality(pts.last(), pts[pts.lastIndex - 1], toRect, cSz, options.density)
+                avoidNamespaceHeaders(placeCardinality(pts.last(), pts[pts.lastIndex - 1], toRect, cSz, options.density))
             }
             PositionedClassRelation(idx, rel, pts, labelRect, fromCardRect, toCardRect)
         }
@@ -666,7 +762,9 @@ object ClassLayout {
                     connectorPoints = n.connectorPoints.map { it.shifted() },
                 )
             },
-            namespaces = positionedNamespaces.map { it.copy(rect = it.rect.shifted()) },
+            namespaces = positionedNamespaces.map {
+                it.copy(rect = it.rect.shifted(), headerRect = it.headerRect.shifted())
+            },
         )
     }
 
@@ -709,4 +807,58 @@ object ClassLayout {
 
     private fun rectsOverlap(a: DiagramRect, b: DiagramRect): Boolean =
         a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom
+
+    internal fun segmentIntersectsRect(a: DiagramPoint, b: DiagramPoint, r: DiagramRect): Boolean {
+        if (r.width <= 0f || r.height <= 0f) return false
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        var tMin = 0f
+        var tMax = 1f
+        fun clip(p: Float, q: Float): Boolean {
+            if (kotlin.math.abs(p) < 1e-6f) return q >= 0f
+            val t = q / p
+            if (p < 0f) {
+                if (t > tMax) return false
+                if (t > tMin) tMin = t
+            } else {
+                if (t < tMin) return false
+                if (t < tMax) tMax = t
+            }
+            return true
+        }
+        return clip(-dx, a.x - r.x) &&
+            clip(dx, r.right - a.x) &&
+            clip(-dy, a.y - r.y) &&
+            clip(dy, r.bottom - a.y) &&
+            tMin <= tMax
+    }
+
+    private fun polylineMidpoint(pts: List<DiagramPoint>): DiagramPoint {
+        if (pts.isEmpty()) return DiagramPoint(0f, 0f)
+        if (pts.size == 1) return pts[0]
+        var total = 0f
+        val segLengths = FloatArray(pts.size - 1)
+        for (i in 0 until pts.lastIndex) {
+            val dx = pts[i + 1].x - pts[i].x
+            val dy = pts[i + 1].y - pts[i].y
+            val len = sqrt(dx * dx + dy * dy)
+            segLengths[i] = len
+            total += len
+        }
+        if (total <= 1e-3f) return pts[pts.size / 2]
+        val half = total / 2f
+        var acc = 0f
+        for (i in segLengths.indices) {
+            val len = segLengths[i]
+            if (acc + len >= half && len > 1e-3f) {
+                val t = (half - acc) / len
+                return DiagramPoint(
+                    x = pts[i].x + (pts[i + 1].x - pts[i].x) * t,
+                    y = pts[i].y + (pts[i + 1].y - pts[i].y) * t,
+                )
+            }
+            acc += len
+        }
+        return pts[pts.size / 2]
+    }
 }
