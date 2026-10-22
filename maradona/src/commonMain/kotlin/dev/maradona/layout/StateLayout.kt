@@ -650,9 +650,6 @@ object StateLayout {
             compositeDividers[comp.id] = dividers
         }
 
-        val rootPlacement = layoutRegion(null, 0, rootDirection)
-
-        // Emit composite states parent-first so outer containers render behind inner ones.
         fun stateDepth(s: StateNode): Int {
             var d = 0
             var p = s.parentId
@@ -663,6 +660,32 @@ object StateLayout {
             }
             return d
         }
+
+        fun effectiveDirection(s: StateNode): Direction {
+            val chain = mutableListOf<StateNode>()
+            var cur: StateNode? = s
+            val visited = HashSet<String>()
+            while (cur != null && visited.add(cur.id)) {
+                chain += cur
+                cur = cur.parentId?.let { stateById[it] }
+            }
+            var dir = rootDirection
+            for (anc in chain.asReversed()) {
+                if (anc.direction != null) dir = anc.direction
+            }
+            return dir
+        }
+
+        // Lay out all composite states iteratively bottom-up (deepest first) so `layoutRegion`
+        // never recurses and cannot overflow the call stack on deeply nested diagrams.
+        val compositesDeepestFirst = diagram.states
+            .filter { isComposite(it) }
+            .sortedByDescending { stateDepth(it) }
+        for (comp in compositesDeepestFirst) {
+            layoutCompositeStateFn(comp, effectiveDirection(comp))
+        }
+
+        val rootPlacement = layoutRegion(null, 0, rootDirection)
 
         val orderedStates = diagram.states.sortedWith(
             compareBy<StateNode> { if (isComposite(it)) 0 else 1 }.thenBy { stateDepth(it) },

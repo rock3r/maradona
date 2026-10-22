@@ -202,5 +202,13 @@ class StateParserTest {
         val quoted = assertNotNull(forwardStyled.state("QuotedLiteral"))
         assertEquals(StateKind.Normal, quoted.kind)
         assertEquals("Wait <<choice>> here", quoted.label)
+
+        // Leading blank and comment lines before YAML frontmatter must still parse frontmatter metadata.
+        val leadingBlankFm = StateParser.parse(
+            "\n  \n%% leading comment\n---\ntitle: Leading Blank Title\nhideEmptyDescription: true\n---\nstateDiagram-v2\nA --> B",
+        )
+        assertEquals("Leading Blank Title", leadingBlankFm.title)
+        assertTrue(leadingBlankFm.hideEmptyDescription)
+        assertEquals(listOf("A", "B"), leadingBlankFm.states.map { it.id })
     }
 }

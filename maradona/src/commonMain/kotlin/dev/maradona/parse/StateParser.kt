@@ -64,6 +64,9 @@ object StateParser {
         val rawLines = FlowchartParser.stripDirectives(source).lines()
         val bodyLines = mutableListOf<String>()
         var idx = 0
+        while (idx < rawLines.size && stripLineComment(rawLines[idx]).trim().isEmpty()) {
+            idx++
+        }
         if (idx < rawLines.size && rawLines[idx].trim() == "---") {
             idx++
             while (idx < rawLines.size) {
@@ -585,6 +588,7 @@ object StateParser {
             st.descriptions += descPart
         }
         if (opensBlock) {
+            require(scopeStack.size < 64) { "Composite state nesting exceeds maximum depth (64)" }
             st.kind = StateKind.Composite
             scopeStack.addLast(ScopeFrame(st.id))
         }

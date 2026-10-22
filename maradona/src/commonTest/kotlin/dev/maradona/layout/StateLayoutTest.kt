@@ -177,5 +177,17 @@ class StateLayoutTest {
         val diamondDist = kotlin.math.abs(endPt.x - decRect.centerX) / (decRect.width / 2f) +
             kotlin.math.abs(endPt.y - decRect.centerY) / (decRect.height / 2f)
         assertTrue(kotlin.math.abs(diamondDist - 1f) < 0.05f, "Choice self-loop tip $endPt must lie on diamond outline of $decRect (L1=$diamondDist)")
+
+        // Deeply nested composite hierarchy (2,000 levels) lays out iteratively without overflowing the call stack.
+        val deepDiagram = StateParser.parse(
+            buildString {
+                appendLine("stateDiagram-v2")
+                for (i in 0 until 2_000) appendLine("state C$i {")
+                appendLine("Leaf")
+                for (i in 0 until 2_000) appendLine("}")
+            },
+        )
+        val deepLayout = StateLayout.layout(deepDiagram)
+        assertTrue(deepLayout.width > 0f && deepLayout.height > 0f)
     }
 }
