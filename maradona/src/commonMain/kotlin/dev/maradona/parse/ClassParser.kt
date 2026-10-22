@@ -640,9 +640,12 @@ object ClassParser {
 
         private fun splitClassAndTrailingCardinality(left: String): Pair<String, String?> {
             val trimmed = left.trim()
-            if (trimmed.endsWith("\"")) {
-                val openQuote = trimmed.lastIndexOf('"', trimmed.length - 2)
-                if (openQuote > 0) {
+            if (trimmed.length >= 2 && isUnescapedQuote(trimmed, trimmed.lastIndex)) {
+                var openQuote = trimmed.length - 2
+                while (openQuote > 0 && !isUnescapedQuote(trimmed, openQuote)) {
+                    openQuote--
+                }
+                if (openQuote > 0 && isUnescapedQuote(trimmed, openQuote)) {
                     val before = trimmed.substring(0, openQuote).trim()
                     if (before.isNotEmpty()) {
                         val card = NodeRefReader.cleanLabel(trimmed.substring(openQuote, trimmed.length))
@@ -656,8 +659,11 @@ object ClassParser {
         private fun splitLeadingCardinalityAndClass(right: String): Pair<String?, String> {
             val trimmed = right.trim()
             if (trimmed.startsWith("\"")) {
-                val closeQuote = trimmed.indexOf('"', 1)
-                if (closeQuote > 0) {
+                var closeQuote = 1
+                while (closeQuote < trimmed.length && !isUnescapedQuote(trimmed, closeQuote)) {
+                    closeQuote++
+                }
+                if (closeQuote in 1 until trimmed.length) {
                     val after = trimmed.substring(closeQuote + 1).trim()
                     if (after.isNotEmpty()) {
                         val card = NodeRefReader.cleanLabel(trimmed.substring(0, closeQuote + 1))
