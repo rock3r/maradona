@@ -243,7 +243,11 @@ object ClassLayout {
             val lSize = relationLabelSize(idx, rel)
             val outX = (28f + selfOrd * 22f) * options.density
             val outY = (28f + selfOrd * 20f) * options.density
-            val neededRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f) + options.nodeGap * 0.5f
+            val endX = (selfRect.centerX + selfRect.width / 4f - selfOrd * 14f * options.density).coerceAtLeast(selfRect.x + 8f * options.density)
+            val labelRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
+            val fromCardRight = rel.fromCardinality?.let { selfRect.right + 4f * options.density + cardinalitySize(idx, true, it).width } ?: selfRect.right
+            val toCardRight = rel.toCardinality?.let { endX + 4f * options.density + cardinalitySize(idx, false, it).width } ?: selfRect.right
+            val neededRight = maxOf(labelRight, fromCardRight, toCardRight) + options.nodeGap * 0.5f
             val selfBand = DiagramRect(selfRect.x, selfRect.y - outY, neededRight - selfRect.x, selfRect.height + outY + selfOrd * 24f * options.density)
             val rightNeighborMinX = finalRects.entries
                 .filter { (k, r) -> k != selfKey && r.x > selfRect.x && r.y < selfBand.bottom && selfBand.y < r.bottom }

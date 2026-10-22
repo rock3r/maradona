@@ -452,7 +452,7 @@ object ClassParser {
             if (styleClass != null && styleClass !in node.styleClasses) {
                 node.styleClasses += styleClass
             }
-            if (assignNamespace) {
+            if (assignNamespace && node.namespaceId == null) {
                 val nsId = currentNamespaceId()
                 if (nsId != null) node.namespaceId = nsId
             }
@@ -461,7 +461,7 @@ object ClassParser {
 
         private fun ensureClass(id: String): MutableClass {
             return classes.getOrPut(id) {
-                MutableClass(id = id, label = id, namespaceId = null)
+                MutableClass(id = id, label = id, namespaceId = currentNamespaceId())
             }
         }
 
