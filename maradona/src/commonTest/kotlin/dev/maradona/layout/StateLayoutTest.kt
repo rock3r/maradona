@@ -189,5 +189,51 @@ class StateLayoutTest {
         )
         val deepLayout = StateLayout.layout(deepDiagram)
         assertTrue(deepLayout.width > 0f && deepLayout.height > 0f)
+
+        // Interleaved multi-line notes on the same side of A and B must stack relative to the previous note's bottom
+        // without overlapping each other or neighboring state B.
+        val multiNoteDiagram = StateParser.parse(
+            """
+            stateDiagram-v2
+                state A
+                state B
+                note right of A
+                    l1
+                    l2
+                    l3
+                    l4
+                end note
+                note right of B
+                    b1
+                    b2
+                    b3
+                    b4
+                    b5
+                end note
+                note right of A
+                    m1
+                    m2
+                    m3
+                    m4
+                    m5
+                    m6
+                end note
+            """.trimIndent(),
+        )
+        val multiNoteLayout = StateLayout.layout(multiNoteDiagram)
+        for (i in multiNoteLayout.notes.indices) {
+            val nRect = multiNoteLayout.notes[i].rect
+            for (ps in multiNoteLayout.states) {
+                val ov = nRect.x < ps.rect.right && ps.rect.x < nRect.right &&
+                    nRect.y < ps.rect.bottom && ps.rect.y < nRect.bottom
+                assertTrue(!ov, "Note $i ($nRect) must not overlap state ${ps.state.id} (${ps.rect})")
+            }
+            for (j in i + 1 until multiNoteLayout.notes.size) {
+                val oRect = multiNoteLayout.notes[j].rect
+                val ov = nRect.x < oRect.right && oRect.x < nRect.right &&
+                    nRect.y < oRect.bottom && oRect.y < nRect.bottom
+                assertTrue(!ov, "Notes $i ($nRect) and $j ($oRect) must not overlap")
+            }
+        }
     }
 }

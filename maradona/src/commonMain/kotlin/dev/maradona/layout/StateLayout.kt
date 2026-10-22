@@ -246,6 +246,44 @@ object StateLayout {
 
             val standaloneNotes = directNotes.filter { (_, n) -> n.forStateId == null }
             val attachedNotes = directNotes.filter { (_, n) -> n.forStateId != null }
+            val directStateIds = directStates.map { it.id }.toSet()
+            val attachedNotesByStateAndSide = HashMap<Pair<String, StateNotePosition>, MutableList<IndexedValue<StateNote>>>()
+            for (item in attachedNotes) {
+                val targetId = item.value.forStateId?.let { liftToScope(it, scopeParentId, scopeRegion) } ?: continue
+                if (targetId in directStateIds) {
+                    attachedNotesByStateAndSide.getOrPut(targetId to item.value.position) { mutableListOf() }.add(item)
+                }
+            }
+
+            fun stateFullEnvelope(stateId: String, base: DiagramRect): DiagramRect {
+                val selfEnv = selfEnvelopeForRect(stateId, base)
+                var minX = selfEnv.x
+                var minY = selfEnv.y
+                var maxX = selfEnv.right
+                var maxY = selfEnv.bottom
+                val noteGapX = 24f * options.density
+                val leftList = attachedNotesByStateAndSide[stateId to StateNotePosition.Left].orEmpty()
+                if (leftList.isNotEmpty()) {
+                    val totalH = leftList.sumOf { noteSizes[it.index].height.toDouble() }.toFloat() +
+                        (leftList.size - 1) * 8f * options.density
+                    val maxW = leftList.maxOf { noteSizes[it.index].width }
+                    val topY = base.centerY - totalH / 2f
+                    minX = min(minX, selfEnv.x - noteGapX - maxW)
+                    minY = min(minY, topY)
+                    maxY = max(maxY, topY + totalH)
+                }
+                val rightList = attachedNotesByStateAndSide[stateId to StateNotePosition.Right].orEmpty()
+                if (rightList.isNotEmpty()) {
+                    val totalH = rightList.sumOf { noteSizes[it.index].height.toDouble() }.toFloat() +
+                        (rightList.size - 1) * 8f * options.density
+                    val maxW = rightList.maxOf { noteSizes[it.index].width }
+                    val topY = base.centerY - totalH / 2f
+                    maxX = max(maxX, selfEnv.right + noteGapX + maxW)
+                    minY = min(minY, topY)
+                    maxY = max(maxY, topY + totalH)
+                }
+                return DiagramRect(minX, minY, maxX - minX, maxY - minY)
+            }
 
             val dagreNodes = LinkedHashMap<String, Pair<Float, Float>>()
             for (s in directStates) {
@@ -337,29 +375,30 @@ object StateLayout {
             val origRects = rawRects.mapValues { (_, r) -> transformRect(r) }
             val finalRects = origRects.toMutableMap()
 
-            // Reserve clearance above, below, and to the right of any direct state with self-transitions.
-            val directStateIds = directStates.map { it.id }.toSet()
-            for ((idx, tr) in diagram.transitions.withIndex()) {
-                if (tr.from != tr.to || tr.from !in directStateIds) continue
-                val selfOrd = selfOrdByTransIdx[idx] ?: 0
-                val selfKey = "s:${tr.from}"
+            // Reserve clearance above, below, and to the right/left of any direct state with self-transitions or attached notes.
+            for (s in directStates) {
+                val hasSelf = diagram.transitions.any { it.from == s.id && it.to == s.id }
+                val hasNotes = attachedNotesByStateAndSide[s.id to StateNotePosition.Left] != null ||
+                    attachedNotesByStateAndSide[s.id to StateNotePosition.Right] != null
+                if (!hasSelf && !hasNotes) continue
+                val selfKey = "s:${s.id}"
                 var selfRect = finalRects[selfKey] ?: continue
-                val lSize = transitionLabelSize(idx, tr)
-                val outX = (28f + selfOrd * 22f) * options.density
-                val outY = (28f + selfOrd * 20f) * options.density
-                val labelRight = selfRect.right + outX + (lSize?.let { 4f * options.density + it.width } ?: 0f)
+                var env = stateFullEnvelope(s.id, selfRect)
                 val gap = options.nodeGap * 0.5f
-                val neededRight = labelRight + gap
-                val neededTopY = selfRect.y - outY
 
                 val aboveMaxBottom = finalRects.entries
                     .filter { (k, r) ->
-                        k != selfKey && r.centerY < selfRect.centerY &&
-                            r.x < neededRight && selfRect.x < r.right
+                        if (k == selfKey) false
+                        else {
+                            val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                            r.centerY < selfRect.centerY && oEnv.x < env.right + gap && env.x - gap < oEnv.right
+                        }
                     }
-                    .maxOfOrNull { it.value.bottom }
-                if (aboveMaxBottom != null && aboveMaxBottom + gap > neededTopY) {
-                    val shiftDown = (aboveMaxBottom + gap) - neededTopY
+                    .maxOfOrNull { (k, r) ->
+                        if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r).bottom else r.bottom
+                    }
+                if (aboveMaxBottom != null && aboveMaxBottom + gap > env.y) {
+                    val shiftDown = (aboveMaxBottom + gap) - env.y
                     val thresholdY = selfRect.y - 0.5f
                     for ((k, r) in finalRects.entries.toList()) {
                         if (r.y >= thresholdY) {
@@ -367,20 +406,22 @@ object StateLayout {
                         }
                     }
                     selfRect = finalRects.getValue(selfKey)
+                    env = stateFullEnvelope(s.id, selfRect)
                 }
 
-                val labelBottom = lSize?.let {
-                    selfRect.y + (selfLabelOffsetYByTransIdx[idx] ?: 0f) + it.height
-                } ?: selfRect.bottom
-                val neededBottomY = max(selfRect.bottom, labelBottom)
                 val belowMinTop = finalRects.entries
                     .filter { (k, r) ->
-                        k != selfKey && r.centerY > selfRect.centerY &&
-                            r.x < neededRight && selfRect.x < r.right
+                        if (k == selfKey) false
+                        else {
+                            val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                            r.centerY > selfRect.centerY && oEnv.x < env.right + gap && env.x - gap < oEnv.right
+                        }
                     }
-                    .minOfOrNull { it.value.y }
-                if (belowMinTop != null && belowMinTop < neededBottomY + gap) {
-                    val shiftDown = (neededBottomY + gap) - belowMinTop
+                    .minOfOrNull { (k, r) ->
+                        if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r).y else r.y
+                    }
+                if (belowMinTop != null && belowMinTop < env.bottom + gap) {
+                    val shiftDown = (env.bottom + gap) - belowMinTop
                     for ((k, r) in finalRects.entries.toList()) {
                         if (k != selfKey && r.y >= belowMinTop - 0.5f) {
                             finalRects[k] = r.copy(y = r.y + shiftDown)
@@ -388,68 +429,68 @@ object StateLayout {
                     }
                 }
 
-                val selfBand = DiagramRect(selfRect.x, selfRect.y - outY, neededRight - selfRect.x, neededBottomY - (selfRect.y - outY))
                 val rightNeighborMinX = finalRects.entries
-                    .filter { (k, r) -> k != selfKey && r.x > selfRect.x && r.y < selfBand.bottom && selfBand.y < r.bottom }
-                    .minOfOrNull { it.value.x }
-                if (rightNeighborMinX != null && rightNeighborMinX < neededRight) {
-                    val shift = neededRight - rightNeighborMinX
+                    .filter { (k, r) ->
+                        if (k == selfKey) false
+                        else {
+                            val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                            r.centerX > selfRect.centerX && oEnv.y < env.bottom && env.y < oEnv.bottom
+                        }
+                    }
+                    .minOfOrNull { (k, r) ->
+                        if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r).x else r.x
+                    }
+                if (rightNeighborMinX != null && rightNeighborMinX < env.right + gap) {
+                    val shift = (env.right + gap) - rightNeighborMinX
                     for ((k, r) in finalRects.entries.toList()) {
-                        if (k != selfKey && r.x >= rightNeighborMinX - 0.5f && r.y < selfBand.bottom && selfBand.y < r.bottom) {
+                        val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                        if (k != selfKey && oEnv.x >= rightNeighborMinX - 0.5f && oEnv.y < env.bottom && env.y < oEnv.bottom) {
                             finalRects[k] = r.copy(x = r.x + shift)
+                        }
+                    }
+                }
+
+                val leftNeighborMaxRight = finalRects.entries
+                    .filter { (k, r) ->
+                        if (k == selfKey) false
+                        else {
+                            val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                            r.centerX < selfRect.centerX && oEnv.y < env.bottom && env.y < oEnv.bottom
+                        }
+                    }
+                    .maxOfOrNull { (k, r) ->
+                        if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r).right else r.right
+                    }
+                if (leftNeighborMaxRight != null && leftNeighborMaxRight > env.x - gap) {
+                    val shift = leftNeighborMaxRight - (env.x - gap)
+                    for ((k, r) in finalRects.entries.toList()) {
+                        val oEnv = if (k.startsWith("s:")) stateFullEnvelope(k.removePrefix("s:"), r) else r
+                        if (k != selfKey && oEnv.right <= leftNeighborMaxRight + 0.5f && oEnv.y < env.bottom && env.y < oEnv.bottom) {
+                            finalRects[k] = r.copy(x = r.x - shift)
                         }
                     }
                 }
             }
 
-            // Place attached notes physically to the left or right of their target state and reserve horizontal clearance.
-            val noteOffsetYByTargetSide = HashMap<Pair<String, StateNotePosition>, Float>()
-            for ((noteIdx, n) in attachedNotes) {
-                val targetId = n.forStateId?.let { liftToScope(it, scopeParentId, scopeRegion) } ?: continue
-                val targetKey = "s:$targetId"
-                val targetRect = finalRects[targetKey] ?: continue
-                val targetEnv = selfEnvelopeForRect(targetId, targetRect)
-                val nSz = noteSizes[noteIdx]
-                val sideKey = targetId to n.position
-                val curOffY = noteOffsetYByTargetSide[sideKey] ?: 0f
-                noteOffsetYByTargetSide[sideKey] = curOffY + nSz.height + 8f * options.density
-                val noteGapX = 24f * options.density
-                val gap = options.nodeGap * 0.5f
-                val noteY = targetRect.centerY - nSz.height / 2f + curOffY
-                val noteX = if (n.position == StateNotePosition.Left) {
-                    targetEnv.x - noteGapX - nSz.width
-                } else {
-                    targetEnv.right + noteGapX
-                }
-                val nRect = DiagramRect(noteX, noteY, nSz.width, nSz.height)
-                if (n.position == StateNotePosition.Right) {
-                    val neededRight = nRect.right + gap
-                    val rightNeighborMinX = finalRects.entries
-                        .filter { (k, r) -> k != targetKey && r.x > targetRect.x && r.y < nRect.bottom && nRect.y < r.bottom }
-                        .minOfOrNull { it.value.x }
-                    if (rightNeighborMinX != null && rightNeighborMinX < neededRight) {
-                        val shift = neededRight - rightNeighborMinX
-                        for ((k, r) in finalRects.entries.toList()) {
-                            if (k != targetKey && r.x >= rightNeighborMinX - 0.5f && r.y < nRect.bottom && nRect.y < r.bottom) {
-                                finalRects[k] = r.copy(x = r.x + shift)
-                            }
-                        }
+            // Materialize attached note rectangles from each state's finalized rectangle, stacking notes relative to the previous note's bottom.
+            val noteGapX = 24f * options.density
+            for ((sideKey, items) in attachedNotesByStateAndSide) {
+                val (targetId, pos) = sideKey
+                val targetRect = finalRects["s:$targetId"] ?: continue
+                val selfEnv = selfEnvelopeForRect(targetId, targetRect)
+                val totalH = items.sumOf { noteSizes[it.index].height.toDouble() }.toFloat() +
+                    (items.size - 1) * 8f * options.density
+                var curY = targetRect.centerY - totalH / 2f
+                for ((noteIdx, n) in items) {
+                    val nSz = noteSizes[noteIdx]
+                    val noteX = if (pos == StateNotePosition.Left) {
+                        selfEnv.x - noteGapX - nSz.width
+                    } else {
+                        selfEnv.right + noteGapX
                     }
-                } else {
-                    val neededLeft = nRect.x - gap
-                    val leftNeighborMaxRight = finalRects.entries
-                        .filter { (k, r) -> k != targetKey && r.right < targetRect.right && r.y < nRect.bottom && nRect.y < r.bottom }
-                        .maxOfOrNull { it.value.right }
-                    if (leftNeighborMaxRight != null && leftNeighborMaxRight > neededLeft) {
-                        val shift = leftNeighborMaxRight - neededLeft
-                        for ((k, r) in finalRects.entries.toList()) {
-                            if (k != targetKey && r.right <= leftNeighborMaxRight + 0.5f && r.y < nRect.bottom && nRect.y < r.bottom) {
-                                finalRects[k] = r.copy(x = r.x - shift)
-                            }
-                        }
-                    }
+                    finalRects["n:${n.id}"] = DiagramRect(noteX, curY, nSz.width, nSz.height)
+                    curY += nSz.height + 8f * options.density
                 }
-                finalRects["n:${n.id}"] = nRect
             }
 
             // Collect all state rects, note rects, and transformed dagre paths into this RegionPlacement.
