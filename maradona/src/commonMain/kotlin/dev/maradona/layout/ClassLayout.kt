@@ -212,6 +212,29 @@ object ClassLayout {
         val origRects = rawRects.mapValues { (_, r) -> transformRect(r) }
         val finalRects = origRects.toMutableMap()
 
+        // Reserve horizontal space to the right of any class with a self-relation so its
+        // self-loop and label never overlap neighboring classes or notes on the same rank.
+        for ((idx, rel) in diagram.relations.withIndex()) {
+            if (rel.from != rel.to) continue
+            val selfKey = "c:${rel.from}"
+            val selfRect = finalRects[selfKey] ?: continue
+            val lSize = relationLabelSize(idx, rel)
+            val out = 28f * options.density
+            val neededRight = selfRect.right + out + (lSize?.let { 4f * options.density + it.width } ?: 0f) + options.nodeGap * 0.5f
+            val selfBand = DiagramRect(selfRect.x, selfRect.y - out, neededRight - selfRect.x, selfRect.height + out)
+            val rightNeighborMinX = finalRects.entries
+                .filter { (k, r) -> k != selfKey && r.x > selfRect.x && r.y < selfBand.bottom && selfBand.y < r.bottom }
+                .minOfOrNull { it.value.x }
+            if (rightNeighborMinX != null && rightNeighborMinX < neededRight) {
+                val shift = neededRight - rightNeighborMinX
+                for ((k, r) in finalRects.entries.toList()) {
+                    if (k != selfKey && r.x >= rightNeighborMinX - 0.5f && r.y < selfBand.bottom && selfBand.y < r.bottom) {
+                        finalRects[k] = r.copy(x = r.x + shift)
+                    }
+                }
+            }
+        }
+
         // Helper: all namespace IDs enclosed by `rootNsId` (itself + descendants).
         fun enclosedNamespaceIds(rootNsId: String): Set<String> {
             val out = HashSet<String>()

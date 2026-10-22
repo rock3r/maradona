@@ -870,48 +870,34 @@ object ClassParser {
 
     /**
      * Converts Mermaid's `~T~` generic syntax (including nested `List~List~int~~`,
-     * sibling generic arguments `Map~List~int~, List~string~~`, and suffixed `List~int~[]`)
-     * into `<T>` (`List<List<int>>`, `Map<List<int>, List<string>>`, `List<int>[]`).
+     * nested multi-parameter `List~Map~string, int~~`, sibling generic arguments
+     * `Map~List~int~, List~string~~`, and suffixed `List~int~[]` / `List~int~?`)
+     * into `<T>` (`List<List<int>>`, `List<Map<string, int>>`, `Map<List<int>, List<string>>`).
      */
     internal fun convertGenerics(input: String): String {
-        if (input.count { it == '~' } < 2) return input
-        val commaGroups = splitBalancedTildes(input, ',')
-        if (commaGroups.size > 1) {
-            return commaGroups.joinToString(",") { convertGenerics(it) }
-        }
-        val spaceGroups = splitBalancedTildes(input, ' ')
-        if (spaceGroups.size > 1) {
-            return spaceGroups.joinToString(" ") { convertGenerics(it) }
-        }
-        val first = input.indexOf('~')
-        val last = input.lastIndexOf('~')
-        if (first < 0 || last <= first) return input
-        val inner = convertGenerics(input.substring(first + 1, last))
-        return input.substring(0, first) + "<" + inner + ">" + input.substring(last + 1)
-    }
-
-    private fun splitBalancedTildes(input: String, delimiter: Char): List<String> {
-        if (delimiter !in input) return listOf(input)
-        val rawParts = input.split(delimiter)
-        val groups = mutableListOf<String>()
-        var acc = ""
-        var hasPrev = false
-        for (part in rawParts) {
-            acc = if (!hasPrev) part else "$acc$delimiter$part"
-            hasPrev = true
-            if (acc.count { it == '~' } % 2 == 0) {
-                groups += acc
-                acc = ""
-                hasPrev = false
+        var remainingTildes = input.count { it == '~' }
+        if (remainingTildes < 2) return input
+        val sb = StringBuilder(input.length)
+        var depth = 0
+        for (i in input.indices) {
+            val c = input[i]
+            if (c != '~') {
+                sb.append(c)
+                continue
             }
-        }
-        if (hasPrev) {
-            if (groups.isNotEmpty()) {
-                groups[groups.lastIndex] = groups.last() + delimiter + acc
+            val prevIsIdent = i > 0 && (input[i - 1].isLetterOrDigit() || input[i - 1] == '_' || input[i - 1] == '$')
+            val next = if (i + 1 < input.length) input[i + 1] else '\u0000'
+            val nextStartsTypeArg = next != '\u0000' && next != '~' && next != ',' &&
+                next != ')' && next != ']' && next != '[' && next != '?' && !next.isWhitespace()
+            if (depth == 0 || (prevIsIdent && nextStartsTypeArg && remainingTildes > depth)) {
+                sb.append('<')
+                depth++
             } else {
-                groups += acc
+                sb.append('>')
+                depth--
             }
+            remainingTildes--
         }
-        return groups
+        return sb.toString()
     }
 }

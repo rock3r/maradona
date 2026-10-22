@@ -155,4 +155,26 @@ class ClassLayoutTest {
         assertTrue(extLabel.x >= wideNs.right, "Displaced relation label $extLabel remained inside WideNs $wideNs")
         assertTrue(extRel.points.all { it.x >= wideNs.right }, "Displaced relation points ${extRel.points} remained inside WideNs $wideNs")
     }
+
+    @Test
+    fun selfRelationLabelDoesNotOverlapRightNeighborClass() {
+        val diagram = ClassParser.parse(
+            """
+            classDiagram
+              class A
+              class B
+              A --> A : self-reference-with-long-label
+            """.trimIndent(),
+        )
+        val layout = ClassLayout.layout(
+            diagram = diagram,
+            classBoxSize = ::fakeMetrics,
+            relationLabelSize = { _, rel -> rel.label?.let { DiagramSize(140f, 20f) } },
+        )
+        val rectB = layout.classNode("B")!!.rect
+        val selfLabel = requireNotNull(layout.relations.single().labelRect)
+        val overlaps = selfLabel.x < rectB.right && rectB.x < selfLabel.right &&
+            selfLabel.y < rectB.bottom && rectB.y < selfLabel.bottom
+        assertTrue(!overlaps, "Self-relation label ($selfLabel) overlaps neighbor class B ($rectB)")
+    }
 }
