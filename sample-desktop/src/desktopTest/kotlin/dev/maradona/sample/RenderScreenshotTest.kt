@@ -281,4 +281,59 @@ class RenderScreenshotTest {
         assertTrue(fulfilledFillPixels > 1_000, "Styled Fulfilled state rgb(211, 229, 245) not rendered ($fulfilledFillPixels px)")
         assertTrue(noteFillPixels > 1_000, "State note rgb(255, 245, 173) not rendered ($noteFillPixels px)")
     }
+
+    @Test
+    fun erDiagram() {
+        val png = renderToPng(
+            "er",
+            """
+            ---
+            title: Commerce Entity Relationship Model
+            ---
+            erDiagram
+              subgraph commerce [Commerce Domain]
+                CUSTOMER ||--o{ ORDER : places
+                ORDER ||--|{ LINE_ITEM : contains
+                CUSTOMER {
+                  string id PK "Customer UUID"
+                  string name
+                  string email UK
+                }
+                ORDER {
+                  string id PK
+                  string customerId FK
+                  date placedAt
+                }
+                LINE_ITEM {
+                  string orderId PK, FK
+                  string productSku PK, FK
+                  int quantity
+                  float pricePerUnit
+                }
+              }
+              PRODUCT ||--o{ LINE_ITEM : "appears in"
+              PRODUCT {
+                string sku PK
+                string title
+                float unitPrice
+              }
+              style ORDER fill:#d3e5f5,stroke:#205ea6
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1100,
+            height = 900,
+        )
+        val img = ImageIO.read(png)
+        var orderFillPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 211) <= 3 && abs(g - 229) <= 3 && abs(b - 245) <= 3) orderFillPixels++
+            }
+        }
+        assertTrue(orderFillPixels > 1_500, "Styled ORDER entity rgb(211, 229, 245) not rendered ($orderFillPixels px)")
+    }
 }

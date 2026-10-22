@@ -131,6 +131,26 @@ private val examples = linkedMapOf(
           Processing --> Failed : error
           Completed --> [*]
     """.trimIndent(),
+    "ER" to """
+        erDiagram
+          CUSTOMER ||--o{ ORDER : places
+          ORDER ||--|{ LINE_ITEM : contains
+          PRODUCT ||--o{ LINE_ITEM : "appears in"
+          CUSTOMER {
+            string id PK
+            string name
+            string email UK
+          }
+          ORDER {
+            string id PK
+            string customerId FK
+            date placedAt
+          }
+          LINE_ITEM {
+            int quantity
+            float pricePerUnit
+          }
+    """.trimIndent(),
 )
 
 private class SampleState(

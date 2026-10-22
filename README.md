@@ -8,9 +8,10 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.4 supports flowcharts (`graph` / `flowchart`), sequence diagrams
-(`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`), and
-state diagrams (`stateDiagram` / `stateDiagram-v2`).
+Version 0.5 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+(`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
+state diagrams (`stateDiagram` / `stateDiagram-v2`), and entity-relationship
+diagrams (`erDiagram`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -74,6 +75,18 @@ Supported in state diagrams:
 - Transitions (`A --> B : label`, chained `A --> B --> C : label`), notes
   (`note right of`, `note left of`, multi-line `end note`, standalone `note "..." as N`),
   and styling (`classDef`, `class`, `cssClass`, `style`, inline `:::className`)
+
+Supported in entity-relationship (`erDiagram`) diagrams:
+
+- Headers: `erDiagram`, YAML frontmatter (`title`), `title`, `accTitle` / `accDescr`,
+  and `direction TB|TD|BT|LR|RL` (top-level and per `subgraph`)
+- Entities: simple identifiers (`CUSTOMER`, `LINE-ITEM`), quoted names, bracket aliases
+  (`p[Person]`, `a["Customer Account"]`), and `{ ... }` attribute tables (`type name [PK|FK|UK] ["comment"]`)
+- Relationships: crow's-foot symbols (`||`, `|o`, `o|`, `}|`, `|{`, `}o`, `o{` with `--`
+  identifying or `..` non-identifying) and natural-language aliases (`only one`,
+  `zero or more`, `many(0)`, `1`, `0+`, `1+` with `to` / `optionally to`)
+- Nested `subgraph id [title] ... end` clusters (including relationships incident on subgraph IDs)
+  and styling (`classDef`, `classDef default`, `class`, `cssClass`, `style`, inline `:::className`)
 
 ## How it works
 
@@ -156,7 +169,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, and state diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, and ER diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

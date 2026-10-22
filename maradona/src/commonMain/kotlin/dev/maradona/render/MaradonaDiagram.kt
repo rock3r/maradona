@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassDiagramLayout
+import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
@@ -104,6 +105,8 @@ fun MaradonaDiagram(
     onClassLayout: (ClassDiagramLayout) -> Unit = {},
     /** Reports the computed state diagram layout (see [MaradonaStateLayout.onLayout]). */
     onStateLayout: (StateDiagramLayout) -> Unit = {},
+    /** Reports the computed ER diagram layout (see [MaradonaErLayout.onLayout]). */
+    onErLayout: (ErDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -343,6 +346,16 @@ fun MaradonaDiagram(
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
                                 onLayout = onStateLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.ErModel ->
+                            MaradonaErLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                autoDirection = autoDirection,
+                                layoutOptions = layoutOptions,
+                                availableWidthPx = layoutWidthPx,
+                                onLayout = onErLayout,
                                 modifier = contentModifier,
                             )
                     }
