@@ -683,4 +683,38 @@ class RenderScreenshotTest {
         assertTrue(colBlueTintPixels > 2_000, "Kanban column fill #EAF2FA not rendered ($colBlueTintPixels px)")
         assertTrue(priorityRedPixels > 40, "Kanban Very High priority stripe #D14D41 not rendered ($priorityRedPixels px)")
     }
+
+    @Test
+    fun sankeyDiagram() {
+        val png = renderToPng(
+            "sankey",
+            """
+            sankey-beta
+              Solar,Electricity grid,120
+              Wind,Electricity grid,290
+              Hydro,Electricity grid,90
+              Electricity grid,Industry,240
+              Electricity grid,"Heating & cooling, homes",180
+              Electricity grid,Losses,80
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 840,
+            height = 480,
+        )
+        val img = ImageIO.read(png)
+        var nodeBluePixels = 0
+        var nodeOrangePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x4E) <= 4 && abs(g - 0x79) <= 4 && abs(b - 0xA7) <= 4) nodeBluePixels++
+                if (abs(r - 0xF2) <= 4 && abs(g - 0x8E) <= 4 && abs(b - 0x2B) <= 4) nodeOrangePixels++
+            }
+        }
+        assertTrue(nodeBluePixels > 200, "Sankey node fill #4E79A7 not rendered ($nodeBluePixels px)")
+        assertTrue(nodeOrangePixels > 400, "Sankey node fill #F28E2B not rendered ($nodeOrangePixels px)")
+    }
 }
