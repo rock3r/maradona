@@ -8,13 +8,14 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.14 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.15 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
 pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
 user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
-(`xychart` / `xychart-beta`), and Kanban boards (`kanban`).
+(`xychart` / `xychart-beta`), Kanban boards (`kanban`), and Sankey diagrams
+(`sankey` / `sankey-beta`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -174,6 +175,15 @@ Supported in Kanban boards (`kanban`):
 - Task metadata `@{ ticket: ..., assigned: ..., priority: 'Very High' | 'High' | 'Medium' | 'Low' | 'Very Low', label: ..., icon: ... }`
   and decorators (`::icon(...)`, `:::className`)
 
+Supported in Sankey diagrams (`sankey` / `sankey-beta`):
+
+- Headers and directives: `sankey` and `sankey-beta`, YAML frontmatter and `%%{init}%%`
+  configuration (`title`, `width`, `height`, `nodeWidth`, `nodePadding`,
+  `nodeAlignment`, `linkColor`, `showValues`, `prefix`, `suffix`, `labelStyle`,
+  `nodeColors`), `title`, and `accTitle` / `accDescr`
+- RFC-4180 CSV flow records (`source,target,value`) with quoted fields and escaped
+  `""` quotes, proportional node bars, and horizontal cubic-Bezier flow ribbons
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -255,7 +265,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, and Kanban boards only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, and Sankey diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

@@ -10,6 +10,7 @@ import dev.maradona.model.KanbanDiagram
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.QuadrantDiagram
+import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
@@ -31,6 +32,7 @@ sealed interface MaradonaDiagramModel {
     data class QuadrantModel(val diagram: QuadrantDiagram) : MaradonaDiagramModel
     data class XyChartModel(val diagram: XyChartDiagram) : MaradonaDiagramModel
     data class KanbanModel(val diagram: KanbanDiagram) : MaradonaDiagramModel
+    data class SankeyModel(val diagram: SankeyDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -38,7 +40,7 @@ sealed interface MaradonaDiagramModel {
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
- * [JourneyParser], [QuadrantParser], [XyChartParser], or [KanbanParser].
+ * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], or [SankeyParser].
  */
 object MaradonaParser {
 
@@ -72,6 +74,9 @@ object MaradonaParser {
                 MaradonaDiagramModel.XyChartModel(XyChartParser.parse(source))
             header == "kanban" || header.startsWith("kanban ") || header.startsWith("kanban\t") ->
                 MaradonaDiagramModel.KanbanModel(KanbanParser.parse(source))
+            header == "sankey" || header.startsWith("sankey ") || header.startsWith("sankey\t") ||
+                header == "sankey-beta" || header.startsWith("sankey-beta ") || header.startsWith("sankey-beta\t") ->
+                MaradonaDiagramModel.SankeyModel(SankeyParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

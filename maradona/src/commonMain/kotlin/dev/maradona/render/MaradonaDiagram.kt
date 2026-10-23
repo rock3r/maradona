@@ -46,6 +46,7 @@ import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
 import dev.maradona.layout.QuadrantDiagramLayout
+import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
@@ -134,6 +135,8 @@ fun MaradonaDiagram(
     onXyChartLayout: (XyChartDiagramLayout) -> Unit = {},
     /** Reports the computed Kanban diagram layout (see [MaradonaKanbanLayout.onLayout]). */
     onKanbanLayout: (KanbanDiagramLayout) -> Unit = {},
+    /** Reports the computed Sankey diagram layout (see [MaradonaSankeyLayout.onLayout]). */
+    onSankeyLayout: (SankeyDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -455,6 +458,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onKanbanLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.SankeyModel ->
+                            MaradonaSankeyLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onSankeyLayout,
                                 modifier = contentModifier,
                             )
                     }

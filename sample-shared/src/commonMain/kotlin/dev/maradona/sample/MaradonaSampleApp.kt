@@ -283,6 +283,15 @@ private val examples = linkedMapOf(
           done[Done]
             xy[Ship XY chart support]@{ ticket: MRD-13, assigned: 'rock3r' }
     """.trimIndent(),
+    "Sankey" to """
+        sankey-beta
+          Solar,Electricity grid,120
+          Wind,Electricity grid,290
+          Hydro,Electricity grid,90
+          Electricity grid,Industry,240
+          Electricity grid,"Heating & cooling, homes",180
+          Electricity grid,Losses,80
+    """.trimIndent(),
 )
 
 private class SampleState(
