@@ -218,6 +218,20 @@ private val examples = linkedMapOf(
           cherry-pick id: "splines"
           commit id: "ship"
     """.trimIndent(),
+    "Timeline" to """
+        timeline
+          title Evolution of Maradona
+          section Foundation
+            v0.1 : Flowchart Parser : Dagre Layout Port
+            v0.3 : Sequence Diagrams : Oracle Viewer
+          section Relational & Trees
+            v0.5 : Class & State Diagrams
+                 : ER Crow's-Foot Tables
+            v0.7 : Bidirectional Mindmaps
+          section Timelines & Charts
+            v0.9 : Gantt Schedules : Donut Pie Charts
+            v1.0 : GitGraph & Timeline
+    """.trimIndent(),
 )
 
 private class SampleState(

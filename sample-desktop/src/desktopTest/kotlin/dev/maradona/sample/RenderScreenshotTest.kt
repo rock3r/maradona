@@ -501,4 +501,41 @@ class RenderScreenshotTest {
         }
         assertTrue(tagBadgePixels > 300, "GitGraph tag badge rgb(249, 240, 210) not rendered ($tagBadgePixels px)")
     }
+
+    @Test
+    fun timelineDiagram() {
+        val png = renderToPng(
+            "timeline",
+            """
+            timeline
+                title Evolution of Maradona
+                section Foundation
+                    v0.1 : Flowchart Parser
+                         : Dagre Layout Port
+                    v0.3 : Sequence Diagrams : Oracle Viewer
+                section Relational & Trees
+                    v0.5 : Class & State Diagrams
+                         : ER Crow's-Foot Tables
+                    v0.7 : Bidirectional Mindmaps
+                section Timelines & Charts
+                    v0.9 : Gantt Schedules : Donut Pie Charts
+                    v1.0 : GitGraph & Timeline
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1200,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var sectionBannerPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 199) <= 3 && abs(g - 223) <= 3 && abs(b - 242) <= 3) sectionBannerPixels++
+            }
+        }
+        assertTrue(sectionBannerPixels > 1_500, "Timeline section banner rgb(199, 223, 242) not rendered ($sectionBannerPixels px)")
+    }
 }
