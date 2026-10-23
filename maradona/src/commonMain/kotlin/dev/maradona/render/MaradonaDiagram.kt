@@ -48,6 +48,7 @@ import dev.maradona.layout.QuadrantDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
+import dev.maradona.layout.XyChartDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
@@ -128,6 +129,8 @@ fun MaradonaDiagram(
     onJourneyLayout: (JourneyDiagramLayout) -> Unit = {},
     /** Reports the computed Quadrant chart layout (see [MaradonaQuadrantLayout.onLayout]). */
     onQuadrantLayout: (QuadrantDiagramLayout) -> Unit = {},
+    /** Reports the computed XY chart layout (see [MaradonaXyChartLayout.onLayout]). */
+    onXyChartLayout: (XyChartDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -433,6 +436,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onQuadrantLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.XyChartModel ->
+                            MaradonaXyChartLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onXyChartLayout,
                                 modifier = contentModifier,
                             )
                     }

@@ -610,4 +610,37 @@ class RenderScreenshotTest {
         }
         assertTrue(q1Pixels > 5_000, "Quadrant Q1 fill rgb(228, 239, 248) not rendered ($q1Pixels px)")
     }
+
+    @Test
+    fun xyChartDiagram() {
+        val png = renderToPng(
+            "xychart",
+            """
+            xychart-beta
+                title "Monthly Revenue & Target"
+                x-axis "Month" [Jan, Feb, Mar, Apr, May, Jun]
+                y-axis "Revenue (${'$'}k)" 0 --> 120
+                bar "Actual" [52, 68, 74, 91, 86, 108]
+                line "Target" [50, 60, 75, 85, 95 "Q2 Goal", 110]
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 820,
+            height = 540,
+        )
+        val img = ImageIO.read(png)
+        var barBluePixels = 0
+        var lineOrangePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x20) <= 4 && abs(g - 0x5E) <= 4 && abs(b - 0xA6) <= 4) barBluePixels++
+                if (abs(r - 0xDA) <= 4 && abs(g - 0x70) <= 4 && abs(b - 0x2C) <= 4) lineOrangePixels++
+            }
+        }
+        assertTrue(barBluePixels > 3_000, "XY chart bar fill #205EA6 not rendered ($barBluePixels px)")
+        assertTrue(lineOrangePixels > 150, "XY chart line stroke #DA702C not rendered ($lineOrangePixels px)")
+    }
 }
