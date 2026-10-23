@@ -260,6 +260,14 @@ private val examples = linkedMapOf(
           Campaign E: [0.35, 0.78]
           classDef star color: #d14d41, radius: 8, stroke-color: #af3029, stroke-width: 2px
     """.trimIndent(),
+    "XY Chart" to """
+        xychart-beta
+          title "Monthly Revenue & Target"
+          x-axis "Month" [Jan, Feb, Mar, Apr, May, Jun]
+          y-axis "Revenue (${'$'}k)" 0 --> 120
+          bar "Actual" [52, 68, 74, 91, 86, 108]
+          line "Target" [50, 60, 75, 85, 95 "Q2 Goal", 110]
+    """.trimIndent(),
 )
 
 private class SampleState(

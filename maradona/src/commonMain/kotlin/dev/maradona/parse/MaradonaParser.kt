@@ -12,6 +12,7 @@ import dev.maradona.model.QuadrantDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
+import dev.maradona.model.XyChartDiagram
 
 /** Parsed representation of any Mermaid diagram type supported by Maradona. */
 sealed interface MaradonaDiagramModel {
@@ -27,6 +28,7 @@ sealed interface MaradonaDiagramModel {
     data class TimelineModel(val diagram: TimelineDiagram) : MaradonaDiagramModel
     data class JourneyModel(val diagram: JourneyDiagram) : MaradonaDiagramModel
     data class QuadrantModel(val diagram: QuadrantDiagram) : MaradonaDiagramModel
+    data class XyChartModel(val diagram: XyChartDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -34,7 +36,7 @@ sealed interface MaradonaDiagramModel {
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
- * [JourneyParser], or [QuadrantParser].
+ * [JourneyParser], [QuadrantParser], or [XyChartParser].
  */
 object MaradonaParser {
 
@@ -63,6 +65,9 @@ object MaradonaParser {
                 MaradonaDiagramModel.JourneyModel(JourneyParser.parse(source))
             header == "quadrantchart" || header.startsWith("quadrantchart ") || header.startsWith("quadrantchart\t") ->
                 MaradonaDiagramModel.QuadrantModel(QuadrantParser.parse(source))
+            header == "xychart" || header.startsWith("xychart ") || header.startsWith("xychart\t") ||
+                header == "xychart-beta" || header.startsWith("xychart-beta ") || header.startsWith("xychart-beta\t") ->
+                MaradonaDiagramModel.XyChartModel(XyChartParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

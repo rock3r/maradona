@@ -8,12 +8,13 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.12 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.13 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
 pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
-user journeys (`journey`), and quadrant charts (`quadrantChart`).
+user journeys (`journey`), quadrant charts (`quadrantChart`), and XY charts
+(`xychart` / `xychart-beta`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -152,6 +153,17 @@ Supported in quadrant charts (`quadrantChart`):
 - Points and styling: `Point[:::<class>] : [x, y] [color: ..., radius: ..., stroke-color: ..., stroke-width: ...]`
   and `classDef <name> ...`
 
+Supported in XY charts (`xychart` / `xychart-beta`):
+
+- Headers and directives: `xychart` and `xychart-beta`, `horizontal` and `vertical`
+  orientations, YAML frontmatter and `%%{init}%%` configuration (`title`, `width`,
+  `height`, `chartOrientation`, `showTitle`, `showLegend`, `showDataLabel`,
+  `showDataLabelOutsideBar`, `plotColorPalette`), `title`, and `accTitle` / `accDescr`
+- Axes: categorical `x-axis [<title>] [cat1, cat2, ...]`, numeric `x-axis [<title>] <min> --> <max>`,
+  and numeric `y-axis [<title>] [<min> --> <max>]` with automatic range and nice ticks
+- Series: `bar [<title>] [v1, v2, ...]` (grouped when multiple bar series are present)
+  and `line [<title>] [v1 ["pointLabel"], v2, ...]` with series legend
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -233,7 +245,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, and quadrant charts only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, and XY charts only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
