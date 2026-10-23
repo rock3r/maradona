@@ -88,7 +88,7 @@ class QuadrantParserTest {
         val model = MaradonaParser.parse(
             """
             quadrantChart; x-axis Low ---> High
-            "Service:::v2": [0.2, 0.3]; "Range: [old, new]": [0.7, 0.8]
+            "Service:::v2": [0.2, 0.3] color: rgb(255, 0, 0), radius: 8; "Range: [old, new]": [0.7, 0.8]
             """.trimIndent(),
         )
         assertIs<MaradonaDiagramModel.QuadrantModel>(model)
@@ -98,6 +98,12 @@ class QuadrantParserTest {
         assertEquals(2, d.points.size)
         assertEquals("Service:::v2", d.points[0].label)
         assertEquals(null, d.points[0].className)
+        assertEquals("rgb(255, 0, 0)", d.points[0].style?.color)
+        assertEquals(8f, d.points[0].style?.radius)
         assertEquals("Range: [old, new]", d.points[1].label)
+
+        assertFailsWith<IllegalArgumentException> {
+            QuadrantParser.parse("quadrantChart\nP: [0.5, 0.5] radius: NaN")
+        }
     }
 }

@@ -50,11 +50,11 @@ object QuadrantParser {
             }
             Regex("""['"]?chartWidth['"]?\s*:\s*([0-9.]+)""", RegexOption.IGNORE_CASE)
                 .find(initBody)?.groupValues?.get(1)?.toFloatOrNull()?.let {
-                    if (it >= 160f) chartWidth = it
+                    if (it.isFinite() && it >= 160f) chartWidth = it
                 }
             Regex("""['"]?chartHeight['"]?\s*:\s*([0-9.]+)""", RegexOption.IGNORE_CASE)
                 .find(initBody)?.groupValues?.get(1)?.toFloatOrNull()?.let {
-                    if (it >= 160f) chartHeight = it
+                    if (it.isFinite() && it >= 160f) chartHeight = it
                 }
         }
 
@@ -82,8 +82,8 @@ object QuadrantParser {
                     val value = unquote(fmLine.substring(colon + 1).trim())
                     when (key) {
                         "title" -> if (value.isNotEmpty()) frontmatterTitle = normalizeText(value)
-                        "chartwidth" -> value.toFloatOrNull()?.let { if (it >= 160f) chartWidth = it }
-                        "chartheight" -> value.toFloatOrNull()?.let { if (it >= 160f) chartHeight = it }
+                        "chartwidth" -> value.toFloatOrNull()?.let { if (it.isFinite() && it >= 160f) chartWidth = it }
+                        "chartheight" -> value.toFloatOrNull()?.let { if (it.isFinite() && it >= 160f) chartHeight = it }
                     }
                 }
             }
@@ -423,7 +423,7 @@ object QuadrantParser {
         var strokeColor: String? = null
         var strokeWidth: Float? = null
 
-        for (entry in spec.split(',')) {
+        for (entry in splitStyleEntriesOutsideParens(spec)) {
             val trimmed = entry.trim()
             if (trimmed.isEmpty()) continue
             val colon = trimmed.indexOf(':')
@@ -435,14 +435,14 @@ object QuadrantParser {
                 "radius" -> {
                     val r = value.removeSuffix("px").trim().toFloatOrNull()
                         ?: throw IllegalArgumentException("Invalid point radius '$value'")
-                    if (r <= 0f) throw IllegalArgumentException("Point radius must be positive: $value")
+                    if (!r.isFinite() || r <= 0f) throw IllegalArgumentException("Point radius must be finite and positive: $value")
                     radius = r
                 }
                 "stroke-color" -> if (value.isNotEmpty()) strokeColor = value
                 "stroke-width" -> {
                     val sw = value.removeSuffix("px").trim().toFloatOrNull()
                         ?: throw IllegalArgumentException("Invalid stroke-width '$value'")
-                    if (sw < 0f) throw IllegalArgumentException("stroke-width must be non-negative: $value")
+                    if (!sw.isFinite() || sw < 0f) throw IllegalArgumentException("stroke-width must be finite and non-negative: $value")
                     strokeWidth = sw
                 }
             }
@@ -454,6 +454,35 @@ object QuadrantParser {
             strokeColor = strokeColor,
             strokeWidth = strokeWidth,
         )
+    }
+
+    private fun splitStyleEntriesOutsideParens(spec: String): List<String> {
+        val out = mutableListOf<String>()
+        val sb = StringBuilder()
+        var parenDepth = 0
+        for (c in spec) {
+            when (c) {
+                '(' -> {
+                    parenDepth++
+                    sb.append(c)
+                }
+                ')' -> {
+                    parenDepth = (parenDepth - 1).coerceAtLeast(0)
+                    sb.append(c)
+                }
+                ',' -> {
+                    if (parenDepth == 0) {
+                        out += sb.toString()
+                        sb.setLength(0)
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                else -> sb.append(c)
+            }
+        }
+        out += sb.toString()
+        return out
     }
 
     private fun stripLineComment(line: String): String {
