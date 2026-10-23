@@ -101,14 +101,33 @@ class XyChartLayoutTest {
             assertTrue(a.right <= b.x + 0.01f, "Bar $i (${a.right}) overlapped bar ${i + 1} (${b.x})")
         }
 
-        // Negative bar (-80) extends downward from the 0 baseline, and its outside label sits below its bottom edge.
+        // Negative bar (-80) extends downward from the 0 baseline, and its outside label sits strictly below its bottom edge.
         val negBar = layout.bars[0]
         val posBar = layout.bars[2]
+        val maxBar = layout.bars[13] // value = 100 at Y-domain max
         assertTrue(negBar.rect.bottom > posBar.rect.bottom, "Negative bar should extend below zero baseline")
         val negLbl = assertNotNull(negBar.dataLabelRect)
         val posLbl = assertNotNull(posBar.dataLabelRect)
+        val maxLbl = assertNotNull(maxBar.dataLabelRect)
         assertTrue(negLbl.y >= negBar.rect.bottom, "Negative outside bar label should sit below negative bar tip")
         assertTrue(posLbl.bottom <= posBar.rect.y, "Positive outside bar label should sit above positive bar tip")
+        assertTrue(maxLbl.bottom <= maxBar.rect.y, "Max-value outside bar label must sit strictly above its bar, not clamped inside")
+
+        // Horizontal chart with large endpoint Y-tick labels fits within layout.width.
+        val horizWideTicks = XyChartLayout.layout(
+            XyChartParser.parse(
+                """
+                xychart horizontal
+                  x-axis [A, B]
+                  y-axis 0 --> 100000000000
+                  bar [50000000000, 100000000000]
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(
+            horizWideTicks.yTicks.all { it.labelRect.right <= horizWideTicks.width + 0.01f },
+            "Horizontal Y-axis endpoint tick labels must fit inside layout.width",
+        )
 
         // Title and legend items fit inside layout width and height.
         val tr = assertNotNull(layout.titleRect)

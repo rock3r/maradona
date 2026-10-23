@@ -233,7 +233,8 @@ object XyChartLayout {
             ),
         )
 
-        val plotW = max(minPlotW, baseChartW - outerPad * 2f - leftAxisBandW - legendWidth)
+        val rightReservedW = max(legendWidth, maxHorizTickW / 2f)
+        val plotW = max(minPlotW, baseChartW - outerPad * 2f - leftAxisBandW - rightReservedW)
         val plotH = max(
             minPlotH,
             baseChartH - contentTopY - outerPad - horizAxisBandH,
@@ -276,16 +277,46 @@ object XyChartLayout {
             return xRangeStart + t * (xRangeEnd - xRangeStart)
         }
 
-        // Y-axis scale: in Vertical mode, yMin -> plotRect.bottom and yMax -> plotRect.y;
-        // in Horizontal mode, yMin -> plotRect.x and yMax -> plotRect.right.
+        // Reserve inner headroom on the Y-axis when outside bar data labels are enabled so
+        // labels at domain extremes remain strictly outside their bars and inside plotRect.
+        val outsideBarLabelSizes = diagram.plots
+            .filter { it.type == XyPlotType.Bar }
+            .flatMap { s ->
+                s.points.mapNotNull { pt ->
+                    val txt = pt.label ?: if (diagram.showDataLabel && diagram.showDataLabelOutsideBar) {
+                        formatNumber(pt.value)
+                    } else {
+                        null
+                    }
+                    txt?.let(pointLabelSize)
+                }
+            }
+        val maxOutsideBarLabelW = outsideBarLabelSizes.maxOfOrNull { it.width } ?: 0f
+        val maxOutsideBarLabelH = outsideBarLabelSizes.maxOfOrNull { it.height } ?: 0f
+        val yLo = min(yMin, yMax)
+        val yHi = max(yMin, yMax)
+        val barBaseVal = 0.0.coerceIn(yLo, yHi)
+        val barValues = diagram.plots.filter { it.type == XyPlotType.Bar }.flatMap { s -> s.points.map { it.value } }
+        val hasBarTowardsMin = barValues.any { if (yMin <= yMax) it < barBaseVal else it > barBaseVal }
+        val hasBarTowardsMax = barValues.any { if (yMin <= yMax) it >= barBaseVal else it <= barBaseVal }
+
+        val yPadAtMin = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMin) {
+            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
+        } else {
+            0f
+        }
+        val yPadAtMax = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMax) {
+            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
+        } else {
+            0f
+        }
+        val yRangeMinCoord = if (isHorizontal) plotRect.x + yPadAtMin else plotRect.bottom - yPadAtMin
+        val yRangeMaxCoord = if (isHorizontal) plotRect.right - yPadAtMax else plotRect.y + yPadAtMax
+
         fun yCoordForValue(v: Double): Float {
             val denom = yMax - yMin
             val t = if (denom == 0.0 || !denom.isFinite()) 0.5f else ((v - yMin) / denom).toFloat().coerceIn(0f, 1f)
-            return if (isHorizontal) {
-                plotRect.x + t * plotRect.width
-            } else {
-                plotRect.bottom - t * plotRect.height
-            }
+            return yRangeMinCoord + t * (yRangeMaxCoord - yRangeMinCoord)
         }
 
         // Build X-axis ticks.
@@ -466,9 +497,7 @@ object XyChartLayout {
             }
         }
 
-        val yLo = min(yMin, yMax)
-        val yHi = max(yMin, yMax)
-        val barBaseCoord = yCoordForValue(0.0.coerceIn(yLo, yHi))
+        val barBaseCoord = yCoordForValue(barBaseVal)
 
         for ((seriesIdx, series) in diagram.plots.withIndex()) {
             when (series.type) {
@@ -506,9 +535,9 @@ object XyChartLayout {
                                 val extendsLeft = valCoord < barBaseCoord
                                 val lx = if (outside) {
                                     if (extendsLeft) {
-                                        max(plotRect.x, barRect.x - dlSz.width - 6f * d)
+                                        barRect.x - dlSz.width - 6f * d
                                     } else {
-                                        min(plotRect.right - dlSz.width, barRect.right + 6f * d)
+                                        barRect.right + 6f * d
                                     }
                                 } else {
                                     if (extendsLeft) {
@@ -527,9 +556,9 @@ object XyChartLayout {
                                 val extendsDown = valCoord > barBaseCoord
                                 val ly = if (outside) {
                                     if (extendsDown) {
-                                        min(plotRect.bottom - dlSz.height, barRect.bottom + 4f * d)
+                                        barRect.bottom + 4f * d
                                     } else {
-                                        max(plotRect.y, barRect.y - dlSz.height - 4f * d)
+                                        barRect.y - dlSz.height - 4f * d
                                     }
                                 } else {
                                     if (extendsDown) {
@@ -650,12 +679,26 @@ object XyChartLayout {
         }
 
         val legendBottom = legendItems.maxOfOrNull { max(it.markerRect.bottom, it.labelRect.bottom) } ?: 0f
-        val totalW = max(
+        val maxTickRight = max(
+            xTicks.maxOfOrNull { it.labelRect.right } ?: 0f,
+            yTicks.maxOfOrNull { it.labelRect.right } ?: 0f,
+        )
+        val maxTickBottom = max(
+            xTicks.maxOfOrNull { it.labelRect.bottom } ?: 0f,
+            yTicks.maxOfOrNull { it.labelRect.bottom } ?: 0f,
+        )
+        val maxDataLabelRight = bars.mapNotNull { it.dataLabelRect }.maxOfOrNull { it.right } ?: 0f
+        val maxDataLabelBottom = bars.mapNotNull { it.dataLabelRect }.maxOfOrNull { it.bottom } ?: 0f
+        val totalW = maxOf(
             plotRect.right + legendWidth + outerPad,
             (resolvedTitleSize?.width ?: 0f) + outerPad * 2f,
+            maxTickRight + outerPad,
+            maxDataLabelRight + outerPad,
         )
-        val bottomExtent = max(
+        val bottomExtent = maxOf(
             legendBottom + outerPad,
+            maxTickBottom + outerPad,
+            maxDataLabelBottom + outerPad,
             if (isHorizontal) {
                 plotRect.bottom + outerPad
             } else {
