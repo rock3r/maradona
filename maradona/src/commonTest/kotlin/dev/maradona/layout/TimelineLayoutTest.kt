@@ -58,5 +58,18 @@ class TimelineLayoutTest {
         assertEquals(1, tdLayout.sections.size)
         assertEquals(2, tdLayout.periods.size)
         assertTrue(tdLayout.periods[0].rect.bottom < tdLayout.periods[1].rect.y, "In TD timeline, Step A must be above Step B")
+
+        // Leading empty section must remain before subsequent populated sections.
+        val emptyLeadingSection = TimelineParser.parse(
+            """
+            timeline
+                section Planned
+                section Released
+                    2026 : Launch
+            """.trimIndent(),
+        )
+        val emptySecLayout = TimelineLayout.layout(emptyLeadingSection)
+        assertEquals(listOf("Planned", "Released"), emptySecLayout.sections.map { it.name })
+        assertTrue(emptySecLayout.sections[0].rect.right < emptySecLayout.sections[1].rect.x)
     }
 }

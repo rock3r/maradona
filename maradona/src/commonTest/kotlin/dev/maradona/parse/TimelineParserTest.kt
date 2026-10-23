@@ -57,12 +57,14 @@ class TimelineParserTest {
     fun preservesApostrophesUrlAndTimeColonsAndInlineAccDescrBlocks() {
         val d = TimelineParser.parse(
             """
+            %%{init: {"title": "Company's launch"}}%%
             timeline
                 accDescr { A release timeline }
                 Company's launch : First release
                 2025 : Customer's feedback : Visit https://example.com : Starts at 10:30
             """.trimIndent(),
         )
+        assertEquals("Company's launch", d.title)
         assertEquals("A release timeline", d.accDescr)
         assertEquals(2, d.periods.size)
         assertEquals("Company's launch", d.periods[0].title)

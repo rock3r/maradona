@@ -30,10 +30,20 @@ object TimelineParser {
         val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
-            Regex("""['"]?title['"]?\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
-                .find(initBody)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                    frontmatterTitle = normalizeText(it)
+            val titleMatch = Regex(
+                """['"]?title['"]?\s*:\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')""",
+                RegexOption.IGNORE_CASE,
+            ).find(initBody)
+            if (titleMatch != null) {
+                val rawTitle = titleMatch.groupValues[1].ifEmpty { titleMatch.groupValues[2] }
+                    .replace("\\\"", "\"")
+                    .replace("\\'", "'")
+                    .replace("\\\\", "\\")
+                    .trim()
+                if (rawTitle.isNotEmpty()) {
+                    frontmatterTitle = normalizeText(rawTitle)
                 }
+            }
             Regex("""['"]?disableMulticolor['"]?\s*:\s*['"]?(true|false)['"]?""", RegexOption.IGNORE_CASE)
                 .find(initBody)?.groupValues?.get(1)?.lowercase()?.toBooleanStrictOrNull()?.let {
                     disableMulticolor = it

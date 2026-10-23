@@ -130,19 +130,40 @@ object TimelineLayout {
         val runs = mutableListOf<SectionRun>()
         val sectionOrder = (diagram.sections + diagram.periods.mapNotNull { it.section }).distinct()
         val secIdxMap = sectionOrder.withIndex().associate { (i, s) -> s to i }
+        val populatedSections = diagram.periods.mapNotNullTo(HashSet()) { it.section }
+        val emittedEmptySections = HashSet<String>()
+        var declCursor = 0
 
         for ((pIdx, p) in diagram.periods.withIndex()) {
+            val pSec = p.section
+            if (pSec != null) {
+                val targetDeclIdx = diagram.sections.indexOf(pSec)
+                if (targetDeclIdx >= 0) {
+                    while (declCursor < targetDeclIdx) {
+                        val candidateSec = diagram.sections[declCursor++]
+                        if (candidateSec !in populatedSections && emittedEmptySections.add(candidateSec)) {
+                            runs += SectionRun(
+                                runIndex = runs.size,
+                                name = candidateSec,
+                                sectionIndex = secIdxMap[candidateSec] ?: 0,
+                                periods = emptyList(),
+                            )
+                        }
+                    }
+                    declCursor = max(declCursor, targetDeclIdx + 1)
+                }
+            }
             val last = runs.lastOrNull()
-            if (last != null && last.name == p.section) {
+            if (last != null && last.name == pSec) {
                 runs[runs.lastIndex] = last.copy(periods = last.periods + (pIdx to p))
             } else {
-                val sIdx = p.section?.let { secIdxMap[it] ?: 0 } ?: 0
-                runs += SectionRun(runIndex = runs.size, name = p.section, sectionIndex = sIdx, periods = listOf(pIdx to p))
+                val sIdx = pSec?.let { secIdxMap[it] ?: 0 } ?: 0
+                runs += SectionRun(runIndex = runs.size, name = pSec, sectionIndex = sIdx, periods = listOf(pIdx to p))
             }
         }
-        // Preserve declared sections that had no periods.
+        // Preserve any trailing declared sections that had no periods.
         for (sec in diagram.sections) {
-            if (runs.none { it.name == sec }) {
+            if (sec !in populatedSections && emittedEmptySections.add(sec)) {
                 runs += SectionRun(runIndex = runs.size, name = sec, sectionIndex = secIdxMap[sec] ?: 0, periods = emptyList())
             }
         }
