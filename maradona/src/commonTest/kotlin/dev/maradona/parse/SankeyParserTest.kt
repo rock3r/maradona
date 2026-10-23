@@ -83,11 +83,15 @@ class SankeyParserTest {
             sankey
               title Flow through 6" pipes
               accDescr {sector},Sink,10
+              title A,"North
+            America",15
             """.trimIndent(),
         )
         assertEquals("Flow through 6\" pipes", csvStartingWithAcc.title)
-        assertEquals(2, csvStartingWithAcc.nodes.size)
-        assertEquals("accDescr {sector}", csvStartingWithAcc.links.single().source)
+        assertEquals(4, csvStartingWithAcc.nodes.size)
+        assertEquals("accDescr {sector}", csvStartingWithAcc.links[0].source)
+        assertEquals("title A", csvStartingWithAcc.links[1].source)
+        assertEquals("North\nAmerica", csvStartingWithAcc.links[1].target)
     }
 
     @Test

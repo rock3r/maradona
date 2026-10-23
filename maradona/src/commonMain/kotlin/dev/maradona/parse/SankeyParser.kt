@@ -405,13 +405,43 @@ object SankeyParser {
         }
     }
 
+    private fun startsValidCsvRecord(lines: List<String>, startIdx: Int): Boolean {
+        val sb = StringBuilder()
+        var inQuotes = false
+        for (idx in startIdx until lines.size) {
+            val raw = lines[idx]
+            val clean = stripLineCommentOutsideQuotes(raw, startInQuotes = inQuotes)
+            if (idx == startIdx) {
+                if (clean.trim().isEmpty()) return false
+                sb.append(clean)
+            } else {
+                sb.append('\n').append(clean)
+            }
+            var i = 0
+            while (i < clean.length) {
+                if (clean[i] == '"') {
+                    if (inQuotes && i + 1 < clean.length && clean[i + 1] == '"') {
+                        i += 2
+                        continue
+                    }
+                    inQuotes = !inQuotes
+                }
+                i++
+            }
+            if (!inQuotes) {
+                return isThreeFieldNumericCsvRecord(sb.toString().trim())
+            }
+        }
+        return false
+    }
+
     private fun mergeCsvLines(lines: List<String>): List<String> {
         val out = mutableListOf<String>()
         val current = StringBuilder()
         var inQuotes = false
         var inAccBlock = false
 
-        for (rawLine in lines) {
+        for ((lineIdx, rawLine) in lines.withIndex()) {
             val trimmed = rawLine.trim()
             if (!inQuotes) {
                 if (inAccBlock) {
@@ -421,7 +451,7 @@ object SankeyParser {
                 }
                 if (
                     Regex("""^accDescr\s*\{""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) &&
-                    !isThreeFieldNumericCsvRecord(stripLineCommentOutsideQuotes(rawLine).trim())
+                    !startsValidCsvRecord(lines, lineIdx)
                 ) {
                     out += rawLine
                     if (!trimmed.contains('}')) inAccBlock = true
@@ -429,7 +459,7 @@ object SankeyParser {
                 }
                 if (
                     Regex("""^(?:title(?:\s+|:)|accTitle\s*:|accDescr\s*:)""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) &&
-                    !isThreeFieldNumericCsvRecord(stripLineCommentOutsideQuotes(rawLine).trim())
+                    !startsValidCsvRecord(lines, lineIdx)
                 ) {
                     out += rawLine
                     continue
