@@ -8,12 +8,12 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.11 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.12 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
-pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`), and
-user journeys (`journey`).
+pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
+user journeys (`journey`), and quadrant charts (`quadrantChart`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -143,6 +143,15 @@ Supported in user journeys (`journey`):
 - Sections (`section <title>`) and tasks (`Task name : score [: actor1, actor2]`)
   with actor legend badges, actor indicator dots, score tracks, and satisfaction mood faces
 
+Supported in quadrant charts (`quadrantChart`):
+
+- Headers and directives: `quadrantChart`, YAML frontmatter and `%%{init}%%`
+  configuration (`title`, `chartWidth`, `chartHeight`), `title`, and `accTitle` / `accDescr`
+- Axes and quadrants: `x-axis <left> [--> <right>]`, `y-axis <bottom> [--> <top>]`,
+  `quadrant-1`, `quadrant-2`, `quadrant-3`, and `quadrant-4`
+- Points and styling: `Point[:::<class>] : [x, y] [color: ..., radius: ..., stroke-color: ..., stroke-width: ...]`
+  and `classDef <name> ...`
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -224,7 +233,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, and user journeys only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, and quadrant charts only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

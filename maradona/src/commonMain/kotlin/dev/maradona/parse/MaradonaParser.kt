@@ -8,6 +8,7 @@ import dev.maradona.model.GitGraphDiagram
 import dev.maradona.model.JourneyDiagram
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PieDiagram
+import dev.maradona.model.QuadrantDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
@@ -25,6 +26,7 @@ sealed interface MaradonaDiagramModel {
     data class GitGraphModel(val diagram: GitGraphDiagram) : MaradonaDiagramModel
     data class TimelineModel(val diagram: TimelineDiagram) : MaradonaDiagramModel
     data class JourneyModel(val diagram: JourneyDiagram) : MaradonaDiagramModel
+    data class QuadrantModel(val diagram: QuadrantDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -32,7 +34,7 @@ sealed interface MaradonaDiagramModel {
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
- * or [JourneyParser].
+ * [JourneyParser], or [QuadrantParser].
  */
 object MaradonaParser {
 
@@ -59,6 +61,8 @@ object MaradonaParser {
                 MaradonaDiagramModel.TimelineModel(TimelineParser.parse(source))
             header == "journey" || header.startsWith("journey ") || header.startsWith("journey\t") || header.startsWith("journey;") ->
                 MaradonaDiagramModel.JourneyModel(JourneyParser.parse(source))
+            header == "quadrantchart" || header.startsWith("quadrantchart ") || header.startsWith("quadrantchart\t") ->
+                MaradonaDiagramModel.QuadrantModel(QuadrantParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }
@@ -88,8 +92,10 @@ object MaradonaParser {
                     val hashAt = s.indexOf('#')
                     if (hashAt >= 0) s.substring(0, hashAt) else s
                 }
-                .trim()
-                .trimEnd(';')
+                .let { s ->
+                    val semiAt = s.indexOf(';')
+                    if (semiAt >= 0) s.substring(0, semiAt) else s
+                }
                 .trim()
             if (line.isNotEmpty()) return line.lowercase()
         }

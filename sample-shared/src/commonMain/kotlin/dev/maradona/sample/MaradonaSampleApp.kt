@@ -244,6 +244,22 @@ private val examples = linkedMapOf(
           section Ship
             Run Desktop & iOS checks: 4: Developer, QA
     """.trimIndent(),
+    "Quadrant" to """
+        quadrantChart
+          title Reach and Engagement of Campaigns
+          x-axis Low Reach --> High Reach
+          y-axis Low Engagement --> High Engagement
+          quadrant-1 Expand & Scale
+          quadrant-2 Promote Reach
+          quadrant-3 Re-evaluate
+          quadrant-4 Improve Content
+          Campaign A: [0.30, 0.60]
+          Campaign B: [0.45, 0.23]
+          Campaign C:::star: [0.76, 0.78]
+          Campaign D: [0.78, 0.34]
+          Campaign E: [0.35, 0.78]
+          classDef star color: #d14d41, radius: 8, stroke-color: #af3029, stroke-width: 2px
+    """.trimIndent(),
 )
 
 private class SampleState(

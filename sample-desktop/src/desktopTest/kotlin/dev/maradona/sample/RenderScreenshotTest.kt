@@ -572,4 +572,42 @@ class RenderScreenshotTest {
         }
         assertTrue(facePixels > 500, "Journey mood face rgb(255, 248, 220) not rendered ($facePixels px)")
     }
+
+    @Test
+    fun quadrantChartDiagram() {
+        val png = renderToPng(
+            "quadrant",
+            """
+            quadrantChart
+                title Reach and Engagement of Campaigns
+                x-axis Low Reach --> High Reach
+                y-axis Low Engagement --> High Engagement
+                quadrant-1 Expand & Scale
+                quadrant-2 Promote Reach
+                quadrant-3 Re-evaluate
+                quadrant-4 Improve Content
+                Campaign A: [0.30, 0.60]
+                Campaign B: [0.45, 0.23]
+                Campaign C:::star: [0.76, 0.72]
+                Campaign D: [0.78, 0.34]
+                Campaign E: [0.35, 0.78]
+                classDef star color: #d14d41, radius: 9, stroke-color: #af3029, stroke-width: 2px
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 760,
+            height = 680,
+        )
+        val img = ImageIO.read(png)
+        var q1Pixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 228) <= 3 && abs(g - 239) <= 3 && abs(b - 248) <= 3) q1Pixels++
+            }
+        }
+        assertTrue(q1Pixels > 5_000, "Quadrant Q1 fill rgb(228, 239, 248) not rendered ($q1Pixels px)")
+    }
 }
