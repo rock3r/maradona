@@ -184,6 +184,21 @@ private val examples = linkedMapOf(
             Oracle Visual Parity      :         ov,  after mg, 2d
             v0.7 Release              :milestone, m1, after ov, 0d
     """.trimIndent(),
+    "Pie" to """
+        ---
+        config:
+          pie:
+            donutHole: 0.25
+            highlightSlice: Flowcharts
+        ---
+        pie showData
+          title Maradona Diagram Usage
+          "Flowcharts" : 42
+          "Sequence" : 24
+          "Class & ER" : 18
+          "State & Gantt" : 10
+          "Mindmap & Pie" : 6
+    """.trimIndent(),
 )
 
 private class SampleState(
