@@ -298,26 +298,32 @@ object KanbanParser {
         var inlineClass: String? = null
         val metaBlocks = mutableListOf<String>()
 
-        // Extract trailing `@{ ... }`, `::icon(...)`, or `:::class` in any order outside quotes/brackets.
+        // Extract trailing `@{ ... }`, `::icon(...)`, or `:::class` in any order outside quotes and node shapes.
         while (true) {
             val trimmed = working.trimEnd()
-            val metaStart = findMetadataStartOutsideQuotesAndShapes(trimmed)
+            val metaStart = findTokenOutsideQuotesAndShapes(trimmed, "@{")
             if (metaStart >= 0 && trimmed.endsWith("}")) {
                 metaBlocks += trimmed.substring(metaStart + 2, trimmed.length - 1).trim()
                 working = trimmed.substring(0, metaStart).trimEnd()
                 continue
             }
-            val iconMatch = Regex("""^(.*?)\s*::icon\(([^)]+)\)$""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(trimmed)
-            if (iconMatch != null) {
-                inlineIcon = iconMatch.groupValues[2].trim()
-                working = iconMatch.groupValues[1].trimEnd()
-                continue
+            val iconStart = findTokenOutsideQuotesAndShapes(trimmed, "::icon(")
+            if (iconStart >= 0 && trimmed.endsWith(")")) {
+                val inner = trimmed.substring(iconStart + 7, trimmed.length - 1).trim()
+                if (!inner.contains(')')) {
+                    inlineIcon = inner
+                    working = trimmed.substring(0, iconStart).trimEnd()
+                    continue
+                }
             }
-            val classMatch = Regex("""^(.*?)\s*:::(\S+)$""", setOf(RegexOption.DOT_MATCHES_ALL)).find(trimmed)
-            if (classMatch != null && classMatch.groupValues[1].isNotBlank()) {
-                inlineClass = classMatch.groupValues[2].trim()
-                working = classMatch.groupValues[1].trimEnd()
-                continue
+            val classStart = findTokenOutsideQuotesAndShapes(trimmed, ":::")
+            if (classStart > 0) {
+                val cls = trimmed.substring(classStart + 3).trim()
+                if (cls.isNotEmpty() && cls.none { it.isWhitespace() }) {
+                    inlineClass = cls
+                    working = trimmed.substring(0, classStart).trimEnd()
+                    continue
+                }
             }
             break
         }
@@ -502,12 +508,12 @@ object KanbanParser {
         }
     }
 
-    private fun findMetadataStartOutsideQuotesAndShapes(s: String): Int {
+    private fun findTokenOutsideQuotesAndShapes(s: String, token: String): Int {
         var quoteChar: Char? = null
         var activeCloseDelim: String? = null
         var metaBraceDepth = 0
         var i = 0
-        var lastAtBrace = -1
+        var lastTokenIdx = -1
         while (i < s.length) {
             val c = s[i]
             if (c == '\\' && quoteChar != null && i + 1 < s.length) {
@@ -539,8 +545,15 @@ object KanbanParser {
                 i++
                 continue
             }
+            if (s.regionMatches(i, token, 0, token.length, ignoreCase = true)) {
+                lastTokenIdx = i
+                if (token == "@{") {
+                    metaBraceDepth = 1
+                }
+                i += token.length
+                continue
+            }
             if (c == '@' && i + 1 < s.length && s[i + 1] == '{') {
-                lastAtBrace = i
                 metaBraceDepth = 1
                 i += 2
                 continue
@@ -556,7 +569,7 @@ object KanbanParser {
             }
             if (!opened) i++
         }
-        return lastAtBrace
+        return lastTokenIdx
     }
 
     private fun mergeMultilineKanbanLines(lines: List<String>): List<String> {
