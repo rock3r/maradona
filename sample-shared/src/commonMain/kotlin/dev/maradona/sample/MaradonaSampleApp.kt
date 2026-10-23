@@ -325,6 +325,17 @@ private val examples = linkedMapOf(
           71: "ACK"
           +24: "Options / Payload"
     """.trimIndent(),
+    "Radar" to """
+        radar-beta
+          title "Engineering Team Assessment"
+          axis m["Math"], s["Science"], e["English"]
+          axis h["History"], g["Geography"], a["Art"]
+          curve alice["Alice"]{85, 90, 80, 70, 75, 90}
+          curve bob["Bob"]{70, 75, 85, 80, 90, 85}
+          graticule polygon
+          max 100
+          min 0
+    """.trimIndent(),
 )
 
 private class SampleState(

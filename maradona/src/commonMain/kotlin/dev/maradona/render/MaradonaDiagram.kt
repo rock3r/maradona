@@ -47,6 +47,7 @@ import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PacketDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
 import dev.maradona.layout.QuadrantDiagramLayout
+import dev.maradona.layout.RadarDiagramLayout
 import dev.maradona.layout.RequirementDiagramLayout
 import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
@@ -143,6 +144,8 @@ fun MaradonaDiagram(
     onRequirementLayout: (RequirementDiagramLayout) -> Unit = {},
     /** Reports the computed Packet diagram layout (see [MaradonaPacketLayout.onLayout]). */
     onPacketLayout: (PacketDiagramLayout) -> Unit = {},
+    /** Reports the computed Radar diagram layout (see [MaradonaRadarLayout.onLayout]). */
+    onRadarLayout: (RadarDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -490,6 +493,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onPacketLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.RadarModel ->
+                            MaradonaRadarLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onRadarLayout,
                                 modifier = contentModifier,
                             )
                     }
