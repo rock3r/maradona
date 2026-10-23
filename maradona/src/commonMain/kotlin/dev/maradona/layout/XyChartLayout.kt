@@ -272,7 +272,9 @@ object XyChartLayout {
             .flatMap { s -> s.points.mapNotNull { pt -> pt.label?.takeIf { it.isNotBlank() }?.let(pointLabelSize) } }
         val maxLinePointLabelW = linePointLabelSizes.maxOfOrNull { it.width } ?: 0f
 
-        val plotX = outerPad + leftAxisBandW
+        val leftReservedW = max(leftAxisBandW, maxHorizTickW / 2f)
+        val rightReservedW = max(legendWidth, maxHorizTickW / 2f)
+        val plotX = outerPad + leftReservedW
         val plotY = if (isHorizontal) contentTopY + horizAxisBandH else contentTopY
         val minPlotW = maxOf(
             220f * d,
@@ -302,8 +304,7 @@ object XyChartLayout {
             },
         )
 
-        val rightReservedW = max(legendWidth, maxHorizTickW / 2f)
-        val plotW = max(minPlotW, baseChartW - outerPad * 2f - leftAxisBandW - rightReservedW)
+        val plotW = max(minPlotW, baseChartW - outerPad * 2f - leftReservedW - rightReservedW)
         val plotH = max(
             minPlotH,
             baseChartH - contentTopY - outerPad - horizAxisBandH,
@@ -774,7 +775,7 @@ object XyChartLayout {
             yAxisLineEnd = DiagramPoint(plotRect.x, plotRect.bottom)
         }
 
-        return XyChartDiagramLayout(
+        val initialLayout = XyChartDiagramLayout(
             width = totalW,
             height = totalH,
             orientation = diagram.orientation,
@@ -790,6 +791,106 @@ object XyChartLayout {
             bars = bars,
             lines = lines,
             legendItems = legendItems,
+        )
+        return normalizeLayoutBounds(initialLayout, outerPad, baseChartW, baseChartH)
+    }
+
+    private fun normalizeLayoutBounds(
+        layout: XyChartDiagramLayout,
+        outerPad: Float,
+        baseChartW: Float,
+        baseChartH: Float,
+    ): XyChartDiagramLayout {
+        val allRects = buildList {
+            layout.titleRect?.let { add(it) }
+            add(layout.plotRect)
+            layout.xTicks.forEach { add(it.labelRect) }
+            layout.yTicks.forEach { add(it.labelRect) }
+            layout.axisTitles.forEach { add(it.rect) }
+            layout.bars.forEach {
+                add(it.rect)
+                it.dataLabelRect?.let { r -> add(r) }
+            }
+            layout.lines.forEach { ls ->
+                ls.points.forEach { pt -> pt.labelRect?.let { r -> add(r) } }
+            }
+            layout.legendItems.forEach {
+                add(it.markerRect)
+                add(it.labelRect)
+            }
+        }
+        val minX = allRects.minOfOrNull { it.x } ?: outerPad
+        val minY = allRects.minOfOrNull { it.y } ?: outerPad
+        val dx = if (minX < outerPad) outerPad - minX else 0f
+        val dy = if (minY < outerPad) outerPad - minY else 0f
+
+        fun DiagramPoint.shift(): DiagramPoint = DiagramPoint(x + dx, y + dy)
+        fun DiagramRect.shift(): DiagramRect = DiagramRect(x + dx, y + dy, width, height)
+
+        val shiftedTitle = layout.titleRect?.shift()
+        val shiftedPlot = layout.plotRect.shift()
+        val shiftedXTicks = layout.xTicks.map {
+            it.copy(
+                lineStart = it.lineStart.shift(),
+                lineEnd = it.lineEnd.shift(),
+                gridStart = it.gridStart.shift(),
+                gridEnd = it.gridEnd.shift(),
+                labelRect = it.labelRect.shift(),
+            )
+        }
+        val shiftedYTicks = layout.yTicks.map {
+            it.copy(
+                lineStart = it.lineStart.shift(),
+                lineEnd = it.lineEnd.shift(),
+                gridStart = it.gridStart.shift(),
+                gridEnd = it.gridEnd.shift(),
+                labelRect = it.labelRect.shift(),
+            )
+        }
+        val shiftedAxisTitles = layout.axisTitles.map { it.copy(rect = it.rect.shift()) }
+        val shiftedBars = layout.bars.map {
+            it.copy(
+                rect = it.rect.shift(),
+                dataLabelRect = it.dataLabelRect?.shift(),
+            )
+        }
+        val shiftedLines = layout.lines.map { ls ->
+            ls.copy(
+                points = ls.points.map { pt ->
+                    pt.copy(
+                        position = pt.position.shift(),
+                        labelRect = pt.labelRect?.shift(),
+                    )
+                },
+            )
+        }
+        val shiftedLegend = layout.legendItems.map {
+            it.copy(
+                markerRect = it.markerRect.shift(),
+                labelRect = it.labelRect.shift(),
+            )
+        }
+
+        val maxRight = (allRects.maxOfOrNull { it.right } ?: 0f) + dx
+        val maxBottom = (allRects.maxOfOrNull { it.bottom } ?: 0f) + dy
+        val finalW = maxOf(baseChartW, layout.width + dx, maxRight + outerPad)
+        val finalH = maxOf(baseChartH, layout.height + dy, maxBottom + outerPad)
+
+        return layout.copy(
+            width = finalW,
+            height = finalH,
+            titleRect = shiftedTitle,
+            plotRect = shiftedPlot,
+            xAxisLineStart = layout.xAxisLineStart.shift(),
+            xAxisLineEnd = layout.xAxisLineEnd.shift(),
+            yAxisLineStart = layout.yAxisLineStart.shift(),
+            yAxisLineEnd = layout.yAxisLineEnd.shift(),
+            xTicks = shiftedXTicks,
+            yTicks = shiftedYTicks,
+            axisTitles = shiftedAxisTitles,
+            bars = shiftedBars,
+            lines = shiftedLines,
+            legendItems = shiftedLegend,
         )
     }
 

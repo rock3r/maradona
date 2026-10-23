@@ -225,5 +225,20 @@ class XyChartLayoutTest {
             val nextLeft = byPoint.getValue(pIdx + 1).minOf { it.rect.x }
             assertTrue(curRight <= nextLeft + 0.01f, "Cluster $pIdx ($curRight) overlapped cluster ${pIdx + 1} ($nextLeft)")
         }
+        // Horizontal chart with wide first Y-tick label and short X categories keeps all tick labels inside [0, width].
+        val horizWideLeftTick = XyChartLayout.layout(
+            XyChartParser.parse(
+                """
+                xychart horizontal
+                  x-axis [A, B]
+                  y-axis -0.000100000004 --> -0.0001
+                  line [-0.000100000004, -0.0001]
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(
+            horizWideLeftTick.yTicks.all { it.labelRect.x >= 0f && it.labelRect.right <= horizWideLeftTick.width + 0.01f },
+            "Horizontal Y-axis first and last tick labels must lie within [0, width]",
+        )
     }
 }
