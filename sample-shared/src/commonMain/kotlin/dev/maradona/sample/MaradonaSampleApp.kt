@@ -169,6 +169,21 @@ private val examples = linkedMapOf(
               Android
               iOS
     """.trimIndent(),
+    "Gantt" to """
+        gantt
+          title Maradona Release Roadmap
+          dateFormat YYYY-MM-DD
+          excludes weekends
+          section Core Engine
+            Flowchart & DagrePort     :done,    fc,  2026-10-01, 5d
+            Sequence & Class Layouts  :done,    sc,  after fc, 4d
+          section Extended Families
+            State & ER Diagrams       :active,  se,  after sc, 4d
+            Mindmap & Gantt           :crit, active, mg, after se, 3d
+          section Delivery
+            Oracle Visual Parity      :         ov,  after mg, 2d
+            v0.7 Release              :milestone, m1, after ov, 0d
+    """.trimIndent(),
 )
 
 private class SampleState(

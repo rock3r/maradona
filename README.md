@@ -8,10 +8,10 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.6 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.7 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
-diagrams (`erDiagram`), and mindmaps (`mindmap`).
+diagrams (`erDiagram`), mindmaps (`mindmap`), and Gantt charts (`gantt`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -97,6 +97,17 @@ Supported in mindmaps (`mindmap`):
 - Multi-line markdown labels (`` ["`**Bold** and *italic*`"] ``), `::icon(...)` and
   `:::class1 class2` decorators, and `classDef` / `class` / `style`
 
+Supported in Gantt charts (`gantt`):
+
+- Headers and directives: `gantt`, YAML frontmatter (`title`, `displayMode: compact`,
+  `topAxis`), `title`, `accTitle` / `accDescr`, `dateFormat` (`YYYY-MM-DD`, `HH:mm`,
+  `YYYY`, `X`, `x`), `axisFormat`, `tickInterval`, `weekday`, `weekend` (`saturday` /
+  `friday`), `excludes` (`weekends`, weekday names, `YYYY-MM-DD` dates),
+  `inclusiveEndDates`, and `topAxis`
+- Sections (`section Name`), task tags (`done`, `active`, `crit`, `milestone`, `vert`),
+  explicit and auto-generated task IDs, dependencies (`after id1 id2`, `until id1 id2`
+  including forward references), and `displayMode: compact` row packing
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -178,7 +189,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, and mindmaps only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, and Gantt charts only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
