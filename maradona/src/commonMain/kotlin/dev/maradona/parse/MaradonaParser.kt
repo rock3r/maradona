@@ -10,6 +10,7 @@ import dev.maradona.model.KanbanDiagram
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.QuadrantDiagram
+import dev.maradona.model.RequirementDiagram
 import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
@@ -33,6 +34,7 @@ sealed interface MaradonaDiagramModel {
     data class XyChartModel(val diagram: XyChartDiagram) : MaradonaDiagramModel
     data class KanbanModel(val diagram: KanbanDiagram) : MaradonaDiagramModel
     data class SankeyModel(val diagram: SankeyDiagram) : MaradonaDiagramModel
+    data class RequirementModel(val diagram: RequirementDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -40,7 +42,8 @@ sealed interface MaradonaDiagramModel {
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
- * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], or [SankeyParser].
+ * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser], or
+ * [RequirementParser].
  */
 object MaradonaParser {
 
@@ -77,6 +80,8 @@ object MaradonaParser {
             header == "sankey" || header.startsWith("sankey ") || header.startsWith("sankey\t") ||
                 header == "sankey-beta" || header.startsWith("sankey-beta ") || header.startsWith("sankey-beta\t") ->
                 MaradonaDiagramModel.SankeyModel(SankeyParser.parse(source))
+            header == "requirementdiagram" || header.startsWith("requirementdiagram ") || header.startsWith("requirementdiagram\t") ->
+                MaradonaDiagramModel.RequirementModel(RequirementParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

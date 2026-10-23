@@ -292,6 +292,27 @@ private val examples = linkedMapOf(
           Electricity grid,"Heating & cooling, homes",180
           Electricity grid,Losses,80
     """.trimIndent(),
+    "Requirement" to """
+        requirementDiagram
+          requirement checkout_req {
+            id: 1
+            text: Orders must be payable online.
+            risk: high
+            verifymethod: test
+          }
+          functionalRequirement payment_req {
+            id: 1.1
+            text: Card payments must be authorized.
+            risk: medium
+            verifymethod: demonstration
+          }
+          element checkout_service {
+            type: service
+            docRef: src/checkout
+          }
+          checkout_req - contains -> payment_req
+          checkout_service - satisfies -> payment_req
+    """.trimIndent(),
 )
 
 private class SampleState(

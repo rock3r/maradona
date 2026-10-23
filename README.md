@@ -8,14 +8,14 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.15 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.16 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
 pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
 user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
-(`xychart` / `xychart-beta`), Kanban boards (`kanban`), and Sankey diagrams
-(`sankey` / `sankey-beta`).
+(`xychart` / `xychart-beta`), Kanban boards (`kanban`), Sankey diagrams
+(`sankey` / `sankey-beta`), and requirement diagrams (`requirementDiagram`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -184,6 +184,19 @@ Supported in Sankey diagrams (`sankey` / `sankey-beta`):
 - RFC-4180 CSV flow records (`source,target,value`) with quoted fields and escaped
   `""` quotes, proportional node bars, and horizontal cubic-Bezier flow ribbons
 
+Supported in requirement diagrams (`requirementDiagram`):
+
+- Headers, directions, and directives: `requirementDiagram`, `direction TB|TD|BT|LR|RL`,
+  YAML frontmatter and `%%{init}%%` configuration (`title`), `title`, and `accTitle` / `accDescr`
+- Requirement blocks (`requirement`, `functionalRequirement`, `interfaceRequirement`,
+  `performanceRequirement`, `physicalRequirement`, `designConstraint`) with `id`,
+  `text`, `risk` (`low`, `medium`, `high`), and `verifymethod` (`analysis`,
+  `demonstration`, `inspection`, `test`)
+- Element blocks (`element`) with `type` and `docRef`
+- Relationships (`<src> - <rel> -> <dst>` and `<dst> <- <rel> - <src>`) for
+  `contains` (`⊕` marker), `copies`, `derives`, `satisfies`, `verifies`,
+  `refines`, and `traces`, plus `classDef`, `class`, `:::className`, and `style`
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -265,7 +278,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, and Sankey diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, and requirement diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
