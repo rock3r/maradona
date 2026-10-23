@@ -76,13 +76,16 @@ class SankeyParserTest {
         assertEquals("North America", multilineAndInit.nodes[2].id)
         assertEquals("#ff0000", multilineAndInit.nodeColors["North America"])
 
-        // A 3-field CSV record starting with `accDescr {` is parsed as a flow record, not swallowed as an accDescr block.
+        // A 3-field CSV record starting with `accDescr {` is parsed as a flow record, not swallowed as an accDescr block,
+        // and a title with an unmatched literal quote (`6"`) does not corrupt CSV quote merging.
         val csvStartingWithAcc = SankeyParser.parse(
             """
             sankey
+              title Flow through 6" pipes
               accDescr {sector},Sink,10
             """.trimIndent(),
         )
+        assertEquals("Flow through 6\" pipes", csvStartingWithAcc.title)
         assertEquals(2, csvStartingWithAcc.nodes.size)
         assertEquals("accDescr {sector}", csvStartingWithAcc.links.single().source)
     }

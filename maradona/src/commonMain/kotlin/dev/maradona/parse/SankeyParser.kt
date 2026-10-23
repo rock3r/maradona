@@ -236,19 +236,19 @@ object SankeyParser {
                 headerSeen = true
             }
 
-            val accTitleMatch = Regex("""^accTitle\s*:\s*(.*)$""", RegexOption.IGNORE_CASE).find(clean)
-            if (accTitleMatch != null && !isThreeFieldNumericCsvRecord(clean)) {
-                accTitle = normalizeText(accTitleMatch.groupValues[1].trim())
+            val accTitleMatch = Regex("""^accTitle\s*:\s*(.*)$""", RegexOption.IGNORE_CASE).find(rawTrimmed)
+            if (accTitleMatch != null && !isThreeFieldNumericCsvRecord(cleanForCheck)) {
+                accTitle = normalizeText(accTitleMatch.groupValues[1].substringBefore("%%").trim())
                 continue
             }
-            val accDescrMatch = Regex("""^accDescr\s*:\s*(.*)$""", RegexOption.IGNORE_CASE).find(clean)
-            if (accDescrMatch != null && !isThreeFieldNumericCsvRecord(clean)) {
-                accDescr = normalizeText(accDescrMatch.groupValues[1].trim())
+            val accDescrMatch = Regex("""^accDescr\s*:\s*(.*)$""", RegexOption.IGNORE_CASE).find(rawTrimmed)
+            if (accDescrMatch != null && !isThreeFieldNumericCsvRecord(cleanForCheck)) {
+                accDescr = normalizeText(accDescrMatch.groupValues[1].substringBefore("%%").trim())
                 continue
             }
-            val titleMatch = Regex("""^title(?:\s+|:)(.*)$""", RegexOption.IGNORE_CASE).find(clean)
-            if (titleMatch != null && !isThreeFieldNumericCsvRecord(clean)) {
-                val after = titleMatch.groupValues[1].trim()
+            val titleMatch = Regex("""^title(?:\s+|:)(.*)$""", RegexOption.IGNORE_CASE).find(rawTrimmed)
+            if (titleMatch != null && !isThreeFieldNumericCsvRecord(cleanForCheck)) {
+                val after = titleMatch.groupValues[1].substringBefore("%%").trim()
                 if (after.isNotEmpty()) chartTitle = normalizeText(after)
                 continue
             }
@@ -425,6 +425,13 @@ object SankeyParser {
                 ) {
                     out += rawLine
                     if (!trimmed.contains('}')) inAccBlock = true
+                    continue
+                }
+                if (
+                    Regex("""^(?:title(?:\s+|:)|accTitle\s*:|accDescr\s*:)""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) &&
+                    !isThreeFieldNumericCsvRecord(stripLineCommentOutsideQuotes(rawLine).trim())
+                ) {
+                    out += rawLine
                     continue
                 }
             }
