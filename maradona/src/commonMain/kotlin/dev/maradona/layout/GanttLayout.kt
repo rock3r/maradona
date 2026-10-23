@@ -511,7 +511,14 @@ object GanttLayout {
 
         val candidates = mutableListOf<Long>()
         val isCal = GanttParser.isCalendarDateFormat(diagram.dateFormat)
-        if (isCal && stepMs == 7L * GanttParser.DAY_MS) {
+        val rawTickSpec = diagram.tickInterval?.trim().orEmpty()
+        val isExplicitWeekInterval = rawTickSpec.isNotEmpty() &&
+            Regex("""^\d+(?:\.\d+)?\s*(w|wk|wks|week|weeks)$""", RegexOption.IGNORE_CASE).matches(rawTickSpec)
+        val isExplicitMonthInterval = rawTickSpec.isNotEmpty() && (
+            Regex("""^\d+(?:\.\d+)?\s*M$""").matches(rawTickSpec) ||
+                Regex("""^\d+(?:\.\d+)?\s*(mon|month|months)$""", RegexOption.IGNORE_CASE).matches(rawTickSpec)
+            )
+        if (isCal && (isExplicitWeekInterval || (rawTickSpec.isEmpty() && stepMs == 7L * GanttParser.DAY_MS))) {
             val targetDow = diagram.weekday?.let { GanttParser.WEEKDAY_NUMBERS[it.lowercase()] }
                 ?: GanttParser.dayOfWeek(allStartMs.floorDiv(GanttParser.DAY_MS))
             var day = allStartMs.floorDiv(GanttParser.DAY_MS)
@@ -523,10 +530,10 @@ object GanttLayout {
             var guard = 0
             while (cur <= allEndMs && guard < 32) {
                 candidates += cur
-                cur += 7L * GanttParser.DAY_MS
+                cur += stepMs
                 guard++
             }
-        } else if (isCal && stepMs in (28L * GanttParser.DAY_MS)..(35L * GanttParser.DAY_MS)) {
+        } else if (isCal && (isExplicitMonthInterval || (rawTickSpec.isEmpty() && stepMs == 30L * GanttParser.DAY_MS))) {
             val (startY, startM, startD) = GanttParser.civilFromDays(allStartMs.floorDiv(GanttParser.DAY_MS))
             if (startD > 5) candidates += allStartMs
             var y = startY

@@ -160,5 +160,17 @@ class GanttLayoutTest {
         val t1Pos = assertNotNull(tallLayout.task("t1"))
         val t2Pos = assertNotNull(tallLayout.task("t2"))
         assertTrue(t1Pos.labelRect.bottom < t2Pos.labelRect.y, "Tall task labels on adjacent rows must not overlap vertically")
+
+        // `tickInterval 4weeks` starting 2024-01-01 must step by 28 days (2024-01-29), not calendar 1st-of-month.
+        val fourWeekDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD
+                tickInterval 4weeks
+                A :a, 2024-01-01, 60d
+            """.trimIndent(),
+        )
+        val fourWeekLabels = GanttLayout.candidateTicks(fourWeekDiagram).map { it.second }
+        assertTrue("2024-01-29" in fourWeekLabels, "Expected 28-day tick 2024-01-29 in $fourWeekLabels")
     }
 }

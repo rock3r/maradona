@@ -181,5 +181,20 @@ class GanttParserTest {
         )
         assertIs<MaradonaDiagramModel.GanttModel>(withQuoteInPlainYaml)
         assertEquals("6\" screen rollout", withQuoteInPlainYaml.diagram.title)
+
+        // Unnamed task before explicit `task1` must not steal `task1` from the explicit declaration.
+        val explicitIdPreserved = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD
+                A :2024-01-01, 1d
+                B :task1, 2024-01-10, 2d
+                C :c, after task1, 1d
+            """.trimIndent(),
+        )
+        assertEquals(
+            GanttParser.daysFromCivil(2024, 1, 12) * GanttParser.DAY_MS,
+            assertNotNull(explicitIdPreserved.task("c")).startMs,
+        )
     }
 }

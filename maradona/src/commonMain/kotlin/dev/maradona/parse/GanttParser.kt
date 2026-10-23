@@ -60,6 +60,18 @@ object GanttParser {
     private val SHORT_WEEKDAYS = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     private val FULL_WEEKDAYS = arrayOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
 
+    private data class PendingTaskSpec(
+        val explicitId: String?,
+        val label: String,
+        val section: String?,
+        val status: GanttTaskStatus,
+        val isCritical: Boolean,
+        val isMilestone: Boolean,
+        val isVerticalMarker: Boolean,
+        val startSpec: String?,
+        val endSpec: String?,
+    )
+
     private data class RawTaskSpec(
         val id: String,
         val label: String,
@@ -142,19 +154,7 @@ object GanttParser {
 
         val sections = mutableListOf<String>()
         var currentSection: String? = null
-        val rawTasks = mutableListOf<RawTaskSpec>()
-        val usedIds = HashSet<String>()
-        var autoCounter = 0
-
-        fun allocateId(explicit: String?): String {
-            val base = explicit?.trim()?.takeIf { it.isNotEmpty() } ?: "task${++autoCounter}"
-            if (usedIds.add(base)) return base
-            var suffix = 2
-            while (!usedIds.add("${base}_$suffix")) {
-                suffix++
-            }
-            return "${base}_$suffix"
-        }
+        val pendingTasks = mutableListOf<PendingTaskSpec>()
 
         for (rawLine in bodyLines) {
             val clean = stripLineComment(rawLine).trim()
@@ -310,10 +310,8 @@ object GanttParser {
                     }
                 }
 
-                val id = allocateId(explicitId)
-                val prevId = rawTasks.lastOrNull { !it.isVerticalMarker }?.id
-                rawTasks += RawTaskSpec(
-                    id = id,
+                pendingTasks += PendingTaskSpec(
+                    explicitId = explicitId?.trim()?.takeIf { it.isNotEmpty() },
                     label = label,
                     section = currentSection,
                     status = status,
@@ -322,8 +320,56 @@ object GanttParser {
                     isVerticalMarker = isVerticalMarker,
                     startSpec = startSpec,
                     endSpec = endSpec,
-                    prevTaskId = prevId,
                 )
+            }
+        }
+
+        // First reserve all explicit IDs so auto-generated `taskN` IDs never collide with a later explicit `task1`.
+        val usedIds = HashSet<String>()
+        var autoCounter = 0
+        val allocatedIds = ArrayList<String>(pendingTasks.size)
+        for (pt in pendingTasks) {
+            val exp = pt.explicitId
+            if (exp != null) {
+                if (usedIds.add(exp)) {
+                    allocatedIds += exp
+                } else {
+                    var suffix = 2
+                    while (!usedIds.add("${exp}_$suffix")) suffix++
+                    allocatedIds += "${exp}_$suffix"
+                }
+            } else {
+                allocatedIds += ""
+            }
+        }
+        for (i in pendingTasks.indices) {
+            if (allocatedIds[i].isEmpty()) {
+                var candidate: String
+                do {
+                    candidate = "task${++autoCounter}"
+                } while (!usedIds.add(candidate))
+                allocatedIds[i] = candidate
+            }
+        }
+
+        val rawTasks = ArrayList<RawTaskSpec>(pendingTasks.size)
+        var lastRegularTaskId: String? = null
+        for ((i, pt) in pendingTasks.withIndex()) {
+            val id = allocatedIds[i]
+            rawTasks += RawTaskSpec(
+                id = id,
+                label = pt.label,
+                section = pt.section,
+                status = pt.status,
+                isCritical = pt.isCritical,
+                isMilestone = pt.isMilestone,
+                isVerticalMarker = pt.isVerticalMarker,
+                startSpec = pt.startSpec,
+                endSpec = pt.endSpec,
+                prevTaskId = lastRegularTaskId,
+            )
+            if (!pt.isVerticalMarker) {
+                lastRegularTaskId = id
             }
         }
 
