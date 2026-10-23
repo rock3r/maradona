@@ -9,6 +9,7 @@ import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
+import dev.maradona.model.TimelineDiagram
 
 /** Parsed representation of any Mermaid diagram type supported by Maradona. */
 sealed interface MaradonaDiagramModel {
@@ -21,13 +22,14 @@ sealed interface MaradonaDiagramModel {
     data class GanttModel(val diagram: GanttDiagram) : MaradonaDiagramModel
     data class PieModel(val diagram: PieDiagram) : MaradonaDiagramModel
     data class GitGraphModel(val diagram: GitGraphDiagram) : MaradonaDiagramModel
+    data class TimelineModel(val diagram: TimelineDiagram) : MaradonaDiagramModel
 }
 
 /**
  * Top-level Mermaid parser that detects the diagram type from the header line
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
- * [ErParser], [MindmapParser], [GanttParser], [PieParser], or [GitGraphParser].
+ * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], or [TimelineParser].
  */
 object MaradonaParser {
 
@@ -50,6 +52,8 @@ object MaradonaParser {
                 MaradonaDiagramModel.PieModel(PieParser.parse(source))
             header.startsWith("gitgraph") ->
                 MaradonaDiagramModel.GitGraphModel(GitGraphParser.parse(source))
+            header == "timeline" || header.startsWith("timeline ") || header.startsWith("timeline\t") || header.startsWith("timeline:") ->
+                MaradonaDiagramModel.TimelineModel(TimelineParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

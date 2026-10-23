@@ -45,6 +45,7 @@ import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
+import dev.maradona.layout.TimelineDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
@@ -119,6 +120,8 @@ fun MaradonaDiagram(
     onPieLayout: (PieDiagramLayout) -> Unit = {},
     /** Reports the computed GitGraph diagram layout (see [MaradonaGitGraphLayout.onLayout]). */
     onGitGraphLayout: (GitGraphDiagramLayout) -> Unit = {},
+    /** Reports the computed Timeline diagram layout (see [MaradonaTimelineLayout.onLayout]). */
+    onTimelineLayout: (TimelineDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -400,6 +403,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onGitGraphLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.TimelineModel ->
+                            MaradonaTimelineLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onTimelineLayout,
                                 modifier = contentModifier,
                             )
                     }

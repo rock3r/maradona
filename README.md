@@ -8,11 +8,11 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.9 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.10 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
-pie charts (`pie`), and Git graphs (`gitGraph`).
+pie charts (`pie`), Git graphs (`gitGraph`), and timelines (`timeline`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -127,6 +127,14 @@ Supported in Git graphs (`gitGraph`):
   `branch <name> [order: <int>]`, `checkout` / `switch`, `merge` (`id:`, `tag:`, `type:`),
   and `cherry-pick` (`id:`, `parent:`, `tag:`, `type:`)
 
+Supported in timelines (`timeline`):
+
+- Headers and directives: `timeline` (`LR`, `TD`/`TB`), YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `disableMulticolor`), `title`, and
+  `accTitle` / `accDescr`
+- Sections (`section <title>`), periods and events (`period : event1 : event2`),
+  continuation lines (`: event3`), and `<br>` / `<b>` / `<i>` label markup
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -208,7 +216,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, and Git graphs only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, and timelines only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
