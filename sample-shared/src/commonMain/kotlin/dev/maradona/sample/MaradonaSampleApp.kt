@@ -268,6 +268,21 @@ private val examples = linkedMapOf(
           bar "Actual" [52, 68, 74, 91, 86, 108]
           line "Target" [50, 60, 75, 85, 95 "Q2 Goal", 110]
     """.trimIndent(),
+    "Kanban" to """
+        ---
+        config:
+          kanban:
+            ticketBaseUrl: 'https://mermaidchart.atlassian.net/browse/#TICKET#'
+        ---
+        kanban
+          todo[Todo]
+            [Write Kanban parser]@{ ticket: MRD-14, assigned: 'rock3r', priority: 'High' }
+            docs[Update README examples]@{ priority: 'Low' }
+          inprog[In Progress]
+            layout[Implement Kanban column & card layout]@{ ticket: MRD-15, assigned: 'rock3r', priority: 'Very High' }
+          done[Done]
+            xy[Ship XY chart support]@{ ticket: MRD-13, assigned: 'rock3r' }
+    """.trimIndent(),
 )
 
 private class SampleState(

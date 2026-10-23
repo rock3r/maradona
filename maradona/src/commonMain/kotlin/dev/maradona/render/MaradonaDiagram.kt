@@ -41,6 +41,7 @@ import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
 import dev.maradona.layout.GitGraphDiagramLayout
 import dev.maradona.layout.JourneyDiagramLayout
+import dev.maradona.layout.KanbanDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
@@ -131,6 +132,8 @@ fun MaradonaDiagram(
     onQuadrantLayout: (QuadrantDiagramLayout) -> Unit = {},
     /** Reports the computed XY chart layout (see [MaradonaXyChartLayout.onLayout]). */
     onXyChartLayout: (XyChartDiagramLayout) -> Unit = {},
+    /** Reports the computed Kanban diagram layout (see [MaradonaKanbanLayout.onLayout]). */
+    onKanbanLayout: (KanbanDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -444,6 +447,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onXyChartLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.KanbanModel ->
+                            MaradonaKanbanLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onKanbanLayout,
                                 modifier = contentModifier,
                             )
                     }

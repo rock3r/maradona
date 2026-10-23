@@ -643,4 +643,44 @@ class RenderScreenshotTest {
         assertTrue(barBluePixels > 3_000, "XY chart bar fill #205EA6 not rendered ($barBluePixels px)")
         assertTrue(lineOrangePixels > 150, "XY chart line stroke #DA702C not rendered ($lineOrangePixels px)")
     }
+
+    @Test
+    fun kanbanDiagram() {
+        val png = renderToPng(
+            "kanban",
+            """
+            ---
+            config:
+              kanban:
+                ticketBaseUrl: 'https://mermaidchart.atlassian.net/browse/#TICKET#'
+            ---
+            kanban
+              todo[Todo]
+                [Write Kanban parser]@{ ticket: MRD-14, assigned: 'rock3r', priority: 'High' }
+                docs[Update README examples]@{ priority: 'Low' }
+              inprog[In Progress]
+                layout[Implement Kanban column & card layout]@{ ticket: MRD-15, assigned: 'rock3r', priority: 'Very High' }
+              done[Done]
+                xy[Ship XY chart support]@{ ticket: MRD-13, assigned: 'rock3r' }
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 860,
+            height = 420,
+        )
+        val img = ImageIO.read(png)
+        var colBlueTintPixels = 0
+        var priorityRedPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0xEA) <= 3 && abs(g - 0xF2) <= 3 && abs(b - 0xFA) <= 3) colBlueTintPixels++
+                if (abs(r - 0xD1) <= 4 && abs(g - 0x4D) <= 4 && abs(b - 0x41) <= 4) priorityRedPixels++
+            }
+        }
+        assertTrue(colBlueTintPixels > 2_000, "Kanban column fill #EAF2FA not rendered ($colBlueTintPixels px)")
+        assertTrue(priorityRedPixels > 40, "Kanban Very High priority stripe #D14D41 not rendered ($priorityRedPixels px)")
+    }
 }
