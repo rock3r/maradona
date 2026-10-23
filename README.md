@@ -8,11 +8,11 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.8 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.9 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
-diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`), and
-pie charts (`pie`).
+diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
+pie charts (`pie`), and Git graphs (`gitGraph`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -117,6 +117,16 @@ Supported in pie charts (`pie`):
 - Slice entries (`"Label" : value`) with percentage labels, optional donut hole,
   highlighted exploded slices, and legend with optional `[value]` display
 
+Supported in Git graphs (`gitGraph`):
+
+- Headers and directives: `gitGraph` (`LR`, `TB`, `BT`), YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `showBranches`, `showCommitLabel`,
+  `rotateCommitLabel`, `parallelCommits`, `mainBranchName`, `mainBranchOrder`),
+  `title`, and `accTitle` / `accDescr`
+- Statements: `commit` (`id:`, `tag:`, `type: NORMAL | REVERSE | HIGHLIGHT`),
+  `branch <name> [order: <int>]`, `checkout` / `switch`, `merge` (`id:`, `tag:`, `type:`),
+  and `cherry-pick` (`id:`, `parent:`, `tag:`, `type:`)
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -198,7 +208,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, and pie charts only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, and Git graphs only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

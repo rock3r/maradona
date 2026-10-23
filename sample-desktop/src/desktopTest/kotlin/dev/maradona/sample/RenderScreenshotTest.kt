@@ -460,4 +460,45 @@ class RenderScreenshotTest {
         }
         assertTrue(cobaltSlicePixels > 2_000, "Primary pie slice rgb(136, 179, 216) not rendered ($cobaltSlicePixels px)")
     }
+
+    @Test
+    fun gitGraphDiagram() {
+        val png = renderToPng(
+            "gitgraph",
+            """
+            ---
+            title: Maradona Branch & Release History
+            ---
+            gitGraph
+                commit id: "init" tag: "v0.1"
+                branch develop
+                commit id: "dagre-port"
+                branch feature
+                commit id: "splines" type: HIGHLIGHT
+                checkout develop
+                merge feature id: "merge-feat"
+                checkout main
+                commit id: "hotfix" type: REVERSE
+                merge develop id: "release" tag: "v0.9"
+                branch release
+                cherry-pick id: "splines"
+                commit id: "ship"
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1150,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var tagBadgePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 249) <= 3 && abs(g - 240) <= 3 && abs(b - 210) <= 3) tagBadgePixels++
+            }
+        }
+        assertTrue(tagBadgePixels > 300, "GitGraph tag badge rgb(249, 240, 210) not rendered ($tagBadgePixels px)")
+    }
 }

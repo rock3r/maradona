@@ -199,6 +199,25 @@ private val examples = linkedMapOf(
           "State & Gantt" : 10
           "Mindmap & Pie" : 6
     """.trimIndent(),
+    "GitGraph" to """
+        ---
+        title: Maradona Branch History
+        ---
+        gitGraph
+          commit id: "init" tag: "v0.1"
+          branch develop
+          commit id: "dagre-port"
+          branch feature
+          commit id: "splines" type: HIGHLIGHT
+          checkout develop
+          merge feature id: "merge-feat"
+          checkout main
+          commit id: "hotfix" type: REVERSE
+          merge develop id: "release" tag: "v0.9"
+          branch release
+          cherry-pick id: "splines"
+          commit id: "ship"
+    """.trimIndent(),
 )
 
 private class SampleState(
