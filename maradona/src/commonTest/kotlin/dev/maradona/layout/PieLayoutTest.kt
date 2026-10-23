@@ -81,6 +81,7 @@ class PieLayoutTest {
         assertEquals("3000000000", PieLayout.formatSliceValue(3_000_000_000.0))
         assertEquals("30000000.5", PieLayout.formatSliceValue(30_000_000.5))
         assertEquals("0.001", PieLayout.formatSliceValue(0.001))
+        assertEquals("0.0000014", PieLayout.formatSliceValue(0.0000014))
 
         val hugeDiagram = PieParser.parse(
             """

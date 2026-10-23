@@ -288,21 +288,43 @@ object PieLayout {
 
     internal fun formatSliceValue(value: Double): String {
         if (value == 0.0) return "0"
-        val absVal = abs(value)
-        if (absVal in 1e-6..9e15) {
-            val sign = if (value < 0.0) "-" else ""
-            val intPart = absVal.toLong()
-            val fracScaled = ((absVal - intPart.toDouble()) * 1_000_000.0).roundToInt()
-            return when {
-                fracScaled <= 0 -> "$sign$intPart"
-                fracScaled >= 1_000_000 -> "$sign${intPart + 1L}"
-                else -> {
-                    val fracStr = fracScaled.toString().padStart(6, '0').trimEnd('0')
-                    "$sign$intPart.$fracStr"
+        val raw = value.toString()
+        val sign = if (raw.startsWith("-")) "-" else ""
+        val unsigned = raw.removePrefix("-").removePrefix("+")
+        val eIdx = unsigned.indexOfFirst { it == 'e' || it == 'E' }
+        val mantissa = if (eIdx >= 0) unsigned.substring(0, eIdx) else unsigned
+        val exp = if (eIdx >= 0) unsigned.substring(eIdx + 1).toIntOrNull() ?: 0 else 0
+
+        val dotIdx = mantissa.indexOf('.')
+        val intDigits = if (dotIdx >= 0) mantissa.substring(0, dotIdx) else mantissa
+        val fracDigits = (if (dotIdx >= 0) mantissa.substring(dotIdx + 1) else "").trimEnd('0')
+
+        return when {
+            exp == 0 -> if (fracDigits.isEmpty()) "$sign$intDigits" else "$sign$intDigits.$fracDigits"
+            exp in 1..15 -> {
+                if (exp >= fracDigits.length) {
+                    "$sign$intDigits$fracDigits${"0".repeat(exp - fracDigits.length)}"
+                } else {
+                    val left = intDigits + fracDigits.substring(0, exp)
+                    val right = fracDigits.substring(exp).trimEnd('0')
+                    if (right.isEmpty()) "$sign$left" else "$sign$left.$right"
                 }
             }
+            exp in -12..-1 -> {
+                val shift = -exp
+                val allDigits = (intDigits + fracDigits).trimEnd('0')
+                if (shift >= intDigits.length) {
+                    val leadingZeros = "0".repeat(shift - intDigits.length)
+                    "$sign" + "0.$leadingZeros$allDigits"
+                } else {
+                    val splitAt = intDigits.length - shift
+                    val left = allDigits.substring(0, splitAt)
+                    val right = allDigits.substring(splitAt).trimEnd('0')
+                    if (right.isEmpty()) "$sign$left" else "$sign$left.$right"
+                }
+            }
+            else -> raw
         }
-        return value.toString()
     }
 
     internal fun formatPercentage(pct: Double): String {
