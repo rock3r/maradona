@@ -267,12 +267,18 @@ object XyChartLayout {
             0f
         }
 
+        val linePointLabelSizes = diagram.plots
+            .filter { it.type == XyPlotType.Line }
+            .flatMap { s -> s.points.mapNotNull { pt -> pt.label?.takeIf { it.isNotBlank() }?.let(pointLabelSize) } }
+        val maxLinePointLabelW = linePointLabelSizes.maxOfOrNull { it.width } ?: 0f
+
         val plotX = outerPad + leftAxisBandW
         val plotY = if (isHorizontal) contentTopY + horizAxisBandH else contentTopY
         val minPlotW = maxOf(
             220f * d,
             horizTitleSz?.width ?: 0f,
             maxOutsideBarLabelW + 16f * d,
+            maxLinePointLabelW + 16f * d,
             if (!isHorizontal) {
                 max(
                     xTickLabels.size * (maxHorizTickW + 10f * d),
@@ -717,18 +723,27 @@ object XyChartLayout {
             xTicks.maxOfOrNull { it.labelRect.bottom } ?: 0f,
             yTicks.maxOfOrNull { it.labelRect.bottom } ?: 0f,
         )
+        val maxAxisTitleRight = axisTitles.maxOfOrNull { it.rect.right } ?: 0f
+        val maxAxisTitleBottom = axisTitles.maxOfOrNull { it.rect.bottom } ?: 0f
         val maxDataLabelRight = bars.mapNotNull { it.dataLabelRect }.maxOfOrNull { it.right } ?: 0f
         val maxDataLabelBottom = bars.mapNotNull { it.dataLabelRect }.maxOfOrNull { it.bottom } ?: 0f
+        val lineLabelRects = lines.flatMap { ls -> ls.points.mapNotNull { it.labelRect } }
+        val maxLineLabelRight = lineLabelRects.maxOfOrNull { it.right } ?: 0f
+        val maxLineLabelBottom = lineLabelRects.maxOfOrNull { it.bottom } ?: 0f
         val totalW = maxOf(
             plotRect.right + legendWidth + outerPad,
             (resolvedTitleSize?.width ?: 0f) + outerPad * 2f,
             maxTickRight + outerPad,
+            maxAxisTitleRight + outerPad,
             maxDataLabelRight + outerPad,
+            maxLineLabelRight + outerPad,
         )
         val bottomExtent = maxOf(
             legendBottom + outerPad,
             maxTickBottom + outerPad,
+            maxAxisTitleBottom + outerPad,
             maxDataLabelBottom + outerPad,
+            maxLineLabelBottom + outerPad,
             if (isHorizontal) {
                 plotRect.bottom + outerPad
             } else {

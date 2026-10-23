@@ -191,7 +191,7 @@ class XyChartLayoutTest {
         assertTrue(assertNotNull(hNegBar.dataLabelRect).right <= hNegBar.rect.x, "Negative horizontal outside label must sit left of bar")
         assertTrue(assertNotNull(hPosBar.dataLabelRect).x >= hPosBar.rect.right, "Positive horizontal outside label must sit right of bar")
 
-        // Vertical chart with a 60-char bar label on the first bar keeps the label inside [0, width].
+        // Vertical chart with a 60-char bar label on the first bar and a 120-char line point label keeps all labels inside [0, width].
         val vertWideFirstLabel = XyChartLayout.layout(
             XyChartParser.parse(
                 """
@@ -199,11 +199,14 @@ class XyChartLayoutTest {
                   x-axis [A, B]
                   y-axis 0 --> 100
                   bar [50 "First_Bar_Explicit_Label_With_Sixty_Characters_For_Bounds_Check", 80]
+                  line [50 "${"L".repeat(120)}", 80]
                 """.trimIndent(),
             ),
         )
         val firstLbl = assertNotNull(vertWideFirstLabel.bars.first().dataLabelRect)
         assertTrue(firstLbl.x >= 0f && firstLbl.right <= vertWideFirstLabel.width + 0.01f, "First bar wide label must fit within [0, width]")
+        val firstLineLbl = assertNotNull(vertWideFirstLabel.lines.first().points.first().labelRect)
+        assertTrue(firstLineLbl.x >= 0f && firstLineLbl.right <= vertWideFirstLabel.width + 0.01f, "120-char line point label must fit within [0, width]")
 
         // Numeric X-axis with 20 points and 10 grouped bar series keeps all bars ordered without overlap.
         val multiSeriesSrc = buildString {
