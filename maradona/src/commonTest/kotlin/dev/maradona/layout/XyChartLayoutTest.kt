@@ -130,5 +130,29 @@ class XyChartLayoutTest {
         assertTrue(pts.last().position.y < pts.first().position.y - 50f, "Small nonzero Y domain should span plot height")
         assertTrue(smallLayout.yTicks.map { it.label }.distinct().size >= 3, "Fractional Y ticks < 0.01 must format distinctly")
         assertEquals("1.0E20", XyChartLayout.formatNumber(1e20))
+
+        // Nonpositive bar domain (-100 --> 0) anchors bars at the zero-side boundary (0) and narrow offset domain preserves tick precision.
+        val nonPositive = XyChartParser.parse(
+            """
+            xychart-beta
+              x-axis [A, B]
+              y-axis 1000.001 --> 1000.005
+              line [1000.001, 1000.005]
+            """.trimIndent(),
+        )
+        val npLayout = XyChartLayout.layout(nonPositive)
+        assertTrue(npLayout.yTicks.map { it.label }.distinct().size >= 4, "Narrow domain around 1000 must preserve fractional tick digits")
+
+        val negBars = XyChartLayout.layout(
+            XyChartParser.parse(
+                """
+                xychart-beta
+                  x-axis [A, B]
+                  y-axis -100 --> 0
+                  bar [-80, -40]
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(negBars.bars[0].rect.height > negBars.bars[1].rect.height, "-80 bar should be taller than -40 bar when anchored at 0")
     }
 }

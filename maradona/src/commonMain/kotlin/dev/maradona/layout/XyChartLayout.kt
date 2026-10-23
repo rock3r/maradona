@@ -468,11 +468,7 @@ object XyChartLayout {
 
         val yLo = min(yMin, yMax)
         val yHi = max(yMin, yMax)
-        val barBaseCoord = if (yLo < 0.0 && yHi > 0.0) {
-            yCoordForValue(0.0)
-        } else {
-            yCoordForValue(yMin)
-        }
+        val barBaseCoord = yCoordForValue(0.0.coerceIn(yLo, yHi))
 
         for ((seriesIdx, series) in diagram.plots.withIndex()) {
             when (series.type) {
@@ -734,7 +730,8 @@ object XyChartLayout {
         if (!span.isFinite() || span <= 0.0) return listOf(minVal)
 
         val rawStep = span / max(2, targetCount - 1).toDouble()
-        val mag = 10.0.pow(floor(log10(rawStep)))
+        val exp = floor(log10(rawStep)).toInt()
+        val mag = 10.0.pow(exp)
         val norm = rawStep / mag
         val niceMult = when {
             norm <= 1.5 -> 1.0
@@ -748,8 +745,14 @@ object XyChartLayout {
         val lastIdx = floor((hi + eps) / step).toLong()
         val ticks = mutableListOf<Double>()
         if (lastIdx >= firstIdx && (lastIdx - firstIdx) <= 20) {
+            val invMag = if (exp in -12..-1) 10.0.pow(-exp) else null
+            val multLong = niceMult.roundToLong()
             for (k in firstIdx..lastIdx) {
-                val v = k * step
+                val v = if (invMag != null) {
+                    (k * multLong).toDouble() / invMag
+                } else {
+                    k * step
+                }
                 val cleaned = if (abs(v) < step * 1e-9) 0.0 else v
                 ticks += cleaned
             }
@@ -768,13 +771,17 @@ object XyChartLayout {
             return value.toString()
         }
         val nearestLong = kotlin.math.round(value)
-        if (abs(value - nearestLong) <= 1e-9 * max(1.0, absVal)) {
+        if (abs(value - nearestLong) <= 1e-12 * max(1.0, absVal)) {
             return nearestLong.toLong().toString()
         }
-        val decimals = max(2, min(6, 3 - floor(log10(absVal)).toInt()))
+        val decimals = (14 - 1 - floor(log10(absVal)).toInt()).coerceIn(1, 12)
         val factor = 10.0.pow(decimals)
-        val rounded = kotlin.math.round(value * factor) / factor
-        val str = rounded.toString()
+        val scaled = value * factor
+        val str = if (scaled.isFinite() && abs(scaled) < 9e15) {
+            (kotlin.math.round(scaled) / factor).toString()
+        } else {
+            value.toString()
+        }
         return if (str.contains('.') && !str.contains('E') && !str.contains('e')) {
             str.trimEnd('0').trimEnd('.')
         } else {
