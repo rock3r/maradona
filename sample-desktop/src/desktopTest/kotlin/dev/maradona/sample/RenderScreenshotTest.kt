@@ -717,4 +717,50 @@ class RenderScreenshotTest {
         assertTrue(nodeBluePixels > 200, "Sankey node fill #4E79A7 not rendered ($nodeBluePixels px)")
         assertTrue(nodeOrangePixels > 400, "Sankey node fill #F28E2B not rendered ($nodeOrangePixels px)")
     }
+
+    @Test
+    fun requirementDiagram() {
+        val png = renderToPng(
+            "requirement",
+            """
+            requirementDiagram
+              requirement checkout_req {
+                id: 1
+                text: Orders must be payable online.
+                risk: high
+                verifymethod: test
+              }
+              functionalRequirement payment_req {
+                id: 1.1
+                text: Card payments must be authorized.
+                risk: medium
+                verifymethod: demonstration
+              }
+              element checkout_service {
+                type: service
+                docRef: src/checkout
+              }
+              checkout_req - contains -> payment_req
+              checkout_service - satisfies -> payment_req
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 780,
+            height = 480,
+        )
+        val img = ImageIO.read(png)
+        var reqHeaderBluePixels = 0
+        var elemHeaderMintPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0xEA) <= 3 && abs(g - 0xF2) <= 3 && abs(b - 0xFA) <= 3) reqHeaderBluePixels++
+                if (abs(r - 0xE8) <= 3 && abs(g - 0xF4) <= 3 && abs(b - 0xEE) <= 3) elemHeaderMintPixels++
+            }
+        }
+        assertTrue(reqHeaderBluePixels > 2_000, "Requirement header fill #EAF2FA not rendered ($reqHeaderBluePixels px)")
+        assertTrue(elemHeaderMintPixels > 1_000, "Element header fill #E8F4EE not rendered ($elemHeaderMintPixels px)")
+    }
 }
