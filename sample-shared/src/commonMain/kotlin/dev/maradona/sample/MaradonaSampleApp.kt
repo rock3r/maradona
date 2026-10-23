@@ -313,6 +313,18 @@ private val examples = linkedMapOf(
           checkout_req - contains -> payment_req
           checkout_service - satisfies -> payment_req
     """.trimIndent(),
+    "Packet" to """
+        packet-beta
+          title "UDP & Header Segment"
+          0-15: "Source Port"
+          16-31: "Destination Port"
+          32-47: "Length"
+          48-63: "Checksum"
+          +6: "Reserved"
+          70: "URG"
+          71: "ACK"
+          +24: "Options / Payload"
+    """.trimIndent(),
 )
 
 private class SampleState(
