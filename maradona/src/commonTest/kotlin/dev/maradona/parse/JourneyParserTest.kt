@@ -60,7 +60,8 @@ class JourneyParserTest {
     fun supportsTabsSpacedAccessibilityColonsAndHashCommentsWithoutLeadingSpace() {
         val model = MaradonaParser.parse(
             """
-            journey
+            # Leading hash comment
+            journey;
                 title	Customer journey
                 accTitle : Checkout experience
                 accDescr {

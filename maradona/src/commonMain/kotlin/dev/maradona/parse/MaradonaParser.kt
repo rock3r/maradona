@@ -57,7 +57,7 @@ object MaradonaParser {
                 MaradonaDiagramModel.GitGraphModel(GitGraphParser.parse(source))
             header == "timeline" || header.startsWith("timeline ") || header.startsWith("timeline\t") || header.startsWith("timeline:") ->
                 MaradonaDiagramModel.TimelineModel(TimelineParser.parse(source))
-            header == "journey" || header.startsWith("journey ") || header.startsWith("journey\t") ->
+            header == "journey" || header.startsWith("journey ") || header.startsWith("journey\t") || header.startsWith("journey;") ->
                 MaradonaDiagramModel.JourneyModel(JourneyParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
@@ -83,7 +83,14 @@ object MaradonaParser {
                 continue
             }
             val commentAt = trimmedRaw.indexOf("%%")
-            val line = (if (commentAt >= 0) trimmedRaw.substring(0, commentAt) else trimmedRaw).trim()
+            val line = (if (commentAt >= 0) trimmedRaw.substring(0, commentAt) else trimmedRaw)
+                .let { s ->
+                    val hashAt = s.indexOf('#')
+                    if (hashAt >= 0) s.substring(0, hashAt) else s
+                }
+                .trim()
+                .trimEnd(';')
+                .trim()
             if (line.isNotEmpty()) return line.lowercase()
         }
         return ""
