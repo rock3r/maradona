@@ -3,6 +3,7 @@ package dev.maradona.parse
 import dev.maradona.model.ClassDiagram
 import dev.maradona.model.ErDiagram
 import dev.maradona.model.Flowchart
+import dev.maradona.model.GanttDiagram
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
@@ -15,13 +16,14 @@ sealed interface MaradonaDiagramModel {
     data class StateModel(val diagram: StateDiagram) : MaradonaDiagramModel
     data class ErModel(val diagram: ErDiagram) : MaradonaDiagramModel
     data class MindmapModel(val diagram: MindmapDiagram) : MaradonaDiagramModel
+    data class GanttModel(val diagram: GanttDiagram) : MaradonaDiagramModel
 }
 
 /**
  * Top-level Mermaid parser that detects the diagram type from the header line
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
- * [ErParser], or [MindmapParser].
+ * [ErParser], [MindmapParser], or [GanttParser].
  */
 object MaradonaParser {
 
@@ -38,6 +40,8 @@ object MaradonaParser {
                 MaradonaDiagramModel.ErModel(ErParser.parse(source))
             header.startsWith("mindmap") ->
                 MaradonaDiagramModel.MindmapModel(MindmapParser.parse(source))
+            header.startsWith("gantt") ->
+                MaradonaDiagramModel.GanttModel(GanttParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }
@@ -46,10 +50,31 @@ object MaradonaParser {
     private fun firstHeaderToken(source: String): String {
         val lines = FlowchartParser.stripDirectives(source).lines()
         var inFrontmatter = false
+        var inFmQuotes = false
         for (rawLine in lines) {
             val trimmedRaw = rawLine.trim()
             if (inFrontmatter) {
-                if (trimmedRaw == "---" || trimmedRaw == "...") inFrontmatter = false
+                if (!inFmQuotes && (trimmedRaw == "---" || trimmedRaw == "...")) {
+                    inFrontmatter = false
+                    continue
+                }
+                var i = 0
+                while (i < rawLine.length) {
+                    val c = rawLine[i]
+                    if (c == '\\' && inFmQuotes && i + 1 < rawLine.length) {
+                        i += 2
+                        continue
+                    }
+                    if (c == '"') {
+                        inFmQuotes = !inFmQuotes
+                        i++
+                        continue
+                    }
+                    if (!inFmQuotes && c == '#' && (i == 0 || rawLine[i - 1].isWhitespace())) {
+                        break
+                    }
+                    i++
+                }
                 continue
             }
             if (trimmedRaw == "---") {

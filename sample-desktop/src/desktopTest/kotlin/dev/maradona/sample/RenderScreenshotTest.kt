@@ -380,4 +380,44 @@ class RenderScreenshotTest {
         }
         assertTrue(urgentFillPixels > 500, "Urgent mindmap node rgb(255, 235, 233) not rendered ($urgentFillPixels px)")
     }
+
+    @Test
+    fun ganttDiagram() {
+        val png = renderToPng(
+            "gantt",
+            """
+            gantt
+                title Maradona Release Roadmap
+                dateFormat YYYY-MM-DD
+                excludes weekends
+
+                section Core Engine
+                Flowchart & DagrePort     :done,         fc, 2026-10-01, 5d
+                Sequence & Class Layouts  :done,         sc, after fc,   4d
+
+                section Extended Families
+                State & ER Diagrams       :active,       se, after sc,   4d
+                Mindmap & Gantt           :crit, active, mg, after se,   3d
+
+                section Delivery
+                Oracle Visual Parity      :              ov, after mg,   2d
+                v0.7 Release              :milestone,    m1, after ov,   0d
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1150,
+            height = 520,
+        )
+        val img = ImageIO.read(png)
+        var critActivePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 248) <= 3 && abs(g - 185) <= 3 && abs(b - 178) <= 3) critActivePixels++
+            }
+        }
+        assertTrue(critActivePixels > 400, "Critical active Gantt bar rgb(248, 185, 178) not rendered ($critActivePixels px)")
+    }
 }
