@@ -1,5 +1,6 @@
 package dev.maradona.render
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicText
@@ -17,6 +18,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -80,7 +82,7 @@ fun MaradonaKanbanLayout(
     onLayout: (KanbanDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { KanbanLayoutHolder() }
-    val hasTicketUrl = !diagram.ticketBaseUrl.isNullOrBlank()
+    val uriHandler = LocalUriHandler.current
 
     Layout(
         modifier = modifier
@@ -138,15 +140,23 @@ fun MaradonaKanbanLayout(
                         ),
                     )
                     task.ticket?.takeIf { it.isNotBlank() }?.let { tkt ->
+                        val ticketUrl = diagram.resolveTicketUrl(tkt)
+                        val tktModifier = if (ticketUrl != null) {
+                            Modifier
+                                .layoutId("tasktkt:$key")
+                                .clickable { runCatching { uriHandler.openUri(ticketUrl) } }
+                        } else {
+                            Modifier.layoutId("tasktkt:$key")
+                        }
                         BasicText(
                             text = annotatedLabel(tkt),
-                            modifier = Modifier.layoutId("tasktkt:$key"),
+                            modifier = tktModifier,
                             style = TextStyle(
                                 color = theme.nodeText.copy(alpha = 0.78f),
                                 fontFamily = theme.fontFamily,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Medium,
-                                textDecoration = if (hasTicketUrl) TextDecoration.Underline else TextDecoration.None,
+                                textDecoration = if (ticketUrl != null) TextDecoration.Underline else TextDecoration.None,
                             ),
                         )
                     }

@@ -582,7 +582,7 @@ object KanbanParser {
                 }
             }
 
-            val clean = if (quoteChar == null) stripLineComment(rawLine) else rawLine
+            val clean = if (quoteChar == null) stripLineComment(rawLine, startInMeta = metaBraceDepth > 0) else rawLine
             if (quoteChar == null && squareDepth == 0 && metaBraceDepth == 0) {
                 if (clean.trim().isEmpty()) continue
                 current.setLength(0)
@@ -677,9 +677,9 @@ object KanbanParser {
         return -1
     }
 
-    private fun stripLineComment(line: String): String {
+    private fun stripLineComment(line: String, startInMeta: Boolean = false): String {
         var quoteChar: Char? = null
-        var inMeta = false
+        var inMeta = startInMeta
         var i = 0
         while (i < line.length) {
             val c = line[i]

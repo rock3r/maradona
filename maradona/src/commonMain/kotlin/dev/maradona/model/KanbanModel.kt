@@ -42,4 +42,13 @@ data class KanbanDiagram(
     fun task(idOrLabel: String): KanbanTask? =
         columns.asSequence().flatMap { it.tasks.asSequence() }
             .firstOrNull { it.id == idOrLabel || it.label == idOrLabel }
+
+    fun resolveTicketUrl(ticket: String): String? {
+        val base = ticketBaseUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return if (base.contains("#TICKET#")) {
+            base.replace("#TICKET#", ticket)
+        } else {
+            base + ticket
+        }
+    }
 }

@@ -76,7 +76,7 @@ class KanbanParserTest {
                 t1[Task]@{
                   ticket: MC-99
                   assigned: 'alice'
-                  label: 'Fix { and " handling'
+                  label: 'Fix { and " and 50%% handling'
                 }
                 t2))Bang Task((@{ ticket: X-1 }
                 t3)Cloud Task(@{ assigned: 'bob' }
@@ -85,9 +85,13 @@ class KanbanParserTest {
         val mt = multilineMeta.columns.single().tasks[0]
         assertEquals("MC-99", mt.ticket)
         assertEquals("alice", mt.assigned)
-        assertEquals("Fix { and \" handling", mt.label)
+        assertEquals("Fix { and \" and 50%% handling", mt.label)
         assertEquals("X-1", multilineMeta.columns.single().tasks[1].ticket)
         assertEquals("bob", multilineMeta.columns.single().tasks[2].assigned)
+        assertEquals(
+            "https://mermaidchart.atlassian.net/browse/MC-2038",
+            d.resolveTicketUrl("MC-2038"),
+        )
     }
 
     @Test
