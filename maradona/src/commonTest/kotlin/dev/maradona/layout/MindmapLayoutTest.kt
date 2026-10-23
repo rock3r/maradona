@@ -55,6 +55,37 @@ class MindmapLayoutTest {
             "Bang inner valley width should comfortably clear long label text",
         )
 
+        // Multiline bang and cloud nodes must enclose all 4 corners of their text rectangle inside the inner valley ellipse.
+        val multiBangDiagram = MindmapParser.parse(
+            """
+            mindmap
+              root
+                b))"Line one with plenty of width
+                Line two with plenty of width
+                Line three with plenty of width
+                Line four with plenty of width"((
+                c)"Cloud line one with plenty of width
+                Cloud line two with plenty of width
+                Cloud line three with plenty of width
+                Cloud line four with plenty of width"(
+            """.trimIndent(),
+        )
+        val multiLayout = MindmapLayout.layout(multiBangDiagram)
+        for (id in listOf("b", "c")) {
+            val n = assertNotNull(multiLayout.node(id))
+            val lines = n.node.label.lines()
+            val textW = (lines.maxOf { it.length }) * 7.8f
+            val textH = lines.size * 18f
+            val innerRx = (n.rect.width / 2f) * 0.84f
+            val innerRy = (n.rect.height / 2f) * 0.82f
+            val normX = (textW / 2f) / innerRx
+            val normY = (textH / 2f) / innerRy
+            assertTrue(
+                normX * normX + normY * normY < 0.90f,
+                "Multiline ${n.node.shape} inner valley ellipse must enclose text rectangle corners (got ${normX * normX + normY * normY})",
+            )
+        }
+
         // All edges must attach at horizontal side outlines (pStart.y == pRect.centerY, pEnd.y == cRect.centerY).
         val nodesById = layout.nodes.associateBy { it.node.id }
         for (edge in layout.edges) {

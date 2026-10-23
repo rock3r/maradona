@@ -172,7 +172,14 @@ fun MaradonaMindmapLayout(
                     val d = max(max(w, h), kotlin.math.hypot(textW, textH) + padY * 2f)
                     DiagramSize(d, d)
                 }
-                MindmapShape.Bang, MindmapShape.Cloud -> DiagramSize(w * 1.22f, h * 1.25f)
+                MindmapShape.Bang, MindmapShape.Cloud -> {
+                    val rw = textW + 20f * renderDensity
+                    val rh = textH + 12f * renderDensity
+                    DiagramSize(
+                        width = max(w * 1.22f, rw * 1.78f),
+                        height = max(h * 1.25f, rh * 1.82f),
+                    )
+                }
                 else -> DiagramSize(w, h)
             }
         }

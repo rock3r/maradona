@@ -95,7 +95,7 @@ object MindmapLayout {
         val boxSizes = HashMap<String, DiagramSize>(preOrder.size)
         for (n in preOrder) {
             val raw = nodeSize(n)
-            val sz = if (n.shape == MindmapShape.Circle) {
+            val sz = if (n.shape == MindmapShape.Circle && kotlin.math.abs(raw.width - raw.height) > 0.5f) {
                 val d = max(max(raw.width, raw.height), kotlin.math.hypot(raw.width * 0.78f, raw.height * 0.78f) + 16f * options.density)
                 DiagramSize(d, d)
             } else {
@@ -327,7 +327,14 @@ object MindmapLayout {
                 val d = max(max(w, h), kotlin.math.hypot(textW, textH) + padY * 2f)
                 DiagramSize(d, d)
             }
-            MindmapShape.Bang, MindmapShape.Cloud -> DiagramSize(w * 1.22f, h * 1.25f)
+            MindmapShape.Bang, MindmapShape.Cloud -> {
+                val rw = textW + 20f * density
+                val rh = textH + 12f * density
+                DiagramSize(
+                    width = max(w * 1.22f, rw * 1.78f),
+                    height = max(h * 1.25f, rh * 1.82f),
+                )
+            }
             else -> DiagramSize(w, h)
         }
     }
