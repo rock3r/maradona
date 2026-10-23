@@ -106,9 +106,10 @@ object GanttLayout {
         val allEndMs = max(allStartMs + minSpanMs, rawMaxMs)
         val totalSpanMs = (allEndMs - allStartMs).coerceAtLeast(1L)
 
-        val hasSections = diagram.sections.isNotEmpty() || regularTasks.any { !it.section.isNullOrBlank() }
+        val allSectionNames = (diagram.sections + regularTasks.mapNotNull { it.section }).distinct()
+        val hasSections = allSectionNames.isNotEmpty()
         val orderedSections: List<String?> = if (hasSections) {
-            val explicit = diagram.sections.toMutableList<String?>()
+            val explicit = allSectionNames.toMutableList<String?>()
             if (regularTasks.any { it.section == null }) {
                 explicit.add(0, null)
             }

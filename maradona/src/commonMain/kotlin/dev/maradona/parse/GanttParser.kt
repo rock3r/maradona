@@ -97,14 +97,14 @@ object GanttParser {
         }
         if (idx < rawLines.size && rawLines[idx].trim() == "---") {
             idx++
-            var inFmQuotes = false
+            var activeFmQuote: Char? = null
             while (idx < rawLines.size) {
                 val rawFm = rawLines[idx]
                 idx++
                 val trimmedFm = rawFm.trim()
-                if (!inFmQuotes && (trimmedFm == "---" || trimmedFm == "...")) break
-                val cleanFm = stripYamlCommentWithQuoteState(rawFm, inFmQuotes)
-                inFmQuotes = cleanFm.second
+                if (activeFmQuote == null && (trimmedFm == "---" || trimmedFm == "...")) break
+                val cleanFm = stripYamlCommentWithQuoteState(rawFm, activeFmQuote)
+                activeFmQuote = cleanFm.second
                 val fmLine = cleanFm.first.trim()
                 if (fmLine.isEmpty()) continue
                 val colon = fmLine.indexOf(':')
@@ -931,26 +931,70 @@ object GanttParser {
         return line
     }
 
-    private fun stripYamlCommentWithQuoteState(line: String, startInQuotes: Boolean): Pair<String, Boolean> {
-        var inQuotes = startInQuotes
+    internal fun stripYamlCommentWithQuoteState(line: String, startQuoteChar: Char?): Pair<String, Char?> {
+        var quoteChar = startQuoteChar
         var i = 0
+        if (quoteChar == null) {
+            val trimmedStart = line.indexOfFirst { !it.isWhitespace() }
+            if (trimmedStart < 0) return line to null
+            if (line[trimmedStart] == '#') return line.substring(0, trimmedStart) to null
+            val colonIdx = line.indexOf(':', trimmedStart)
+            if (colonIdx < 0) {
+                var j = trimmedStart
+                while (j < line.length) {
+                    if (line[j] == '#' && (j == 0 || line[j - 1].isWhitespace())) {
+                        return line.substring(0, j) to null
+                    }
+                    j++
+                }
+                return line to null
+            }
+            val valStart = (colonIdx + 1 until line.length).firstOrNull { !line[it].isWhitespace() }
+                ?: return line to null
+            val firstValChar = line[valStart]
+            if (firstValChar == '#') {
+                return line.substring(0, valStart) to null
+            }
+            if (firstValChar == '"' || firstValChar == '\'') {
+                quoteChar = firstValChar
+                i = valStart + 1
+            } else {
+                // Plain unquoted YAML scalar: quotes inside the value (e.g. `title: 6" screen`) do not start a quoted block.
+                var j = valStart
+                while (j < line.length) {
+                    if (line[j] == '#' && line[j - 1].isWhitespace()) {
+                        return line.substring(0, j) to null
+                    }
+                    j++
+                }
+                return line to null
+            }
+        }
+
         while (i < line.length) {
             val c = line[i]
-            if (c == '\\' && inQuotes && i + 1 < line.length) {
+            if (quoteChar == '"' && c == '\\' && i + 1 < line.length) {
                 i += 2
                 continue
             }
-            if (c == '"') {
-                inQuotes = !inQuotes
-                i++
+            if (quoteChar == '\'' && c == '\'' && i + 1 < line.length && line[i + 1] == '\'') {
+                i += 2
                 continue
             }
-            if (!inQuotes && c == '#' && (i == 0 || line[i - 1].isWhitespace())) {
-                return line.substring(0, i) to inQuotes
+            if (quoteChar != null && c == quoteChar) {
+                quoteChar = null
+                i++
+                while (i < line.length) {
+                    if (line[i] == '#' && (i == 0 || line[i - 1].isWhitespace())) {
+                        return line.substring(0, i) to null
+                    }
+                    i++
+                }
+                return line to null
             }
             i++
         }
-        return line to inQuotes
+        return line to quoteChar
     }
 
     private fun unquote(s: String): String {

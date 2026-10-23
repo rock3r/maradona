@@ -50,31 +50,15 @@ object MaradonaParser {
     private fun firstHeaderToken(source: String): String {
         val lines = FlowchartParser.stripDirectives(source).lines()
         var inFrontmatter = false
-        var inFmQuotes = false
+        var activeQuoteChar: Char? = null
         for (rawLine in lines) {
             val trimmedRaw = rawLine.trim()
             if (inFrontmatter) {
-                if (!inFmQuotes && (trimmedRaw == "---" || trimmedRaw == "...")) {
+                if (activeQuoteChar == null && (trimmedRaw == "---" || trimmedRaw == "...")) {
                     inFrontmatter = false
                     continue
                 }
-                var i = 0
-                while (i < rawLine.length) {
-                    val c = rawLine[i]
-                    if (c == '\\' && inFmQuotes && i + 1 < rawLine.length) {
-                        i += 2
-                        continue
-                    }
-                    if (c == '"') {
-                        inFmQuotes = !inFmQuotes
-                        i++
-                        continue
-                    }
-                    if (!inFmQuotes && c == '#' && (i == 0 || rawLine[i - 1].isWhitespace())) {
-                        break
-                    }
-                    i++
-                }
+                activeQuoteChar = GanttParser.stripYamlCommentWithQuoteState(rawLine, activeQuoteChar).second
                 continue
             }
             if (trimmedRaw == "---") {

@@ -1,5 +1,7 @@
 package dev.maradona.layout
 
+import dev.maradona.model.GanttDiagram
+import dev.maradona.model.GanttTask
 import dev.maradona.parse.GanttParser
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -114,5 +116,22 @@ class GanttLayoutTest {
             val dow = GanttParser.dayOfWeek(tick.timeMs.floorDiv(GanttParser.DAY_MS))
             assertEquals(1, dow, "Weekly ticks with weekday monday must align to Monday (dow=1), got dow=$dow for ${tick.label}")
         }
+
+        // Programmatic GanttDiagram with task-owned sections and empty diagram.sections must include all tasks.
+        val progDiagram = GanttDiagram(
+            tasks = listOf(
+                GanttTask(
+                    id = "t1",
+                    label = "Backend Task",
+                    section = "Backend",
+                    startMs = 0L,
+                    endMs = GanttParser.DAY_MS * 2L,
+                ),
+            ),
+        )
+        val progLayout = GanttLayout.layout(progDiagram)
+        assertEquals(1, progLayout.tasks.size)
+        assertEquals(1, progLayout.sections.size)
+        assertEquals("Backend", progLayout.sections.single().name)
     }
 }

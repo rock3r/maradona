@@ -167,5 +167,19 @@ class GanttParserTest {
                 """.trimIndent(),
             )
         }
+
+        // Plain YAML scalar containing an embedded double quote (e.g. `6" screen`) must not swallow closing `---`.
+        val withQuoteInPlainYaml = MaradonaParser.parse(
+            """
+            ---
+            title: 6" screen rollout
+            ---
+            gantt
+                dateFormat YYYY-MM-DD
+                A :a, 2024-01-01, 2d
+            """.trimIndent(),
+        )
+        assertIs<MaradonaDiagramModel.GanttModel>(withQuoteInPlainYaml)
+        assertEquals("6\" screen rollout", withQuoteInPlainYaml.diagram.title)
     }
 }
