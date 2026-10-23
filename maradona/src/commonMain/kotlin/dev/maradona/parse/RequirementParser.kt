@@ -616,6 +616,7 @@ object RequirementParser {
         val current = StringBuilder()
         var inQuotes = false
         var inAccBlock = false
+        var inStyleStatement = false
 
         for (rawLine in lines) {
             val trimmed = rawLine.trim()
@@ -630,11 +631,19 @@ object RequirementParser {
                     if (!trimmed.contains('}')) inAccBlock = true
                     continue
                 }
+                inStyleStatement = Regex("""^(?:classDef|style)\s""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)
             }
 
-            val clean = stripLineCommentWithQuoteState(rawLine, startInQuotes = inQuotes)
+            val clean = stripLineCommentWithQuoteState(
+                line = rawLine,
+                startInQuotes = inQuotes,
+                isStyleDirective = inStyleStatement,
+            )
             if (!inQuotes) {
-                if (clean.trim().isEmpty()) continue
+                if (clean.trim().isEmpty()) {
+                    inStyleStatement = false
+                    continue
+                }
                 current.setLength(0)
                 current.append(clean)
             } else {
@@ -656,6 +665,7 @@ object RequirementParser {
             if (!inQuotes) {
                 out += current.toString()
                 current.setLength(0)
+                inStyleStatement = false
             }
         }
         if (inQuotes) {
@@ -664,12 +674,18 @@ object RequirementParser {
         return out
     }
 
-    private fun stripLineCommentWithQuoteState(line: String, startInQuotes: Boolean): String {
+    private fun stripLineCommentWithQuoteState(
+        line: String,
+        startInQuotes: Boolean,
+        isStyleDirective: Boolean = !startInQuotes &&
+            Regex("""^(?:classDef|style)\s""", RegexOption.IGNORE_CASE).containsMatchIn(line.trimStart()),
+    ): String {
+        val trimmed = line.trimStart()
         if (!startInQuotes) {
-            val trimmed = line.trimStart()
             if (trimmed.startsWith("#") || trimmed.startsWith("%")) return ""
         }
         var inQuotes = startInQuotes
+        var parenDepth = 0
         var i = 0
         while (i < line.length) {
             val c = line[i]
@@ -682,8 +698,30 @@ object RequirementParser {
                 i++
                 continue
             }
-            if (!inQuotes && i + 1 < line.length && c == '%' && line[i + 1] == '%') {
-                return line.substring(0, i)
+            if (!inQuotes) {
+                if (c == '(') parenDepth++
+                else if (c == ')' && parenDepth > 0) parenDepth--
+
+                if (i + 1 < line.length && c == '%' && line[i + 1] == '%') {
+                    return line.substring(0, i)
+                }
+                if (c == '%') {
+                    if (!isStyleDirective || (parenDepth == 0 && i > 0 && line[i - 1].isWhitespace())) {
+                        return line.substring(0, i)
+                    }
+                }
+                if (c == '#') {
+                    if (!isStyleDirective) {
+                        return line.substring(0, i)
+                    }
+                    var prevNonSpace = i - 1
+                    while (prevNonSpace >= 0 && line[prevNonSpace].isWhitespace()) {
+                        prevNonSpace--
+                    }
+                    if (prevNonSpace < 0 || line[prevNonSpace] != ':') {
+                        return line.substring(0, i)
+                    }
+                }
             }
             i++
         }
@@ -882,31 +920,8 @@ object RequirementParser {
         return out
     }
 
-    private fun stripLineComment(line: String): String {
-        val trimmed = line.trimStart()
-        if (trimmed.startsWith("#") || trimmed.startsWith("%")) {
-            return ""
-        }
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            if (c == '\\' && inQuotes && i + 1 < line.length) {
-                i += 2
-                continue
-            }
-            if (c == '"') {
-                inQuotes = !inQuotes
-                i++
-                continue
-            }
-            if (!inQuotes && i + 1 < line.length && c == '%' && line[i + 1] == '%') {
-                return line.substring(0, i)
-            }
-            i++
-        }
-        return line
-    }
+    private fun stripLineComment(line: String): String =
+        stripLineCommentWithQuoteState(line, startInQuotes = false)
 
     private fun unquote(s: String): String {
         val t = s.trim()

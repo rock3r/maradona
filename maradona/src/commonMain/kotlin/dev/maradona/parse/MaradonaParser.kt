@@ -105,6 +105,7 @@ object MaradonaParser {
                 inFrontmatter = true
                 continue
             }
+            if (trimmedRaw.startsWith("%")) continue
             val commentAt = trimmedRaw.indexOf("%%")
             val line = (if (commentAt >= 0) trimmedRaw.substring(0, commentAt) else trimmedRaw)
                 .let { s ->

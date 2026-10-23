@@ -135,6 +135,48 @@ class RequirementParserTest {
     }
 
     @Test
+    fun parsesInlineHashAndPercentCommentsWhilePreservingQuotedHashesAndHexColors() {
+        val diagram = RequirementParser.parse(
+            """
+            % Leading single-percent comment
+            requirementDiagram # inline header comment
+              direction LR # inline direction comment
+              requirement "Issue #42" { # block open comment
+                id: 1.1 # inline id comment
+                text: "Must resolve #42 and 100% of checks" # inline text comment
+                risk: high # rationale for high risk
+                verifymethod: test % single-percent inline comment
+              } # block close comment
+              element "Worker #1" {
+                type: "service #1" # inline type comment
+                docRef: "docs/spec#v1"
+              }
+              "Worker #1" - satisfies -> "Issue #42" # inline relation comment
+              classDef critical fill:#fee2e2,stroke: #dc2626,color:#991b1b # inline classDef comment
+              style "Issue #42" fill:#fef3c7 # inline style comment
+              class "Issue #42" critical # inline class comment
+            """.trimIndent(),
+        )
+
+        assertEquals(Direction.LR, diagram.direction)
+        assertEquals(1, diagram.requirements.size)
+        val req = diagram.requirements[0]
+        assertEquals("Issue #42", req.name)
+        assertEquals("1.1", req.requirementId)
+        assertEquals("Must resolve #42 and 100% of checks", req.text)
+        assertEquals(RequirementRisk.High, req.risk)
+        assertEquals(RequirementVerifyMethod.Test, req.verifyMethod)
+        assertEquals("#fef3c7", req.style?.fill)
+        assertEquals("#dc2626", req.style?.stroke)
+        assertEquals("#991b1b", req.style?.textColor)
+
+        val elem = diagram.elements.single()
+        assertEquals("Worker #1", elem.name)
+        assertEquals("service #1", elem.type)
+        assertEquals("docs/spec#v1", elem.docRef)
+    }
+
+    @Test
     fun rejectsInvalidRiskVerifyMethodRelationTypeAndUnclosedBlocks() {
         assertFailsWith<IllegalArgumentException> {
             RequirementParser.parse(
