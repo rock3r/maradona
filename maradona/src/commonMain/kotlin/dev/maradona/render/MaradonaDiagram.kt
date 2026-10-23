@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
+import dev.maradona.layout.GitGraphDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
@@ -116,6 +117,8 @@ fun MaradonaDiagram(
     onGanttLayout: (GanttDiagramLayout) -> Unit = {},
     /** Reports the computed Pie diagram layout (see [MaradonaPieLayout.onLayout]). */
     onPieLayout: (PieDiagramLayout) -> Unit = {},
+    /** Reports the computed GitGraph diagram layout (see [MaradonaGitGraphLayout.onLayout]). */
+    onGitGraphLayout: (GitGraphDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -389,6 +392,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onPieLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.GitGraphModel ->
+                            MaradonaGitGraphLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onGitGraphLayout,
                                 modifier = contentModifier,
                             )
                     }
