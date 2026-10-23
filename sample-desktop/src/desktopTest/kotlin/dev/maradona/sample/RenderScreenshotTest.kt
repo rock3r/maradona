@@ -336,4 +336,48 @@ class RenderScreenshotTest {
         }
         assertTrue(orderFillPixels > 1_500, "Styled ORDER entity rgb(211, 229, 245) not rendered ($orderFillPixels px)")
     }
+
+    @Test
+    fun mindmapDiagram() {
+        val png = renderToPng(
+            "mindmap",
+            """
+            ---
+            title: Maradona Architecture Mindmap
+            ---
+            mindmap
+              root((Maradona))
+                Diagrams
+                  Flowcharts[Flowcharts]
+                  Sequence(Sequence)
+                  Class[Class Diagrams]
+                  State(State Diagrams)
+                  ER{{ER Diagrams}}
+                Engine
+                  Parser[Hand-written Parsers]
+                  Layout)Sugiyama & Tidy Tree(
+                  Render))Compose Multiplatform((
+                Targets
+                  Desktop[Desktop JVM]
+                  :::urgent
+                  Android(Android)
+                  iOS(iOS arm64)
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1150,
+            height = 750,
+        )
+        val img = ImageIO.read(png)
+        var urgentFillPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 255) <= 3 && abs(g - 235) <= 3 && abs(b - 233) <= 3) urgentFillPixels++
+            }
+        }
+        assertTrue(urgentFillPixels > 500, "Urgent mindmap node rgb(255, 235, 233) not rendered ($urgentFillPixels px)")
+    }
 }
