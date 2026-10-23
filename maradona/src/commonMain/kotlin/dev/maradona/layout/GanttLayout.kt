@@ -534,6 +534,7 @@ object GanttLayout {
                 guard++
             }
         } else if (isCal && (isExplicitMonthInterval || (rawTickSpec.isEmpty() && stepMs == 30L * GanttParser.DAY_MS))) {
+            val monthStep = max(1, (stepMs / (30L * GanttParser.DAY_MS)).toInt())
             val (startY, startM, startD) = GanttParser.civilFromDays(allStartMs.floorDiv(GanttParser.DAY_MS))
             if (startD > 5) candidates += allStartMs
             var y = startY
@@ -547,11 +548,9 @@ object GanttLayout {
                 val ms = GanttParser.daysFromCivil(y, m, 1) * GanttParser.DAY_MS
                 if (ms > allEndMs) break
                 candidates += ms
-                m++
-                if (m > 12) {
-                    m = 1
-                    y++
-                }
+                val nextTotalMonths = y * 12 + (m - 1) + monthStep
+                y = nextTotalMonths / 12
+                m = (nextTotalMonths % 12) + 1
                 guard++
             }
         } else {
@@ -624,7 +623,7 @@ object GanttLayout {
     private fun chooseCleanStepMs(rawStep: Long, dateFormat: String, tickInterval: String?): Long {
         if (!tickInterval.isNullOrBlank()) {
             val parsed = GanttParser.parseDurationMs(tickInterval)
-            if (parsed != null && parsed >= rawStep / 4) return parsed
+            if (parsed != null && parsed > 0L && parsed >= rawStep / 4) return parsed
         }
         val fmt = dateFormat.trim()
         if (fmt == "x") {

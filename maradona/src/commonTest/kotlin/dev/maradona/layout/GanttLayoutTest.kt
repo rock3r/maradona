@@ -172,5 +172,29 @@ class GanttLayoutTest {
         )
         val fourWeekLabels = GanttLayout.candidateTicks(fourWeekDiagram).map { it.second }
         assertTrue("2024-01-29" in fourWeekLabels, "Expected 28-day tick 2024-01-29 in $fourWeekLabels")
+
+        // `tickInterval 2months` starting 2024-01-01 must advance by 2 calendar months (Jan, Mar, May, Jul).
+        val twoMonthDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD
+                tickInterval 2months
+                A :a, 2024-01-01, 2024-07-01
+            """.trimIndent(),
+        )
+        val twoMonthLabels = GanttLayout.candidateTicks(twoMonthDiagram).map { it.second }
+        assertEquals(listOf("2024-01-01", "2024-03-01", "2024-05-01", "2024-07-01"), twoMonthLabels)
+
+        // Zero-length `tickInterval 0ms` must fall back to positive automatic ticks without dividing by zero.
+        val zeroTickDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat x
+                tickInterval 0ms
+                A :a, 0, 10
+            """.trimIndent(),
+        )
+        val zeroTickLayout = GanttLayout.layout(zeroTickDiagram)
+        assertTrue(zeroTickLayout.ticks.isNotEmpty())
     }
 }
