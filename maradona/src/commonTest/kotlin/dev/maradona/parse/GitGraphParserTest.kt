@@ -173,5 +173,15 @@ class GitGraphParserTest {
                 """.trimIndent(),
             )
         }
+
+        // `%%{init: {'title': ...}}%%` directive title must be preserved.
+        val initTitled = GitGraphParser.parse(
+            """
+            %%{init: {'title': 'Directive Workflow'}}%%
+            gitGraph
+              commit
+            """.trimIndent(),
+        )
+        assertEquals("Directive Workflow", initTitled.title)
     }
 }

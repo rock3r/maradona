@@ -87,5 +87,32 @@ class GitGraphLayoutTest {
                 assertTrue(!overlap, "Vertical branch pills $a and $b must not overlap")
             }
         }
+
+        // Cross-branch edge from `root` to `feature1` must detour around intervening `dev1` commit node.
+        val forkDiagram = GitGraphParser.parse(
+            """
+            gitGraph
+                commit id:"root"
+                branch dev
+                commit id:"dev1"
+                checkout main
+                branch feature
+                commit id:"feature1"
+            """.trimIndent(),
+        )
+        val forkLayout = GitGraphLayout.layout(forkDiagram)
+        val dev1Node = assertNotNull(forkLayout.commit("dev1")).nodeRect
+        val rootToFeatureEdge = forkLayout.edges.first { it.fromCommitId == "root" && it.toCommitId == "feature1" }
+        val samples = GitGraphLayout.sampleCubicBezier(
+            rootToFeatureEdge.points[0],
+            rootToFeatureEdge.points[1],
+            rootToFeatureEdge.points[2],
+            rootToFeatureEdge.points[3],
+            steps = 24,
+        )
+        for (pt in samples) {
+            val hitsDev1 = pt.x >= dev1Node.x && pt.x <= dev1Node.right && pt.y >= dev1Node.y && pt.y <= dev1Node.bottom
+            assertTrue(!hitsDev1, "Cross-branch curve root->feature1 must not pass through intervening dev1 commit ($dev1Node), hit at $pt")
+        }
     }
 }

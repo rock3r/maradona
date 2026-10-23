@@ -244,6 +244,32 @@ object GitGraphLayout {
         }
 
         val commitsModelById = diagram.commits.associateBy { it.id }
+        val nodeRectByCommitId = diagram.commits.indices.associate { i -> diagram.commits[i].id to commitNodeRects[i] }
+
+        fun curveHitsUnrelatedCommit(
+            fromId: String,
+            toId: String,
+            p0: DiagramPoint,
+            c1: DiagramPoint,
+            c2: DiagramPoint,
+            p1: DiagramPoint,
+        ): Boolean {
+            val pad = 4f * d
+            val samples = sampleCubicBezier(p0, c1, c2, p1, steps = 24)
+            for ((cid, nRect) in nodeRectByCommitId) {
+                if (cid == fromId || cid == toId) continue
+                for (pt in samples) {
+                    if (pt.x >= nRect.x - pad && pt.x <= nRect.right + pad &&
+                        pt.y >= nRect.y - pad && pt.y <= nRect.bottom + pad
+                    ) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        val bendFractions = floatArrayOf(0.5f, 0.25f, 0.75f, 0.14f, 0.86f, 0.05f, 0.95f)
         val rawEdges = ArrayList<PositionedGitEdge>(diagram.commits.size * 2)
         for (c in diagram.commits) {
             val pcLane = laneIndexByBranch[c.branch] ?: 0
@@ -260,21 +286,31 @@ object GitGraphLayout {
                 val pts = if (parentLane == pcLane) {
                     listOf(p0, p1)
                 } else if (isHorizontal) {
-                    val midX = (p0.x + p1.x) / 2f
-                    listOf(
-                        p0,
-                        DiagramPoint(midX, p0.y),
-                        DiagramPoint(midX, p1.y),
-                        p1,
-                    )
+                    val candidates = buildList {
+                        for (f in bendFractions) {
+                            val bx = p0.x + (p1.x - p0.x) * f
+                            add(DiagramPoint(bx, p0.y) to DiagramPoint(bx, p1.y))
+                        }
+                        add(DiagramPoint(p0.x, p1.y) to DiagramPoint(p0.x + (p1.x - p0.x) * 0.2f, p1.y))
+                        add(DiagramPoint(p0.x + (p1.x - p0.x) * 0.8f, p0.y) to DiagramPoint(p1.x, p0.y))
+                    }
+                    val (c1, c2) = candidates.firstOrNull { (a, b) ->
+                        !curveHitsUnrelatedCommit(pId, c.id, p0, a, b, p1)
+                    } ?: candidates.first()
+                    listOf(p0, c1, c2, p1)
                 } else {
-                    val midY = (p0.y + p1.y) / 2f
-                    listOf(
-                        p0,
-                        DiagramPoint(p0.x, midY),
-                        DiagramPoint(p1.x, midY),
-                        p1,
-                    )
+                    val candidates = buildList {
+                        for (f in bendFractions) {
+                            val by = p0.y + (p1.y - p0.y) * f
+                            add(DiagramPoint(p0.x, by) to DiagramPoint(p1.x, by))
+                        }
+                        add(DiagramPoint(p1.x, p0.y) to DiagramPoint(p1.x, p0.y + (p1.y - p0.y) * 0.2f))
+                        add(DiagramPoint(p0.x, p0.y + (p1.y - p0.y) * 0.8f) to DiagramPoint(p0.x, p1.y))
+                    }
+                    val (c1, c2) = candidates.firstOrNull { (a, b) ->
+                        !curveHitsUnrelatedCommit(pId, c.id, p0, a, b, p1)
+                    } ?: candidates.first()
+                    listOf(p0, c1, c2, p1)
                 }
                 rawEdges += PositionedGitEdge(
                     fromCommitId = pId,
@@ -472,7 +508,7 @@ object GitGraphLayout {
         )
     }
 
-    private fun sampleCubicBezier(
+    internal fun sampleCubicBezier(
         p0: DiagramPoint,
         p1: DiagramPoint,
         p2: DiagramPoint,

@@ -66,6 +66,10 @@ object GitGraphParser {
         val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
+            Regex("""['"]?title['"]?\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
+                .find(initBody)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                    frontmatterTitle = it
+                }
             parseBooleanSetting(initBody, "showBranches")?.let { showBranches = it }
             parseBooleanSetting(initBody, "showCommitLabel")?.let { showCommitLabel = it }
             parseBooleanSetting(initBody, "rotateCommitLabel")?.let { rotateCommitLabel = it }
