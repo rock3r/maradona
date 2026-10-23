@@ -8,6 +8,7 @@ import dev.maradona.model.GitGraphDiagram
 import dev.maradona.model.JourneyDiagram
 import dev.maradona.model.KanbanDiagram
 import dev.maradona.model.MindmapDiagram
+import dev.maradona.model.PacketDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.QuadrantDiagram
 import dev.maradona.model.RequirementDiagram
@@ -35,6 +36,7 @@ sealed interface MaradonaDiagramModel {
     data class KanbanModel(val diagram: KanbanDiagram) : MaradonaDiagramModel
     data class SankeyModel(val diagram: SankeyDiagram) : MaradonaDiagramModel
     data class RequirementModel(val diagram: RequirementDiagram) : MaradonaDiagramModel
+    data class PacketModel(val diagram: PacketDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -42,8 +44,8 @@ sealed interface MaradonaDiagramModel {
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
- * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser], or
- * [RequirementParser].
+ * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
+ * [RequirementParser], or [PacketParser].
  */
 object MaradonaParser {
 
@@ -82,6 +84,9 @@ object MaradonaParser {
                 MaradonaDiagramModel.SankeyModel(SankeyParser.parse(source))
             header == "requirementdiagram" || header.startsWith("requirementdiagram ") || header.startsWith("requirementdiagram\t") ->
                 MaradonaDiagramModel.RequirementModel(RequirementParser.parse(source))
+            header == "packet" || header.startsWith("packet ") || header.startsWith("packet\t") ||
+                header == "packet-beta" || header.startsWith("packet-beta ") || header.startsWith("packet-beta\t") ->
+                MaradonaDiagramModel.PacketModel(PacketParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

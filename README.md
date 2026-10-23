@@ -8,14 +8,15 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.16 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.17 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
 pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
 user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
 (`xychart` / `xychart-beta`), Kanban boards (`kanban`), Sankey diagrams
-(`sankey` / `sankey-beta`), and requirement diagrams (`requirementDiagram`).
+(`sankey` / `sankey-beta`), requirement diagrams (`requirementDiagram`),
+and packet diagrams (`packet` / `packet-beta`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -197,6 +198,16 @@ Supported in requirement diagrams (`requirementDiagram`):
   `contains` (`⊕` marker), `copies`, `derives`, `satisfies`, `verifies`,
   `refines`, and `traces`, plus `classDef`, `class`, `:::className`, and `style`
 
+Supported in packet diagrams (`packet` / `packet-beta`):
+
+- Headers and directives: `packet` and `packet-beta`, YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `bitsPerRow`, `showBits`, `bitOrder`,
+  `rowHeight`, `bitWidth`, `paddingX`, `paddingY`), `title`, and `accTitle` / `accDescr`
+- Bit-range fields (`<start>-<end>: "<label>"`), single-bit fields (`<bit>: "<label>"`),
+  and relative bit-count fields (`+<bits>: "<label>"`)
+- Automatic multi-row splitting across `bitsPerRow` boundaries and `ascending` /
+  `descending` bit numbering
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -278,7 +289,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, and requirement diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, and packet diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

@@ -763,4 +763,55 @@ class RenderScreenshotTest {
         assertTrue(reqHeaderBluePixels > 2_000, "Requirement header fill #EAF2FA not rendered ($reqHeaderBluePixels px)")
         assertTrue(elemHeaderMintPixels > 1_000, "Element header fill #E8F4EE not rendered ($elemHeaderMintPixels px)")
     }
+
+    @Test
+    fun packetDiagram() {
+        val png = renderToPng(
+            "packet",
+            """
+            ---
+            title: "TCP Packet Header"
+            ---
+            packet-beta
+              0-15: "Source Port"
+              16-31: "Destination Port"
+              32-63: "Sequence Number"
+              64-95: "Acknowledgment Number"
+              96-99: "Data Offset"
+              100-105: "Reserved"
+              106: "URG"
+              107: "ACK"
+              108: "PSH"
+              109: "RST"
+              110: "SYN"
+              111: "FIN"
+              112-127: "Window"
+              128-143: "Checksum"
+              144-159: "Urgent Pointer"
+              160-191: "(Options and Padding)"
+              192-255: "Data (variable length)"
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1120,
+            height = 540,
+        )
+        val img = ImageIO.read(png)
+        var multiBitFillPixels = 0
+        var singleBitFillPixels = 0
+        var borderPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0xF2) <= 3 && abs(g - 0xF0) <= 3 && abs(b - 0xE5) <= 3) multiBitFillPixels++
+                if (abs(r - 0xEA) <= 3 && abs(g - 0xE6) <= 3 && abs(b - 0xD8) <= 3) singleBitFillPixels++
+                if (abs(r - 0x8A) <= 4 && abs(g - 0x88) <= 4 && abs(b - 0x78) <= 4) borderPixels++
+            }
+        }
+        assertTrue(multiBitFillPixels > 50_000, "Packet multi-bit block fill not rendered ($multiBitFillPixels px)")
+        assertTrue(singleBitFillPixels > 1_000, "Packet 1-bit flag block fill not rendered ($singleBitFillPixels px)")
+        assertTrue(borderPixels > 2_000, "Packet block borders not rendered ($borderPixels px)")
+    }
 }
