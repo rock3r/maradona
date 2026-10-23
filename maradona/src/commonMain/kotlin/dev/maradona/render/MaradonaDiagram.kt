@@ -44,6 +44,7 @@ import dev.maradona.layout.JourneyDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
+import dev.maradona.layout.QuadrantDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
@@ -125,6 +126,8 @@ fun MaradonaDiagram(
     onTimelineLayout: (TimelineDiagramLayout) -> Unit = {},
     /** Reports the computed User Journey diagram layout (see [MaradonaJourneyLayout.onLayout]). */
     onJourneyLayout: (JourneyDiagramLayout) -> Unit = {},
+    /** Reports the computed Quadrant chart layout (see [MaradonaQuadrantLayout.onLayout]). */
+    onQuadrantLayout: (QuadrantDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -422,6 +425,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onJourneyLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.QuadrantModel ->
+                            MaradonaQuadrantLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onQuadrantLayout,
                                 modifier = contentModifier,
                             )
                     }
