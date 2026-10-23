@@ -99,7 +99,8 @@ object GanttLayout {
         val allStartMs = diagram.tasks.minOf { min(it.startMs, it.endMs) }
         val rawMaxMs = diagram.tasks.maxOf { max(it.startMs, it.endMs) }
         val minSpanMs = when {
-            diagram.dateFormat.trim() == "X" || diagram.dateFormat.trim() == "x" -> 1000L
+            diagram.dateFormat.trim() == "x" -> 1L
+            diagram.dateFormat.trim() == "X" -> 1000L
             diagram.dateFormat.trim().startsWith("HH:mm", ignoreCase = true) -> 60_000L
             else -> GanttParser.DAY_MS
         }
@@ -175,7 +176,11 @@ object GanttLayout {
             val globalRowIdx: Int,
             var lastEndMs: Long,
             var lastVisualRightX: Float,
+            var maxRowHeight: Float,
         )
+
+        fun requiredRowHeightForTask(t: GanttTask): Float =
+            max(rowHeight, taskLabelSize(t).height + 10f * d)
 
         val positionedSections = mutableListOf<PositionedGanttSection>()
         val rowRects = mutableListOf<DiagramRect>()
@@ -184,40 +189,46 @@ object GanttLayout {
         for ((secIdx, secName) in orderedSections.withIndex()) {
             val secTasks = regularTasks.filter { it.section == secName }
             val secStartRow = rowRects.size
+            val minSecHeight = if (hasSections && secName != null) sectionLabelSize(secName).height + 10f * d else rowHeight
             if (secTasks.isEmpty()) {
-                val rRect = DiagramRect(outerPad, cursorY, sectionColWidth + plotWidth, rowHeight)
+                val rH = max(rowHeight, minSecHeight)
+                val rRect = DiagramRect(outerPad, cursorY, sectionColWidth + plotWidth, rH)
                 rowRects += rRect
-                cursorY += rowHeight
+                cursorY += rH
             } else if (!diagram.compact) {
-                for (t in secTasks) {
+                for ((tIdx, t) in secTasks.withIndex()) {
                     val rIdx = rowRects.size
-                    val rRect = DiagramRect(outerPad, cursorY, sectionColWidth + plotWidth, rowHeight)
+                    val baseH = requiredRowHeightForTask(t)
+                    val rH = if (secTasks.size == 1 && tIdx == 0) max(baseH, minSecHeight) else baseH
+                    val bH = max(rowBarHeight, rH - 10f * d)
+                    val rRect = DiagramRect(outerPad, cursorY, sectionColWidth + plotWidth, rH)
                     rowRects += rRect
                     positionedTasks += buildPositionedTask(
                         task = t,
                         sectionIndex = secIdx,
                         rowIndex = rIdx,
                         rowTopY = cursorY,
-                        rowHeight = rowHeight,
-                        rowBarHeight = rowBarHeight,
+                        rowHeight = rH,
+                        rowBarHeight = bH,
                         timeToX = ::timeToX,
                         labelSize = taskLabelSize(t),
                         density = d,
                     )
-                    cursorY += rowHeight
+                    cursorY += rH
                 }
             } else {
                 // Compact mode: pack non-overlapping tasks within the section onto shared horizontal rows.
                 val tracks = mutableListOf<CompactRowTrack>()
                 val pendingByTask = ArrayList<Pair<GanttTask, Int>>(secTasks.size)
                 for (t in secTasks) {
+                    val reqH = requiredRowHeightForTask(t)
                     val tempPos = buildPositionedTask(
                         task = t,
                         sectionIndex = secIdx,
                         rowIndex = 0,
                         rowTopY = 0f,
-                        rowHeight = rowHeight,
-                        rowBarHeight = rowBarHeight,
+                        rowHeight = reqH,
+                        rowBarHeight = max(rowBarHeight, reqH - 10f * d),
                         timeToX = ::timeToX,
                         labelSize = taskLabelSize(t),
                         density = d,
@@ -230,6 +241,7 @@ object GanttLayout {
                     val assignedRow = if (reuseTrack != null) {
                         reuseTrack.lastEndMs = max(reuseTrack.lastEndMs, t.endMs)
                         reuseTrack.lastVisualRightX = max(reuseTrack.lastVisualRightX, visualRight)
+                        reuseTrack.maxRowHeight = max(reuseTrack.maxRowHeight, reqH)
                         reuseTrack.globalRowIdx
                     } else {
                         val newGlobalRow = secStartRow + tracks.size
@@ -237,29 +249,35 @@ object GanttLayout {
                             globalRowIdx = newGlobalRow,
                             lastEndMs = t.endMs,
                             lastVisualRightX = visualRight,
+                            maxRowHeight = reqH,
                         )
                         newGlobalRow
                     }
                     pendingByTask += t to assignedRow
                 }
-                for (localIdx in tracks.indices) {
-                    rowRects += DiagramRect(outerPad, cursorY + localIdx * rowHeight, sectionColWidth + plotWidth, rowHeight)
+                if (tracks.size == 1) {
+                    tracks[0].maxRowHeight = max(tracks[0].maxRowHeight, minSecHeight)
+                }
+                for (tr in tracks) {
+                    rowRects += DiagramRect(outerPad, cursorY, sectionColWidth + plotWidth, tr.maxRowHeight)
+                    cursorY += tr.maxRowHeight
                 }
                 for ((t, assignedRow) in pendingByTask) {
-                    val rowTop = rowRects[assignedRow].y
+                    val rRect = rowRects[assignedRow]
+                    val rH = rRect.height
+                    val bH = max(rowBarHeight, rH - 10f * d)
                     positionedTasks += buildPositionedTask(
                         task = t,
                         sectionIndex = secIdx,
                         rowIndex = assignedRow,
-                        rowTopY = rowTop,
-                        rowHeight = rowHeight,
-                        rowBarHeight = rowBarHeight,
+                        rowTopY = rRect.y,
+                        rowHeight = rH,
+                        rowBarHeight = bH,
                         timeToX = ::timeToX,
                         labelSize = taskLabelSize(t),
                         density = d,
                     )
                 }
-                cursorY += tracks.size * rowHeight
             }
 
             val secEndRow = rowRects.size
@@ -480,7 +498,8 @@ object GanttLayout {
         val allStartMs = diagram.tasks.minOf { min(it.startMs, it.endMs) }
         val rawMaxMs = diagram.tasks.maxOf { max(it.startMs, it.endMs) }
         val minSpanMs = when {
-            diagram.dateFormat.trim() == "X" || diagram.dateFormat.trim() == "x" -> 1000L
+            diagram.dateFormat.trim() == "x" -> 1L
+            diagram.dateFormat.trim() == "X" -> 1000L
             diagram.dateFormat.trim().startsWith("HH:mm", ignoreCase = true) -> 60_000L
             else -> GanttParser.DAY_MS
         }
@@ -601,6 +620,14 @@ object GanttLayout {
             if (parsed != null && parsed >= rawStep / 4) return parsed
         }
         val fmt = dateFormat.trim()
+        if (fmt == "x") {
+            val msSteps = longArrayOf(
+                1L, 2L, 5L, 10L, 20L, 50L, 100L, 200L, 500L,
+                1_000L, 2_000L, 5_000L, 10_000L, 20_000L, 50_000L,
+                100_000L, 200_000L, 500_000L, 1_000_000L,
+            )
+            return msSteps.firstOrNull { it >= rawStep } ?: rawStep
+        }
         if (fmt == "X") {
             val secSteps = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 20_000L, 30_000L, 60_000L, 120_000L, 300_000L)
             return secSteps.firstOrNull { it >= rawStep } ?: rawStep
@@ -631,11 +658,14 @@ object GanttLayout {
     private fun overlaps(a: DiagramRect, b: DiagramRect, pad: Float): Boolean =
         a.x - pad < b.right && b.x - pad < a.right && a.y - pad < b.bottom && b.y - pad < a.bottom
 
-    internal fun defaultLabelSize(label: String, density: Float): DiagramSize =
-        DiagramSize(
-            width = max(24f * density, label.length * 7.4f * density),
-            height = 16f * density,
+    internal fun defaultLabelSize(label: String, density: Float): DiagramSize {
+        val lines = label.lines().ifEmpty { listOf("") }
+        val maxLen = lines.maxOfOrNull { it.length } ?: 3
+        return DiagramSize(
+            width = max(24f * density, maxLen * 7.4f * density),
+            height = lines.size * 16f * density,
         )
+    }
 
     internal fun defaultTickSize(label: String, density: Float): DiagramSize =
         DiagramSize(

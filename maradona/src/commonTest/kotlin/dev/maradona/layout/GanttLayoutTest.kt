@@ -133,5 +133,32 @@ class GanttLayoutTest {
         assertEquals(1, progLayout.tasks.size)
         assertEquals(1, progLayout.sections.size)
         assertEquals("Backend", progLayout.sections.single().name)
+
+        // Millisecond epoch charts (dateFormat x) must generate multiple sub-day ticks.
+        val msEpochDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat x
+                A :a, 0, 10000
+            """.trimIndent(),
+        )
+        val msEpochLayout = GanttLayout.layout(msEpochDiagram)
+        assertTrue(msEpochLayout.ticks.size >= 4, "Expected sub-day millisecond ticks for dateFormat x, got ${msEpochLayout.ticks.map { it.label }}")
+
+        // Tall/multiline task labels must expand row heights so adjacent labels never overlap vertically.
+        val tallLayout = GanttLayout.layout(
+            diagram = GanttParser.parse(
+                """
+                gantt
+                    dateFormat YYYY-MM-DD
+                    Task 1 :t1, 2024-01-01, 2d
+                    Task 2 :t2, 2024-01-01, 2d
+                """.trimIndent(),
+            ),
+            taskLabelSize = { DiagramSize(120f, 56f) },
+        )
+        val t1Pos = assertNotNull(tallLayout.task("t1"))
+        val t2Pos = assertNotNull(tallLayout.task("t2"))
+        assertTrue(t1Pos.labelRect.bottom < t2Pos.labelRect.y, "Tall task labels on adjacent rows must not overlap vertically")
     }
 }
