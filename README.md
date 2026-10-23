@@ -8,11 +8,12 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.10 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.11 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
-pie charts (`pie`), Git graphs (`gitGraph`), and timelines (`timeline`).
+pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`), and
+user journeys (`journey`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -135,6 +136,13 @@ Supported in timelines (`timeline`):
 - Sections (`section <title>`), periods and events (`period : event1 : event2`),
   continuation lines (`: event3`), and `<br>` / `<b>` / `<i>` label markup
 
+Supported in user journeys (`journey`):
+
+- Headers and directives: `journey`, YAML frontmatter and `%%{init}%%` configuration
+  (`title`), `title`, and `accTitle` / `accDescr`
+- Sections (`section <title>`) and tasks (`Task name : score [: actor1, actor2]`)
+  with actor legend badges, actor indicator dots, score tracks, and satisfaction mood faces
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -216,7 +224,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, and timelines only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, and user journeys only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

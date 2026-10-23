@@ -538,4 +538,38 @@ class RenderScreenshotTest {
         }
         assertTrue(sectionBannerPixels > 1_500, "Timeline section banner rgb(199, 223, 242) not rendered ($sectionBannerPixels px)")
     }
+
+    @Test
+    fun journeyDiagram() {
+        val png = renderToPng(
+            "journey",
+            """
+            journey
+                title Adopting Maradona in a Compose App
+                section Evaluate
+                  Browse Pele examples: 5: Developer
+                  Try WebView fallback: 1: Developer, QA
+                section Integrate
+                  Add maradona dependency: 5: Developer
+                  Render live Mermaid: 5: Developer, Designer
+                section Ship
+                  Run Desktop & iOS checks: 3: Developer, QA
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 1150,
+            height = 440,
+        )
+        val img = ImageIO.read(png)
+        var facePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 255) <= 3 && abs(g - 248) <= 3 && abs(b - 220) <= 3) facePixels++
+            }
+        }
+        assertTrue(facePixels > 500, "Journey mood face rgb(255, 248, 220) not rendered ($facePixels px)")
+    }
 }

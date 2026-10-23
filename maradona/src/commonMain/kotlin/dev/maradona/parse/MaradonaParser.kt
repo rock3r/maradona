@@ -5,6 +5,7 @@ import dev.maradona.model.ErDiagram
 import dev.maradona.model.Flowchart
 import dev.maradona.model.GanttDiagram
 import dev.maradona.model.GitGraphDiagram
+import dev.maradona.model.JourneyDiagram
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.SequenceDiagram
@@ -23,13 +24,15 @@ sealed interface MaradonaDiagramModel {
     data class PieModel(val diagram: PieDiagram) : MaradonaDiagramModel
     data class GitGraphModel(val diagram: GitGraphDiagram) : MaradonaDiagramModel
     data class TimelineModel(val diagram: TimelineDiagram) : MaradonaDiagramModel
+    data class JourneyModel(val diagram: JourneyDiagram) : MaradonaDiagramModel
 }
 
 /**
  * Top-level Mermaid parser that detects the diagram type from the header line
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
- * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], or [TimelineParser].
+ * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
+ * or [JourneyParser].
  */
 object MaradonaParser {
 
@@ -54,6 +57,8 @@ object MaradonaParser {
                 MaradonaDiagramModel.GitGraphModel(GitGraphParser.parse(source))
             header == "timeline" || header.startsWith("timeline ") || header.startsWith("timeline\t") || header.startsWith("timeline:") ->
                 MaradonaDiagramModel.TimelineModel(TimelineParser.parse(source))
+            header == "journey" || header.startsWith("journey ") || header.startsWith("journey\t") || header.startsWith("journey;") ->
+                MaradonaDiagramModel.JourneyModel(JourneyParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }
@@ -78,7 +83,14 @@ object MaradonaParser {
                 continue
             }
             val commentAt = trimmedRaw.indexOf("%%")
-            val line = (if (commentAt >= 0) trimmedRaw.substring(0, commentAt) else trimmedRaw).trim()
+            val line = (if (commentAt >= 0) trimmedRaw.substring(0, commentAt) else trimmedRaw)
+                .let { s ->
+                    val hashAt = s.indexOf('#')
+                    if (hashAt >= 0) s.substring(0, hashAt) else s
+                }
+                .trim()
+                .trimEnd(';')
+                .trim()
             if (line.isNotEmpty()) return line.lowercase()
         }
         return ""

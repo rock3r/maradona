@@ -232,6 +232,18 @@ private val examples = linkedMapOf(
             v0.9 : Gantt Schedules : Donut Pie Charts
             v1.0 : GitGraph & Timeline
     """.trimIndent(),
+    "Journey" to """
+        journey
+          title Adopting Maradona in a Compose App
+          section Evaluate
+            Browse Pele examples: 5: Developer
+            Try WebView fallback: 1: Developer, QA
+          section Integrate
+            Add maradona dependency: 5: Developer
+            Render live Mermaid: 5: Developer, Designer
+          section Ship
+            Run Desktop & iOS checks: 4: Developer, QA
+    """.trimIndent(),
 )
 
 private class SampleState(
