@@ -251,18 +251,49 @@ object XyChartLayout {
             0f
         }
 
+        val hasBarPlot = diagram.plots.any { it.type == XyPlotType.Bar }
+        val barSeriesCountForSizing = max(1, diagram.plots.count { it.type == XyPlotType.Bar })
+        val maxBarPoints = diagram.plots
+            .filter { it.type == XyPlotType.Bar }
+            .maxOfOrNull { it.points.size } ?: 1
+        val xTickCount = max(1, xTickLabels.size)
+        val xSlotCount = when (val xa = diagram.xAxis) {
+            is XyAxisSpec.BandAxis -> max(1, xa.categories.size)
+            is XyAxisSpec.LinearAxis -> max(xTickCount, maxBarPoints)
+        }
+        val minSlotForBars = if (hasBarPlot) {
+            (barSeriesCountForSizing * 4f * d + (barSeriesCountForSizing - 1) * 2f * d + 8f * d) / 0.8f
+        } else {
+            0f
+        }
+
         val plotX = outerPad + leftAxisBandW
         val plotY = if (isHorizontal) contentTopY + horizAxisBandH else contentTopY
         val minPlotW = maxOf(
             220f * d,
             horizTitleSz?.width ?: 0f,
-            if (!isHorizontal) xTickLabels.size * (maxHorizTickW + 10f * d) else (yPadAtMin + yPadAtMax + 180f * d),
+            maxOutsideBarLabelW + 16f * d,
+            if (!isHorizontal) {
+                max(
+                    xTickLabels.size * (maxHorizTickW + 10f * d),
+                    xSlotCount * minSlotForBars,
+                )
+            } else {
+                yPadAtMin + yPadAtMax + 180f * d
+            },
         )
         val minPlotH = maxOf(
             160f * d,
             leftTitleSz?.width ?: 0f,
             totalLegendH,
-            if (isHorizontal) xTickLabels.size * (maxLeftTickH + 10f * d) else (yPadAtMin + yPadAtMax + 140f * d),
+            if (isHorizontal) {
+                max(
+                    xTickLabels.size * (maxLeftTickH + 10f * d),
+                    xSlotCount * minSlotForBars,
+                )
+            } else {
+                yPadAtMin + yPadAtMax + 140f * d
+            },
         )
 
         val rightReservedW = max(legendWidth, maxHorizTickW / 2f)
@@ -275,17 +306,8 @@ object XyChartLayout {
 
         // Compute outer padding along the X-axis (band/category or linear) to match Mermaid's BaseAxis,
         // accounting for actual bar point counts on linear X-axes so dense bar series do not overlap.
-        val hasBarPlot = diagram.plots.any { it.type == XyPlotType.Bar }
-        val maxBarPoints = diagram.plots
-            .filter { it.type == XyPlotType.Bar }
-            .maxOfOrNull { it.points.size } ?: 1
         val xSpan = if (isHorizontal) plotH else plotW
         val xLabelHalf = if (isHorizontal) maxLeftTickH / 2f else maxHorizTickW / 2f
-        val xTickCount = max(1, xTickLabels.size)
-        val xSlotCount = when (val xa = diagram.xAxis) {
-            is XyAxisSpec.BandAxis -> max(1, xa.categories.size)
-            is XyAxisSpec.LinearAxis -> max(xTickCount, maxBarPoints)
-        }
         var xOuterPad = min(xLabelHalf, 0.2f * xSpan)
         if (hasBarPlot) {
             val initialSlotDist = max(1f, (xSpan - 2f * xOuterPad) / xSlotCount)
@@ -470,11 +492,16 @@ object XyChartLayout {
             abs(xRangeEnd - xRangeStart).coerceAtLeast(40f * d)
         }
         val clusterSpan = min(xOuterPad * 2f, tickDist) * 0.85f
-        val barGap = if (barSeriesCount > 1) 2f * d else 0f
+        val barGap = if (barSeriesCount > 1) {
+            min(2f * d, clusterSpan * 0.25f / (barSeriesCount - 1).toFloat())
+        } else {
+            0f
+        }
         val singleBarThickness = max(
-            2f * d,
+            1f * d,
             (clusterSpan - barGap * (barSeriesCount - 1)) / barSeriesCount,
         )
+        val actualClusterSpan = singleBarThickness * barSeriesCount + barGap * (barSeriesCount - 1)
 
         val bars = mutableListOf<PositionedXyBar>()
         val lines = mutableListOf<PositionedXyLineSeries>()
@@ -502,7 +529,7 @@ object XyChartLayout {
             when (series.type) {
                 XyPlotType.Bar -> {
                     val barSlot = barSeriesIndices.indexOf(seriesIdx).coerceAtLeast(0)
-                    val clusterStartOffset = -clusterSpan / 2f + barSlot * (singleBarThickness + barGap)
+                    val clusterStartOffset = -actualClusterSpan / 2f + barSlot * (singleBarThickness + barGap)
                     for ((ptIdx, pt) in series.points.withIndex()) {
                         val (bandCenter, catLabel) = pointXCoordAndCategory(ptIdx, series.points.size)
                         val valCoord = yCoordForValue(pt.value)
@@ -545,9 +572,11 @@ object XyChartLayout {
                                         max(barRect.x + 2f * d, barRect.right - dlSz.width - 6f * d)
                                     }
                                 }
+                                val ly = (barRect.centerY - dlSz.height / 2f)
+                                    .coerceIn(plotRect.y, max(plotRect.y, plotRect.bottom - dlSz.height))
                                 DiagramRect(
                                     x = lx,
-                                    y = barRect.centerY - dlSz.height / 2f,
+                                    y = ly,
                                     width = dlSz.width,
                                     height = dlSz.height,
                                 )
@@ -566,8 +595,10 @@ object XyChartLayout {
                                         min(barRect.bottom - dlSz.height, barRect.y + 4f * d)
                                     }
                                 }
+                                val lx = (barRect.centerX - dlSz.width / 2f)
+                                    .coerceIn(plotRect.x, max(plotRect.x, plotRect.right - dlSz.width))
                                 DiagramRect(
-                                    x = barRect.centerX - dlSz.width / 2f,
+                                    x = lx,
                                     y = ly,
                                     width = dlSz.width,
                                     height = dlSz.height,

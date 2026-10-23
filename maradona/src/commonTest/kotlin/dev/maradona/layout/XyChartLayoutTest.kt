@@ -190,5 +190,37 @@ class XyChartLayoutTest {
         assertTrue(hPosBar.rect.right > hNegBar.rect.right, "Positive horizontal bar must extend to the right of negative horizontal bar")
         assertTrue(assertNotNull(hNegBar.dataLabelRect).right <= hNegBar.rect.x, "Negative horizontal outside label must sit left of bar")
         assertTrue(assertNotNull(hPosBar.dataLabelRect).x >= hPosBar.rect.right, "Positive horizontal outside label must sit right of bar")
+
+        // Vertical chart with a 60-char bar label on the first bar keeps the label inside [0, width].
+        val vertWideFirstLabel = XyChartLayout.layout(
+            XyChartParser.parse(
+                """
+                xychart-beta
+                  x-axis [A, B]
+                  y-axis 0 --> 100
+                  bar [50 "First_Bar_Explicit_Label_With_Sixty_Characters_For_Bounds_Check", 80]
+                """.trimIndent(),
+            ),
+        )
+        val firstLbl = assertNotNull(vertWideFirstLabel.bars.first().dataLabelRect)
+        assertTrue(firstLbl.x >= 0f && firstLbl.right <= vertWideFirstLabel.width + 0.01f, "First bar wide label must fit within [0, width]")
+
+        // Numeric X-axis with 20 points and 10 grouped bar series keeps all bars ordered without overlap.
+        val multiSeriesSrc = buildString {
+            appendLine("xychart-beta")
+            appendLine("  x-axis 1 --> 20")
+            appendLine("  y-axis 0 --> 100")
+            val pts = (1..20).joinToString(", ") { "${(it * 5) % 100 + 10}" }
+            repeat(10) { s ->
+                appendLine("  bar \"S$s\" [$pts]")
+            }
+        }
+        val multiClusterLayout = XyChartLayout.layout(XyChartParser.parse(multiSeriesSrc))
+        val byPoint = multiClusterLayout.bars.groupBy { it.pointIndex }
+        for (pIdx in 0 until 19) {
+            val curRight = byPoint.getValue(pIdx).maxOf { it.rect.right }
+            val nextLeft = byPoint.getValue(pIdx + 1).minOf { it.rect.x }
+            assertTrue(curRight <= nextLeft + 0.01f, "Cluster $pIdx ($curRight) overlapped cluster ${pIdx + 1} ($nextLeft)")
+        }
     }
 }
