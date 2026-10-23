@@ -216,21 +216,53 @@ object XyChartLayout {
             contentTopY += resolvedTitleSize.height + 14f * d
         }
 
+        // Reserve inner headroom on the Y-axis when outside bar data labels are enabled so
+        // labels at domain extremes remain strictly outside their bars and inside plotRect,
+        // and grow plotRect so yPadAtMin + yPadAtMax never inverts the drawable Y span.
+        val outsideBarLabelSizes = diagram.plots
+            .filter { it.type == XyPlotType.Bar }
+            .flatMap { s ->
+                s.points.mapNotNull { pt ->
+                    val txt = pt.label ?: if (diagram.showDataLabel && diagram.showDataLabelOutsideBar) {
+                        formatNumber(pt.value)
+                    } else {
+                        null
+                    }
+                    txt?.let(pointLabelSize)
+                }
+            }
+        val maxOutsideBarLabelW = outsideBarLabelSizes.maxOfOrNull { it.width } ?: 0f
+        val maxOutsideBarLabelH = outsideBarLabelSizes.maxOfOrNull { it.height } ?: 0f
+        val yLo = min(yMin, yMax)
+        val yHi = max(yMin, yMax)
+        val barBaseVal = 0.0.coerceIn(yLo, yHi)
+        val barValues = diagram.plots.filter { it.type == XyPlotType.Bar }.flatMap { s -> s.points.map { it.value } }
+        val hasBarTowardsMin = barValues.any { if (yMin <= yMax) it < barBaseVal else it > barBaseVal }
+        val hasBarTowardsMax = barValues.any { if (yMin <= yMax) it >= barBaseVal else it <= barBaseVal }
+
+        val yPadAtMin = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMin) {
+            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
+        } else {
+            0f
+        }
+        val yPadAtMax = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMax) {
+            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
+        } else {
+            0f
+        }
+
         val plotX = outerPad + leftAxisBandW
         val plotY = if (isHorizontal) contentTopY + horizAxisBandH else contentTopY
-        val minPlotW = max(
+        val minPlotW = maxOf(
             220f * d,
-            max(
-                horizTitleSz?.width ?: 0f,
-                if (!isHorizontal) xTickLabels.size * (maxHorizTickW + 10f * d) else 220f * d,
-            ),
+            horizTitleSz?.width ?: 0f,
+            if (!isHorizontal) xTickLabels.size * (maxHorizTickW + 10f * d) else (yPadAtMin + yPadAtMax + 180f * d),
         )
-        val minPlotH = max(
+        val minPlotH = maxOf(
             160f * d,
-            max(
-                max(leftTitleSz?.width ?: 0f, totalLegendH),
-                if (isHorizontal) xTickLabels.size * (maxLeftTickH + 10f * d) else 160f * d,
-            ),
+            leftTitleSz?.width ?: 0f,
+            totalLegendH,
+            if (isHorizontal) xTickLabels.size * (maxLeftTickH + 10f * d) else (yPadAtMin + yPadAtMax + 140f * d),
         )
 
         val rightReservedW = max(legendWidth, maxHorizTickW / 2f)
@@ -277,39 +309,6 @@ object XyChartLayout {
             return xRangeStart + t * (xRangeEnd - xRangeStart)
         }
 
-        // Reserve inner headroom on the Y-axis when outside bar data labels are enabled so
-        // labels at domain extremes remain strictly outside their bars and inside plotRect.
-        val outsideBarLabelSizes = diagram.plots
-            .filter { it.type == XyPlotType.Bar }
-            .flatMap { s ->
-                s.points.mapNotNull { pt ->
-                    val txt = pt.label ?: if (diagram.showDataLabel && diagram.showDataLabelOutsideBar) {
-                        formatNumber(pt.value)
-                    } else {
-                        null
-                    }
-                    txt?.let(pointLabelSize)
-                }
-            }
-        val maxOutsideBarLabelW = outsideBarLabelSizes.maxOfOrNull { it.width } ?: 0f
-        val maxOutsideBarLabelH = outsideBarLabelSizes.maxOfOrNull { it.height } ?: 0f
-        val yLo = min(yMin, yMax)
-        val yHi = max(yMin, yMax)
-        val barBaseVal = 0.0.coerceIn(yLo, yHi)
-        val barValues = diagram.plots.filter { it.type == XyPlotType.Bar }.flatMap { s -> s.points.map { it.value } }
-        val hasBarTowardsMin = barValues.any { if (yMin <= yMax) it < barBaseVal else it > barBaseVal }
-        val hasBarTowardsMax = barValues.any { if (yMin <= yMax) it >= barBaseVal else it <= barBaseVal }
-
-        val yPadAtMin = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMin) {
-            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
-        } else {
-            0f
-        }
-        val yPadAtMax = if (outsideBarLabelSizes.isNotEmpty() && hasBarTowardsMax) {
-            if (isHorizontal) maxOutsideBarLabelW + 10f * d else maxOutsideBarLabelH + 8f * d
-        } else {
-            0f
-        }
         val yRangeMinCoord = if (isHorizontal) plotRect.x + yPadAtMin else plotRect.bottom - yPadAtMin
         val yRangeMaxCoord = if (isHorizontal) plotRect.right - yPadAtMax else plotRect.y + yPadAtMax
 

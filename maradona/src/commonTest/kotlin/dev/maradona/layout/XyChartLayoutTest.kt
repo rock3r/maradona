@@ -173,5 +173,22 @@ class XyChartLayoutTest {
             ),
         )
         assertTrue(negBars.bars[0].rect.height > negBars.bars[1].rect.height, "-80 bar should be taller than -40 bar when anchored at 0")
+
+        // Horizontal chart with wide 50-char point labels at both negative and positive extremes preserves positive Y span.
+        val horizLongBarLabels = XyChartLayout.layout(
+            XyChartParser.parse(
+                """
+                xychart-beta horizontal
+                  x-axis [Neg, Pos]
+                  y-axis -100 --> 100
+                  bar [-90 "Negative_Label_With_Over_Fifty_Characters_For_Test", 90 "Positive_Label_With_Over_Fifty_Characters_For_Test"]
+                """.trimIndent(),
+            ),
+        )
+        val hNegBar = horizLongBarLabels.bars[0]
+        val hPosBar = horizLongBarLabels.bars[1]
+        assertTrue(hPosBar.rect.right > hNegBar.rect.right, "Positive horizontal bar must extend to the right of negative horizontal bar")
+        assertTrue(assertNotNull(hNegBar.dataLabelRect).right <= hNegBar.rect.x, "Negative horizontal outside label must sit left of bar")
+        assertTrue(assertNotNull(hPosBar.dataLabelRect).x >= hPosBar.rect.right, "Positive horizontal outside label must sit right of bar")
     }
 }
