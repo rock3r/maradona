@@ -814,4 +814,40 @@ class RenderScreenshotTest {
         assertTrue(singleBitFillPixels > 1_000, "Packet 1-bit flag block fill not rendered ($singleBitFillPixels px)")
         assertTrue(borderPixels > 2_000, "Packet block borders not rendered ($borderPixels px)")
     }
+
+    @Test
+    fun radarDiagram() {
+        val png = renderToPng(
+            "radar",
+            """
+            radar-beta
+              title "Academic Performance Comparison"
+              axis m["Math"], s["Science"], e["English"]
+              axis h["History"], g["Geography"], a["Art"]
+              curve a["Alice"]{85, 90, 80, 70, 75, 90}
+              curve b["Bob"]{70, 75, 85, 80, 90, 85}
+              graticule polygon
+              max 100
+              min 0
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 760,
+            height = 540,
+        )
+        val img = ImageIO.read(png)
+        var blueCurvePixels = 0
+        var orangeCurvePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x20) <= 5 && abs(g - 0x5E) <= 5 && abs(b - 0xA6) <= 5) blueCurvePixels++
+                if (abs(r - 0xDA) <= 5 && abs(g - 0x70) <= 5 && abs(b - 0x2C) <= 5) orangeCurvePixels++
+            }
+        }
+        assertTrue(blueCurvePixels > 400, "Radar first curve stroke #205EA6 not rendered ($blueCurvePixels px)")
+        assertTrue(orangeCurvePixels > 400, "Radar second curve stroke #DA702C not rendered ($orangeCurvePixels px)")
+    }
 }

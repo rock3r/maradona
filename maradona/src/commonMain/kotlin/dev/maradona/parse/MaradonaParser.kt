@@ -11,6 +11,7 @@ import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.PacketDiagram
 import dev.maradona.model.PieDiagram
 import dev.maradona.model.QuadrantDiagram
+import dev.maradona.model.RadarDiagram
 import dev.maradona.model.RequirementDiagram
 import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceDiagram
@@ -37,6 +38,7 @@ sealed interface MaradonaDiagramModel {
     data class SankeyModel(val diagram: SankeyDiagram) : MaradonaDiagramModel
     data class RequirementModel(val diagram: RequirementDiagram) : MaradonaDiagramModel
     data class PacketModel(val diagram: PacketDiagram) : MaradonaDiagramModel
+    data class RadarModel(val diagram: RadarDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -45,7 +47,7 @@ sealed interface MaradonaDiagramModel {
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
  * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
- * [RequirementParser], or [PacketParser].
+ * [RequirementParser], [PacketParser], or [RadarParser].
  */
 object MaradonaParser {
 
@@ -87,6 +89,9 @@ object MaradonaParser {
             header == "packet" || header.startsWith("packet ") || header.startsWith("packet\t") ||
                 header == "packet-beta" || header.startsWith("packet-beta ") || header.startsWith("packet-beta\t") ->
                 MaradonaDiagramModel.PacketModel(PacketParser.parse(source))
+            header == "radar" || header.startsWith("radar ") || header.startsWith("radar\t") || header.startsWith("radar:") ||
+                header == "radar-beta" || header.startsWith("radar-beta ") || header.startsWith("radar-beta\t") || header.startsWith("radar-beta:") ->
+                MaradonaDiagramModel.RadarModel(RadarParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

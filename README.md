@@ -8,7 +8,7 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.17 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.18 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
@@ -16,7 +16,8 @@ pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
 user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
 (`xychart` / `xychart-beta`), Kanban boards (`kanban`), Sankey diagrams
 (`sankey` / `sankey-beta`), requirement diagrams (`requirementDiagram`),
-and packet diagrams (`packet` / `packet-beta`).
+packet diagrams (`packet` / `packet-beta`), and radar charts
+(`radar` / `radar-beta`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -208,6 +209,19 @@ Supported in packet diagrams (`packet` / `packet-beta`):
 - Automatic multi-row splitting across `bitsPerRow` boundaries and `ascending` /
   `descending` bit numbering
 
+Supported in radar charts (`radar` / `radar-beta`):
+
+- Headers and directives: `radar` and `radar-beta`, YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `width`, `height`, `marginTop`,
+  `marginRight`, `marginBottom`, `marginLeft`, `showLegend`, `ticks`, `max`,
+  `min`, `graticule`, `axisScaleFactor`, `axisLabelFactor`, `curveTension`,
+  `curveOpacity`, `curveStrokeWidth`), `title`, and `accTitle` / `accDescr`
+- Radial axes (`axis id["Label"], ...`) and curves with positional
+  (`curve id["Label"]{v1, v2, ...}`) or axis-keyed
+  (`curve id["Label"]{axis1: v1, axis2: v2, ...}`) entries
+- Circular and polygonal graticules (`graticule circle | polygon`), smooth
+  closed curves, and series legend
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -289,7 +303,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, and packet diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, and radar charts only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.
