@@ -572,14 +572,17 @@ object SankeyLayout {
         if (abs(value - roundedInt) <= 1e-9 * max(1.0, absVal)) {
             return roundedInt.toLong().toString()
         }
-        val scaled100 = (value * 100.0)
-        if (scaled100.isFinite() && abs(scaled100) < 9e15) {
-            val r = kotlin.math.round(scaled100) / 100.0
-            val s = r.toString()
-            return if (s.contains('.') && !s.contains('E') && !s.contains('e')) {
-                s.trimEnd('0').trimEnd('.')
-            } else {
-                s
+        val factor = if (absVal >= 1e-2) 100.0 else 1_000_000.0
+        val scaled = value * factor
+        if (scaled.isFinite() && abs(scaled) < 9e15) {
+            val r = kotlin.math.round(scaled) / factor
+            if (r != 0.0) {
+                val s = r.toString()
+                return if (s.contains('.') && !s.contains('E') && !s.contains('e')) {
+                    s.trimEnd('0').trimEnd('.')
+                } else {
+                    s
+                }
             }
         }
         return value.toString()

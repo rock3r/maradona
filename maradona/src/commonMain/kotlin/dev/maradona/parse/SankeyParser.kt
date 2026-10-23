@@ -199,20 +199,26 @@ object SankeyParser {
                 continue
             }
 
+            val cleanForCheck = stripLineCommentOutsideQuotes(rawLine).trim()
             val accBlockMatch = Regex("""^accDescr\s*\{(.*)$""", RegexOption.IGNORE_CASE).find(rawTrimmed)
-            if (accBlockMatch != null) {
-                headerSeen = true
+            if (accBlockMatch != null && !isThreeFieldNumericCsvRecord(cleanForCheck)) {
                 val afterOpen = accBlockMatch.groupValues[1]
                 val closeIdx = afterOpen.indexOf('}')
                 if (closeIdx >= 0) {
-                    accDescr = normalizeText(afterOpen.substring(0, closeIdx).trim())
+                    val afterClose = stripLineCommentOutsideQuotes(afterOpen.substring(closeIdx + 1)).trim()
+                    if (afterClose.isEmpty()) {
+                        headerSeen = true
+                        accDescr = normalizeText(afterOpen.substring(0, closeIdx).trim())
+                        continue
+                    }
                 } else {
+                    headerSeen = true
                     inAccDescrBlock = true
                     accDescrLines.clear()
                     val firstLine = afterOpen.trim()
                     if (firstLine.isNotEmpty()) accDescrLines += firstLine
+                    continue
                 }
-                continue
             }
 
             val clean = stripLineCommentOutsideQuotes(rawLine).trim()
@@ -413,7 +419,10 @@ object SankeyParser {
                     if (trimmed.contains('}')) inAccBlock = false
                     continue
                 }
-                if (Regex("""^accDescr\s*\{""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+                if (
+                    Regex("""^accDescr\s*\{""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed) &&
+                    !isThreeFieldNumericCsvRecord(stripLineCommentOutsideQuotes(rawLine).trim())
+                ) {
                     out += rawLine
                     if (!trimmed.contains('}')) inAccBlock = true
                     continue

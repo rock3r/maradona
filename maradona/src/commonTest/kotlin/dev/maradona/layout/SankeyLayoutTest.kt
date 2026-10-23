@@ -78,5 +78,6 @@ class SankeyLayoutTest {
         val cNode = assertNotNull(extreme.node("C"))
         assertTrue(cNode.rect.height > 100f, "Large finite flow 1e40 should fill available height")
         assertTrue(cNode.labelText.contains("1.0E40"))
+        assertEquals("0.001", SankeyLayout.formatFlowValue(0.001))
     }
 }
