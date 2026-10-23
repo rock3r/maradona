@@ -365,19 +365,20 @@ object KanbanParser {
         )
     }
 
+    private val DELIM_PAIRS = listOf(
+        "((" to "))",
+        "))" to "((",
+        "(-" to "-)",
+        "{{" to "}}",
+        "[" to "]",
+        "(" to ")",
+        ")" to "(",
+    )
+
     private fun extractIdAndLabel(nodeSpec: String, autoIndex: Int): Triple<String, String, Boolean> {
         if (nodeSpec.isEmpty()) {
             throw IllegalArgumentException("Empty kanban node")
         }
-        val delimPairs = listOf(
-            "((" to "))",
-            "))" to "((",
-            "(-" to "-)",
-            "{{" to "}}",
-            "[" to "]",
-            "(" to ")",
-            ")" to "(",
-        )
         // Find the earliest shape opener outside quotes.
         var openIdx = -1
         var matchedPair: Pair<String, String>? = null
@@ -395,7 +396,7 @@ object KanbanParser {
                 continue
             }
             if (!inQuotes) {
-                for (pair in delimPairs) {
+                for (pair in DELIM_PAIRS) {
                     if (nodeSpec.startsWith(pair.first, i)) {
                         openIdx = i
                         matchedPair = pair
@@ -503,7 +504,7 @@ object KanbanParser {
 
     private fun findMetadataStartOutsideQuotesAndShapes(s: String): Int {
         var quoteChar: Char? = null
-        var bracketDepth = 0
+        var activeCloseDelim: String? = null
         var metaBraceDepth = 0
         var i = 0
         var lastAtBrace = -1
@@ -529,17 +530,31 @@ object KanbanParser {
                 i++
                 continue
             }
-            when (c) {
-                '[', '(' -> bracketDepth++
-                ']', ')' -> if (bracketDepth > 0) bracketDepth--
-                '@' -> if (bracketDepth == 0 && i + 1 < s.length && s[i + 1] == '{') {
-                    lastAtBrace = i
-                    metaBraceDepth = 1
-                    i += 2
+            if (activeCloseDelim != null) {
+                if (s.startsWith(activeCloseDelim, i)) {
+                    i += activeCloseDelim.length
+                    activeCloseDelim = null
                     continue
                 }
+                i++
+                continue
             }
-            i++
+            if (c == '@' && i + 1 < s.length && s[i + 1] == '{') {
+                lastAtBrace = i
+                metaBraceDepth = 1
+                i += 2
+                continue
+            }
+            var opened = false
+            for (pair in DELIM_PAIRS) {
+                if (s.startsWith(pair.first, i)) {
+                    activeCloseDelim = pair.second
+                    i += pair.first.length
+                    opened = true
+                    break
+                }
+            }
+            if (!opened) i++
         }
         return lastAtBrace
     }

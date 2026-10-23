@@ -78,12 +78,16 @@ class KanbanParserTest {
                   assigned: 'alice'
                   label: 'Fix { and " handling'
                 }
+                t2))Bang Task((@{ ticket: X-1 }
+                t3)Cloud Task(@{ assigned: 'bob' }
             """.trimIndent(),
         )
-        val mt = multilineMeta.columns.single().tasks.single()
+        val mt = multilineMeta.columns.single().tasks[0]
         assertEquals("MC-99", mt.ticket)
         assertEquals("alice", mt.assigned)
         assertEquals("Fix { and \" handling", mt.label)
+        assertEquals("X-1", multilineMeta.columns.single().tasks[1].ticket)
+        assertEquals("bob", multilineMeta.columns.single().tasks[2].assigned)
     }
 
     @Test
