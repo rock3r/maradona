@@ -952,6 +952,9 @@ object GanttParser {
         if (fmt.equals("YYYY", ignoreCase = true)) {
             return y.toString()
         }
+        if (fmt.contains('H', ignoreCase = true) || fmt.contains('m')) {
+            return "${formatIsoDate(dayIdx)} ${hh24.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}"
+        }
         return formatIsoDate(dayIdx)
     }
 

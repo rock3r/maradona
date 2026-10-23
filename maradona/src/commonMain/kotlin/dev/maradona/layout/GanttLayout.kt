@@ -495,7 +495,7 @@ object GanttLayout {
         val spanMs = (allEndMs - allStartMs).coerceAtLeast(1L)
         val targetTickCount = 6
         val rawStep = max(1L, spanMs / targetTickCount)
-        val stepMs = chooseCleanStepMs(rawStep, diagram.dateFormat, diagram.tickInterval)
+        val stepMs = chooseCleanStepMs(rawStep, diagram.dateFormat, diagram.axisFormat, diagram.tickInterval)
 
         val candidates = mutableListOf<Long>()
         val isCal = GanttParser.isCalendarDateFormat(diagram.dateFormat)
@@ -618,7 +618,12 @@ object GanttLayout {
         }
     }
 
-    private fun chooseCleanStepMs(rawStep: Long, dateFormat: String, tickInterval: String?): Long {
+    private fun chooseCleanStepMs(
+        rawStep: Long,
+        dateFormat: String,
+        axisFormat: String?,
+        tickInterval: String?,
+    ): Long {
         if (!tickInterval.isNullOrBlank()) {
             val parsed = GanttParser.parseDurationMs(tickInterval)
             if (parsed != null && parsed > 0L) {
@@ -628,6 +633,7 @@ object GanttLayout {
             }
         }
         val fmt = dateFormat.trim()
+        val ax = axisFormat?.trim().orEmpty()
         if (fmt == "x") {
             val msSteps = longArrayOf(
                 1L, 2L, 5L, 10L, 20L, 50L, 100L, 200L, 500L,
@@ -636,28 +642,53 @@ object GanttLayout {
             )
             return msSteps.firstOrNull { it >= rawStep } ?: rawStep
         }
-        if (fmt == "X") {
+        if (fmt == "X" || ax == "%s") {
             val secSteps = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 20_000L, 30_000L, 60_000L, 120_000L, 300_000L)
             return secSteps.firstOrNull { it >= rawStep } ?: rawStep
         }
         val minMs = 60_000L
         val hourMs = 3_600_000L
         val day = GanttParser.DAY_MS
+        val displaysTime = fmt.contains('H', ignoreCase = true) || fmt.contains('m') || fmt.contains('s') ||
+            ax.contains("%H") || ax.contains("%I") || ax.contains("%M") || ax.contains("%S") || ax.contains("%L")
+        val isYearOnly = fmt.equals("YYYY", ignoreCase = true) &&
+            !ax.contains("%m") && !ax.contains("%b") && !ax.contains("%B") && !ax.contains("%d") && !ax.contains("%e") && !displaysTime
+        if (isYearOnly) {
+            val yearSteps = longArrayOf(365 * day, 2 * 365 * day, 5 * 365 * day, 10 * 365 * day, 20 * 365 * day, 50 * 365 * day)
+            return yearSteps.firstOrNull { it >= rawStep } ?: max(365 * day, rawStep)
+        }
+        if (displaysTime) {
+            val subDayAndCalSteps = longArrayOf(
+                1_000L,
+                5_000L,
+                15_000L,
+                minMs,
+                2 * minMs,
+                5 * minMs,
+                10 * minMs,
+                15 * minMs,
+                30 * minMs,
+                hourMs,
+                2 * hourMs,
+                4 * hourMs,
+                6 * hourMs,
+                12 * hourMs,
+                day,
+                2 * day,
+                3 * day,
+                7 * day,
+                14 * day,
+                30 * day,
+                60 * day,
+                90 * day,
+                180 * day,
+                365 * day,
+                5 * 365 * day,
+                10 * 365 * day,
+            )
+            return subDayAndCalSteps.firstOrNull { it >= rawStep } ?: rawStep
+        }
         val calSteps = longArrayOf(
-            1_000L,
-            5_000L,
-            15_000L,
-            minMs,
-            2 * minMs,
-            5 * minMs,
-            10 * minMs,
-            15 * minMs,
-            30 * minMs,
-            hourMs,
-            2 * hourMs,
-            4 * hourMs,
-            6 * hourMs,
-            12 * hourMs,
             day,
             2 * day,
             3 * day,

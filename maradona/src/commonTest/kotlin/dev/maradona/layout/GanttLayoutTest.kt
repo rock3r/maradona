@@ -226,5 +226,16 @@ class GanttLayoutTest {
         val m1Pos = assertNotNull(intradayLayout.task("m1"))
         assertTrue(m1Pos.barRect.width > 400f, "Intraday 1h task should span the full timeline track, got width=${m1Pos.barRect.width}")
         assertTrue(intradayLayout.ticks.size >= 4, "Expected sub-hour ticks for 1h intraday chart, got ${intradayLayout.ticks.map { it.label }}")
+
+        // Date-only 1-day chart (`A :a, 2024-01-01, 1d`) must not generate repeated same-date sub-day ticks.
+        val oneDayDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD
+                A :a, 2024-01-01, 1d
+            """.trimIndent(),
+        )
+        val oneDayTickLabels = GanttLayout.candidateTicks(oneDayDiagram).map { it.second }
+        assertEquals(listOf("2024-01-01", "2024-01-02"), oneDayTickLabels)
     }
 }
