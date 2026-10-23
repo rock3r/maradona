@@ -98,13 +98,7 @@ object GanttLayout {
 
         val allStartMs = diagram.tasks.minOf { min(it.startMs, it.endMs) }
         val rawMaxMs = diagram.tasks.maxOf { max(it.startMs, it.endMs) }
-        val minSpanMs = when {
-            diagram.dateFormat.trim() == "x" -> 1L
-            diagram.dateFormat.trim() == "X" -> 1000L
-            diagram.dateFormat.trim().startsWith("HH:mm", ignoreCase = true) -> 60_000L
-            else -> GanttParser.DAY_MS
-        }
-        val allEndMs = max(allStartMs + minSpanMs, rawMaxMs)
+        val allEndMs = if (rawMaxMs > allStartMs) rawMaxMs else allStartMs + minSpanForEmptyRange(diagram.dateFormat)
         val totalSpanMs = (allEndMs - allStartMs).coerceAtLeast(1L)
 
         val allSectionNames = (diagram.sections + regularTasks.mapNotNull { it.section }).distinct()
@@ -497,13 +491,7 @@ object GanttLayout {
         if (diagram.tasks.isEmpty()) return emptyList()
         val allStartMs = diagram.tasks.minOf { min(it.startMs, it.endMs) }
         val rawMaxMs = diagram.tasks.maxOf { max(it.startMs, it.endMs) }
-        val minSpanMs = when {
-            diagram.dateFormat.trim() == "x" -> 1L
-            diagram.dateFormat.trim() == "X" -> 1000L
-            diagram.dateFormat.trim().startsWith("HH:mm", ignoreCase = true) -> 60_000L
-            else -> GanttParser.DAY_MS
-        }
-        val allEndMs = max(allStartMs + minSpanMs, rawMaxMs)
+        val allEndMs = if (rawMaxMs > allStartMs) rawMaxMs else allStartMs + minSpanForEmptyRange(diagram.dateFormat)
         val spanMs = (allEndMs - allStartMs).coerceAtLeast(1L)
         val targetTickCount = 6
         val rawStep = max(1L, spanMs / targetTickCount)
@@ -620,10 +608,24 @@ object GanttLayout {
         return ticks
     }
 
+    private fun minSpanForEmptyRange(dateFormat: String): Long {
+        val fmt = dateFormat.trim()
+        return when {
+            fmt == "x" -> 1L
+            fmt == "X" -> 1000L
+            fmt.contains('H', ignoreCase = true) || fmt.contains('m') || fmt.contains('s') -> 60_000L
+            else -> GanttParser.DAY_MS
+        }
+    }
+
     private fun chooseCleanStepMs(rawStep: Long, dateFormat: String, tickInterval: String?): Long {
         if (!tickInterval.isNullOrBlank()) {
             val parsed = GanttParser.parseDurationMs(tickInterval)
-            if (parsed != null && parsed > 0L && parsed >= rawStep / 4) return parsed
+            if (parsed != null && parsed > 0L) {
+                val minAllowed = rawStep / 4L
+                val mult = if (parsed >= minAllowed) 1L else ((minAllowed + parsed - 1L) / parsed).coerceAtLeast(1L)
+                return parsed * mult
+            }
         }
         val fmt = dateFormat.trim()
         if (fmt == "x") {
@@ -638,13 +640,24 @@ object GanttLayout {
             val secSteps = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 20_000L, 30_000L, 60_000L, 120_000L, 300_000L)
             return secSteps.firstOrNull { it >= rawStep } ?: rawStep
         }
-        if (fmt.startsWith("HH:mm", ignoreCase = true)) {
-            val minMs = 60_000L
-            val timeSteps = longArrayOf(minMs, 2 * minMs, 5 * minMs, 10 * minMs, 15 * minMs, 30 * minMs, 60 * minMs, 120 * minMs)
-            return timeSteps.firstOrNull { it >= rawStep } ?: rawStep
-        }
+        val minMs = 60_000L
+        val hourMs = 3_600_000L
         val day = GanttParser.DAY_MS
         val calSteps = longArrayOf(
+            1_000L,
+            5_000L,
+            15_000L,
+            minMs,
+            2 * minMs,
+            5 * minMs,
+            10 * minMs,
+            15 * minMs,
+            30 * minMs,
+            hourMs,
+            2 * hourMs,
+            4 * hourMs,
+            6 * hourMs,
+            12 * hourMs,
             day,
             2 * day,
             3 * day,

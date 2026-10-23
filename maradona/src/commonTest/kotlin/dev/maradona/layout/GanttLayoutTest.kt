@@ -196,5 +196,35 @@ class GanttLayoutTest {
         )
         val zeroTickLayout = GanttLayout.layout(zeroTickDiagram)
         assertTrue(zeroTickLayout.ticks.isNotEmpty())
+
+        // Year-long chart with `tickInterval 1week` and `weekday monday` must keep all thinned ticks on Monday.
+        val yearWeeklyDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD
+                tickInterval 1week
+                weekday monday
+                YearTask :y1, 2024-01-01, 2025-01-01
+            """.trimIndent(),
+        )
+        val yearWeeklyTicks = GanttLayout.candidateTicks(yearWeeklyDiagram)
+        // All ticks except a trailing end-of-range tick must land on Monday (dow == 1).
+        for ((ms, lbl) in yearWeeklyTicks.dropLast(1)) {
+            assertEquals(1, GanttParser.dayOfWeek(ms.floorDiv(GanttParser.DAY_MS)), "Expected Monday for thinned weekly tick $lbl")
+        }
+
+        // Intraday `YYYY-MM-DD HH:mm` chart (1-hour span) must span its actual 1-hour window and generate sub-day ticks.
+        val intradayDiagram = GanttParser.parse(
+            """
+            gantt
+                dateFormat YYYY-MM-DD HH:mm
+                axisFormat %H:%M
+                Morning :m1, 2024-01-01 09:00, 2024-01-01 10:00
+            """.trimIndent(),
+        )
+        val intradayLayout = GanttLayout.layout(intradayDiagram)
+        val m1Pos = assertNotNull(intradayLayout.task("m1"))
+        assertTrue(m1Pos.barRect.width > 400f, "Intraday 1h task should span the full timeline track, got width=${m1Pos.barRect.width}")
+        assertTrue(intradayLayout.ticks.size >= 4, "Expected sub-hour ticks for 1h intraday chart, got ${intradayLayout.ticks.map { it.label }}")
     }
 }
