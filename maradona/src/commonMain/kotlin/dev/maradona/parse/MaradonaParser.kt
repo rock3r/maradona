@@ -5,6 +5,7 @@ import dev.maradona.model.ErDiagram
 import dev.maradona.model.Flowchart
 import dev.maradona.model.GanttDiagram
 import dev.maradona.model.MindmapDiagram
+import dev.maradona.model.PieDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 
@@ -17,13 +18,14 @@ sealed interface MaradonaDiagramModel {
     data class ErModel(val diagram: ErDiagram) : MaradonaDiagramModel
     data class MindmapModel(val diagram: MindmapDiagram) : MaradonaDiagramModel
     data class GanttModel(val diagram: GanttDiagram) : MaradonaDiagramModel
+    data class PieModel(val diagram: PieDiagram) : MaradonaDiagramModel
 }
 
 /**
  * Top-level Mermaid parser that detects the diagram type from the header line
  * (after optional YAML frontmatter, `%%{init}%%` directives, and `%%` comments)
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
- * [ErParser], [MindmapParser], or [GanttParser].
+ * [ErParser], [MindmapParser], [GanttParser], or [PieParser].
  */
 object MaradonaParser {
 
@@ -42,6 +44,8 @@ object MaradonaParser {
                 MaradonaDiagramModel.MindmapModel(MindmapParser.parse(source))
             header.startsWith("gantt") ->
                 MaradonaDiagramModel.GanttModel(GanttParser.parse(source))
+            header == "pie" || header.startsWith("pie ") || header.startsWith("pie\t") ->
+                MaradonaDiagramModel.PieModel(PieParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

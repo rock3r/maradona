@@ -41,6 +41,7 @@ import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
+import dev.maradona.layout.PieDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
@@ -113,6 +114,8 @@ fun MaradonaDiagram(
     onMindmapLayout: (MindmapDiagramLayout) -> Unit = {},
     /** Reports the computed Gantt diagram layout (see [MaradonaGanttLayout.onLayout]). */
     onGanttLayout: (GanttDiagramLayout) -> Unit = {},
+    /** Reports the computed Pie diagram layout (see [MaradonaPieLayout.onLayout]). */
+    onPieLayout: (PieDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -378,6 +381,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onGanttLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.PieModel ->
+                            MaradonaPieLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onPieLayout,
                                 modifier = contentModifier,
                             )
                     }

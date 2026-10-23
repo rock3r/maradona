@@ -8,10 +8,11 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.7 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.8 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
-diagrams (`erDiagram`), mindmaps (`mindmap`), and Gantt charts (`gantt`).
+diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`), and
+pie charts (`pie`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -108,6 +109,14 @@ Supported in Gantt charts (`gantt`):
   explicit and auto-generated task IDs, dependencies (`after id1 id2`, `until id1 id2`
   including forward references), and `displayMode: compact` row packing
 
+Supported in pie charts (`pie`):
+
+- Headers and directives: `pie`, `pie showData`, `pie title <text>`, YAML frontmatter
+  and `%%{init}%%` configuration (`textPosition`, `donutHole`, `highlightSlice`,
+  `pieOuterStrokeWidth`), `title`, `showData`, and `accTitle` / `accDescr`
+- Slice entries (`"Label" : value`) with percentage labels, optional donut hole,
+  highlighted exploded slices, and legend with optional `[value]` display
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -189,7 +198,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, and Gantt charts only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, and pie charts only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

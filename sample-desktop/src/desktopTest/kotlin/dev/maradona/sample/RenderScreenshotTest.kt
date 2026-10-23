@@ -420,4 +420,44 @@ class RenderScreenshotTest {
         }
         assertTrue(critActivePixels > 400, "Critical active Gantt bar rgb(248, 185, 178) not rendered ($critActivePixels px)")
     }
+
+    @Test
+    fun pieDiagram() {
+        val png = renderToPng(
+            "pie",
+            """
+            ---
+            config:
+              pie:
+                textPosition: 0.55
+                donutHole: 0.25
+                highlightSlice: Flowcharts
+              themeVariables:
+                pieOuterStrokeWidth: "2px"
+            ---
+            pie showData
+                title Maradona Diagram Usage
+                "Flowcharts" : 42.5
+                "Sequence" : 24
+                "Class & ER" : 17.5
+                "State & Gantt" : 10
+                "Mindmap & Pie" : 6
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 820,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var cobaltSlicePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 136) <= 3 && abs(g - 179) <= 3 && abs(b - 216) <= 3) cobaltSlicePixels++
+            }
+        }
+        assertTrue(cobaltSlicePixels > 2_000, "Primary pie slice rgb(136, 179, 216) not rendered ($cobaltSlicePixels px)")
+    }
 }
