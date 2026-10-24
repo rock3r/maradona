@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.BlockDiagramLayout
+import dev.maradona.layout.C4DiagramLayout
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
@@ -155,6 +156,8 @@ fun MaradonaDiagram(
     onArchitectureLayout: (ArchitectureDiagramLayout) -> Unit = {},
     /** Reports the computed Treemap diagram layout (see [MaradonaTreemapLayout.onLayout]). */
     onTreemapLayout: (TreemapDiagramLayout) -> Unit = {},
+    /** Reports the computed C4 diagram layout (see [MaradonaC4Layout.onLayout]). */
+    onC4Layout: (C4DiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -534,6 +537,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onTreemapLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.C4Model ->
+                            MaradonaC4Layout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onC4Layout,
                                 modifier = contentModifier,
                             )
                     }
