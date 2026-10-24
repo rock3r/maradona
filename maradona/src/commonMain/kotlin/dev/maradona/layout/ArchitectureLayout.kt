@@ -348,9 +348,14 @@ object ArchitectureLayout {
                 groupById = rawGroupsById,
                 d = d,
             )
-            val obstacles = rawServices
-                .filter { it.service.id != edge.lhsId && it.service.id != edge.rhsId }
-                .map { it.bounds }
+            val obstacles = buildList {
+                for (s in rawServices) {
+                    if (s.service.id != edge.lhsId && s.service.id != edge.rhsId) add(s.bounds)
+                }
+                for (j in rawJunctions) {
+                    if (j.junction.id != edge.lhsId && j.junction.id != edge.rhsId) add(j.rect)
+                }
+            }
             val pts = routeArchitectureEdgePoints(
                 start = startPt,
                 startDir = edge.lhsDir,

@@ -300,5 +300,22 @@ class ArchitectureLayoutTest {
         val sscEdge = sscLayout.edges.single()
         assertEquals(6, sscEdge.points.size)
         assertTrue(sscEdge.points[1].x < sscB.bounds.x)
+
+        // Forward edge skipping an intervening aligned junction (`align row a j c` and `a:R --> L:c`) detours below `j`.
+        val skipJunction = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A]
+              junction j
+              service c(server)[C]
+              align row a j c
+              a:R --> L:c
+            """.trimIndent(),
+        )
+        val sjLayout = ArchitectureLayout.layout(skipJunction)
+        val sjJ = sjLayout.junctions.single()
+        val sjEdge = sjLayout.edges.single()
+        assertEquals(6, sjEdge.points.size)
+        assertTrue(sjEdge.points[2].y > sjJ.rect.bottom)
     }
 }
