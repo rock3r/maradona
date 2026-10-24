@@ -152,7 +152,7 @@ object ZenUmlParser {
                 }
 
                 val titleMatch = Regex("""^title(?:\s+|:)(.*)$""", RegexOption.IGNORE_CASE).find(trimmed)
-                if (titleMatch != null && !trimmed.contains("(") && !trimmed.contains("->")) {
+                if (titleMatch != null && !Regex("""^title\s*(?:->|[.(])""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
                     val after = titleMatch.groupValues[1].trim()
                     if (after.isNotEmpty()) chartTitle = normalizeText(after)
                     continue
@@ -252,9 +252,13 @@ object ZenUmlParser {
             return starterId
         }
 
-        fun parseBlock(callStack: MutableList<CallFrame>, stopOnCloseBrace: Boolean): List<ZenUmlStatement> {
+        fun parseBlock(
+            callStack: MutableList<CallFrame>,
+            stopOnCloseBrace: Boolean,
+            initialComment: String? = null,
+        ): List<ZenUmlStatement> {
             val statements = mutableListOf<ZenUmlStatement>()
-            var pendingComment: String? = null
+            var pendingComment: String? = initialComment
             var pendingReturnAnnotation = false
 
             fun flushTrailingComment() {
@@ -375,20 +379,29 @@ object ZenUmlParser {
 
                     if (ctrlKind == ZenUmlControlKind.ALT) {
                         while (cursor < tokens.size) {
-                            val nextTok = tokens[cursor]
+                            var lookIdx = cursor
+                            val branchComments = mutableListOf<String>()
+                            while (lookIdx < tokens.size && tokens[lookIdx].startsWith("//")) {
+                                val cText = tokens[lookIdx].removePrefix("//").trim()
+                                if (cText.isNotEmpty()) branchComments += cText
+                                lookIdx++
+                            }
+                            if (lookIdx >= tokens.size) break
+                            val nextTok = tokens[lookIdx]
                             val elseIfMatch = Regex("""^else\s+if\s*\((.*)\)\s*\{$""", RegexOption.IGNORE_CASE).find(nextTok)
                             val elseMatch = Regex("""^else(?:\s*\{|\s+\{)$""", RegexOption.IGNORE_CASE).find(nextTok)
+                            val initialBranchComment = branchComments.takeIf { it.isNotEmpty() }?.joinToString("\n")
                             if (elseIfMatch != null) {
-                                cursor++
-                                val bBody = parseBlock(callStack, stopOnCloseBrace = true)
+                                cursor = lookIdx + 1
+                                val bBody = parseBlock(callStack, stopOnCloseBrace = true, initialComment = initialBranchComment)
                                 branches += ZenUmlControlBranch(
                                     keyword = "else if",
                                     condition = elseIfMatch.groupValues[1].trim(),
                                     statements = bBody,
                                 )
                             } else if (elseMatch != null) {
-                                cursor++
-                                val bBody = parseBlock(callStack, stopOnCloseBrace = true)
+                                cursor = lookIdx + 1
+                                val bBody = parseBlock(callStack, stopOnCloseBrace = true, initialComment = initialBranchComment)
                                 branches += ZenUmlControlBranch(
                                     keyword = "else",
                                     condition = null,
@@ -401,20 +414,29 @@ object ZenUmlParser {
                         }
                     } else if (ctrlKind == ZenUmlControlKind.TRY) {
                         while (cursor < tokens.size) {
-                            val nextTok = tokens[cursor]
+                            var lookIdx = cursor
+                            val branchComments = mutableListOf<String>()
+                            while (lookIdx < tokens.size && tokens[lookIdx].startsWith("//")) {
+                                val cText = tokens[lookIdx].removePrefix("//").trim()
+                                if (cText.isNotEmpty()) branchComments += cText
+                                lookIdx++
+                            }
+                            if (lookIdx >= tokens.size) break
+                            val nextTok = tokens[lookIdx]
                             val catchMatch = Regex("""^catch\s*(?:\((.*)\))?\s*\{$""", RegexOption.IGNORE_CASE).find(nextTok)
                             val finallyMatch = Regex("""^finally\s*\{$""", RegexOption.IGNORE_CASE).find(nextTok)
+                            val initialBranchComment = branchComments.takeIf { it.isNotEmpty() }?.joinToString("\n")
                             if (catchMatch != null) {
-                                cursor++
-                                val bBody = parseBlock(callStack, stopOnCloseBrace = true)
+                                cursor = lookIdx + 1
+                                val bBody = parseBlock(callStack, stopOnCloseBrace = true, initialComment = initialBranchComment)
                                 branches += ZenUmlControlBranch(
                                     keyword = "catch",
                                     condition = catchMatch.groupValues[1].trim().takeIf { it.isNotEmpty() },
                                     statements = bBody,
                                 )
                             } else if (finallyMatch != null) {
-                                cursor++
-                                val bBody = parseBlock(callStack, stopOnCloseBrace = true)
+                                cursor = lookIdx + 1
+                                val bBody = parseBlock(callStack, stopOnCloseBrace = true, initialComment = initialBranchComment)
                                 branches += ZenUmlControlBranch(
                                     keyword = "finally",
                                     condition = null,

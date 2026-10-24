@@ -187,9 +187,7 @@ object ZenUmlLayout {
                             commentText = stmt.comment,
                         )
                         visitStatements(stmt.nestedStatements)
-                        val hasExplicitReturn = stmt.nestedStatements.any {
-                            it is ZenUmlStatement.Message && it.kind == ZenUmlMessageKind.RETURN
-                        }
+                        val hasExplicitReturn = containsExplicitReturnInCallScope(stmt.nestedStatements)
                         if (!stmt.returnVar.isNullOrBlank() && !hasExplicitReturn && stmt.from != stmt.to) {
                             messages += FlattenedZenUmlMessageSpec(
                                 index = messages.size,
@@ -234,6 +232,19 @@ object ZenUmlLayout {
 
         visitStatements(diagram.statements)
         return messages to blocks
+    }
+
+    private fun containsExplicitReturnInCallScope(stmts: List<ZenUmlStatement>): Boolean {
+        for (s in stmts) {
+            when (s) {
+                is ZenUmlStatement.Message -> if (s.kind == ZenUmlMessageKind.RETURN) return true
+                is ZenUmlStatement.ControlBlock -> {
+                    if (s.branches.any { b -> containsExplicitReturnInCallScope(b.statements) }) return true
+                }
+                is ZenUmlStatement.NoteComment -> Unit
+            }
+        }
+        return false
     }
 
     private fun buildMessageDisplayText(msg: ZenUmlStatement.Message): String {
@@ -427,9 +438,7 @@ object ZenUmlLayout {
                                 curY = max(curY, actTopY + 20f * d)
                             }
 
-                            val hasExplicitReturn = stmt.nestedStatements.any {
-                                it is ZenUmlStatement.Message && it.kind == ZenUmlMessageKind.RETURN
-                            }
+                            val hasExplicitReturn = containsExplicitReturnInCallScope(stmt.nestedStatements)
                             if (!stmt.returnVar.isNullOrBlank() && !hasExplicitReturn && stmt.from != stmt.to) {
                                 val retSpec = msgSpecs[msgCursor++]
                                 val retLblSize = messageLabelSizes[retSpec.index]

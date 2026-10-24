@@ -86,6 +86,23 @@ class ZenUmlLayoutTest {
         val blk = layout.blocks.single()
         val selfCallMsg = layout.messages[1]
         assertTrue(blk.rect.x <= selfCallMsg.labelRect.x && blk.rect.right >= selfCallMsg.labelRect.right)
+
+        // Assigned call with explicit returns inside if/else branches does not synthesize an extra return arrow
+        val branched = ZenUmlParser.parse(
+            """
+            zenuml
+              x = A->B.call() {
+                if (ok) {
+                  return yes
+                } else {
+                  return no
+                }
+              }
+            """.trimIndent(),
+        )
+        val branchedLayout = ZenUmlLayout.layout(branched)
+        assertEquals(3, branchedLayout.messages.size)
+        assertEquals(listOf("x = call()", "yes", "no"), branchedLayout.messages.map { it.displayText })
     }
 
     @Test

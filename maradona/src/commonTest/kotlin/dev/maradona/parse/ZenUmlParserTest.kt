@@ -113,11 +113,17 @@ class ZenUmlParserTest {
         val diagram = ZenUmlParser.parse(
             """
             zenuml
+              title Checkout (v2) -> Order Service
               A->B.call() {
-                C->D.work() {
-                  return stepDone
+                if (ready) {
+                  C->D.work() {
+                    return stepDone
+                  }
                 }
-                return allDone
+                // comment before else
+                else {
+                  return allDone
+                }
                 // B finishes here
               }
               @return
@@ -126,23 +132,27 @@ class ZenUmlParserTest {
             """.trimIndent(),
         )
 
+        assertEquals("Checkout (v2) -> Order Service", diagram.title)
         // Only A, B, C, D should exist (no bogus _STARTER_)
         assertEquals(listOf("A", "B", "C", "D"), diagram.participants.map { it.id })
 
         val outerCall = diagram.statements[0] as ZenUmlStatement.Message
-        val innerCall = outerCall.nestedStatements[0] as ZenUmlStatement.Message
+        val altBlock = outerCall.nestedStatements[0] as ZenUmlStatement.ControlBlock
+        assertEquals(2, altBlock.branches.size)
+        val innerCall = altBlock.branches[0].statements.single() as ZenUmlStatement.Message
         val innerReturn = innerCall.nestedStatements.single() as ZenUmlStatement.Message
         assertEquals("D", innerReturn.from)
         assertEquals("C", innerReturn.to)
         assertEquals("stepDone", innerReturn.text)
 
-        val outerReturn = outerCall.nestedStatements[1] as ZenUmlStatement.Message
-        assertEquals("B", outerReturn.from)
-        assertEquals("A", outerReturn.to)
-        assertEquals("allDone", outerReturn.text)
+        val elseReturn = altBlock.branches[1].statements.single() as ZenUmlStatement.Message
+        assertEquals("B", elseReturn.from)
+        assertEquals("A", elseReturn.to)
+        assertEquals("allDone", elseReturn.text)
+        assertEquals("comment before else", elseReturn.comment)
 
         // Trailing comment inside A->B.call() is flushed as a NoteComment on B, not leaked onto @return or A->C.next()
-        val trailingNote = outerCall.nestedStatements[2] as ZenUmlStatement.NoteComment
+        val trailingNote = outerCall.nestedStatements[1] as ZenUmlStatement.NoteComment
         assertEquals("B finishes here", trailingNote.text)
         assertEquals("B", trailingNote.onParticipant)
 
