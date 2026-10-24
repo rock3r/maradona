@@ -375,5 +375,6 @@ class ArchitectureLayoutTest {
                 midY > bIcon.y + 1f && midY < bIcon.bottom - 1f
             assertTrue(!insideB, "Segment ($p0 -> $p1) crossed endpoint b's icon $bIcon")
         }
+        assertTrue(sseLayout.width > 0f && sseLayout.height > 0f)
     }
 }
