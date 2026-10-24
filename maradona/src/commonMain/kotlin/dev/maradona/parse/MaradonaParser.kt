@@ -19,6 +19,7 @@ import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
+import dev.maradona.model.TreemapDiagram
 import dev.maradona.model.XyChartDiagram
 
 /** Parsed representation of any Mermaid diagram type supported by Maradona. */
@@ -43,6 +44,7 @@ sealed interface MaradonaDiagramModel {
     data class RadarModel(val diagram: RadarDiagram) : MaradonaDiagramModel
     data class BlockModel(val diagram: BlockDiagram) : MaradonaDiagramModel
     data class ArchitectureModel(val diagram: ArchitectureDiagram) : MaradonaDiagramModel
+    data class TreemapModel(val diagram: TreemapDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -51,7 +53,8 @@ sealed interface MaradonaDiagramModel {
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
  * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
- * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], or [ArchitectureParser].
+ * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], [ArchitectureParser],
+ * or [TreemapParser].
  */
 object MaradonaParser {
 
@@ -102,6 +105,9 @@ object MaradonaParser {
             header == "architecture" || header.startsWith("architecture ") || header.startsWith("architecture\t") ||
                 header == "architecture-beta" || header.startsWith("architecture-beta ") || header.startsWith("architecture-beta\t") ->
                 MaradonaDiagramModel.ArchitectureModel(ArchitectureParser.parse(source))
+            header == "treemap" || header.startsWith("treemap ") || header.startsWith("treemap\t") ||
+                header == "treemap-beta" || header.startsWith("treemap-beta ") || header.startsWith("treemap-beta\t") ->
+                MaradonaDiagramModel.TreemapModel(TreemapParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

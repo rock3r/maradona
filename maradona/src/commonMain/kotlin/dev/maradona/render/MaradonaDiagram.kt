@@ -55,6 +55,7 @@ import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
+import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.XyChartDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
@@ -152,6 +153,8 @@ fun MaradonaDiagram(
     onBlockLayout: (BlockDiagramLayout) -> Unit = {},
     /** Reports the computed Architecture diagram layout (see [MaradonaArchitectureLayout.onLayout]). */
     onArchitectureLayout: (ArchitectureDiagramLayout) -> Unit = {},
+    /** Reports the computed Treemap diagram layout (see [MaradonaTreemapLayout.onLayout]). */
+    onTreemapLayout: (TreemapDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -523,6 +526,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onArchitectureLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.TreemapModel ->
+                            MaradonaTreemapLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onTreemapLayout,
                                 modifier = contentModifier,
                             )
                     }

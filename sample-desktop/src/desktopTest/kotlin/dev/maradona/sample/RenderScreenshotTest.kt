@@ -927,4 +927,43 @@ class RenderScreenshotTest {
         assertTrue(iconTileBluePixels > 4_000, "Architecture icon tile #087EBF not rendered ($iconTileBluePixels px)")
         assertTrue(whiteIconStrokePixels > 300, "Architecture white vector icons not rendered ($whiteIconStrokePixels px)")
     }
+
+    @Test
+    fun treemapDiagram() {
+        val png = renderToPng(
+            "treemap",
+            """
+            treemap-beta
+            title Engineering Budget Allocation
+            "Engineering"
+              "Platform"
+                "Compute": 45
+                "Storage": 28
+              "Product"
+                "Web App": 36
+                "Mobile": 24
+            "Operations"
+              "Security": 22
+              "Support": 15
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 760,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var sectionBlueBorderPixels = 0
+        var sectionOrangeBorderPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x4E) <= 8 && abs(g - 0x79) <= 8 && abs(b - 0xA7) <= 8) sectionBlueBorderPixels++
+                if (abs(r - 0xF2) <= 8 && abs(g - 0x8E) <= 8 && abs(b - 0x2B) <= 8) sectionOrangeBorderPixels++
+            }
+        }
+        assertTrue(sectionBlueBorderPixels > 200, "Treemap blue section border #4E79A7 not rendered ($sectionBlueBorderPixels px)")
+        assertTrue(sectionOrangeBorderPixels > 100, "Treemap orange section border #F28E2B not rendered ($sectionOrangeBorderPixels px)")
+    }
 }

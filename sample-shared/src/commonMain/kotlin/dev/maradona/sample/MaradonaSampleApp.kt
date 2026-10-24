@@ -358,6 +358,19 @@ private val examples = linkedMapOf(
           app:R --> L:db
           app:B --> T:cache
     """.trimIndent(),
+    "Treemap" to """
+        treemap-beta
+        "Engineering"
+          "Platform"
+            "Compute": 45
+            "Storage": 28
+          "Product"
+            "Web App": 36
+            "Mobile": 24
+        "Operations"
+          "Security": 22
+          "Support": 15
+    """.trimIndent(),
 )
 
 private class SampleState(
