@@ -571,14 +571,23 @@ object ArchitectureLayout {
                 }
             }
 
-            // Center single fan-in/fan-out targets along the perpendicular axis when connected to an aligned group.
+            val rowAlignedNodes = mergedAlignments
+                .filter { it.direction == ArchitectureAlignDir.Row }
+                .flatMap { it.members }
+                .toSet()
+            val colAlignedNodes = mergedAlignments
+                .filter { it.direction == ArchitectureAlignDir.Column }
+                .flatMap { it.members }
+                .toSet()
+
+            // Center unconstrained fan-in/fan-out targets along the perpendicular axis when connected to an aligned group.
             for (u in compCoords.keys) {
                 val neighbors = adj[u].orEmpty().filter { !it.fromAlign }
                 if (neighbors.size >= 2) {
                     val allVertical = neighbors.all { it.dx == 0 && it.dy != 0 }
                     val allHorizontal = neighbors.all { it.dy == 0 && it.dx != 0 }
                     val cur = floatComp.getValue(u)
-                    if (allVertical) {
+                    if (allVertical && u !in colAlignedNodes && u !in rowAlignedNodes) {
                         val avgX = neighbors.mapNotNull { floatComp[it.targetId]?.first }.average().toFloat()
                         val conflict = floatComp.any { (otherId, pos) ->
                             otherId != u && abs(pos.first - avgX) < 0.25f && abs(pos.second - cur.second) < 0.25f
@@ -586,7 +595,7 @@ object ArchitectureLayout {
                         if (!conflict) {
                             floatComp[u] = avgX to cur.second
                         }
-                    } else if (allHorizontal) {
+                    } else if (allHorizontal && u !in rowAlignedNodes && u !in colAlignedNodes) {
                         val avgY = neighbors.mapNotNull { floatComp[it.targetId]?.second }.average().toFloat()
                         val conflict = floatComp.any { (otherId, pos) ->
                             otherId != u && abs(pos.first - cur.first) < 0.25f && abs(pos.second - avgY) < 0.25f

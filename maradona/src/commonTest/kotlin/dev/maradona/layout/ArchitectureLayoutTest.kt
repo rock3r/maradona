@@ -123,5 +123,26 @@ class ArchitectureLayoutTest {
                 ccOut.bounds.y > ccGrp.bottom ||
                 ccOut.bounds.bottom < ccGrp.y,
         )
+
+        // Fan-out on an explicitly row-aligned node preserves the row alignment.
+        val fanOutAligned = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A]
+              service b(server)[B]
+              service x(server)[X]
+              service y(server)[Y]
+              align row a b
+              a:R -- L:x
+              a:R -- L:y
+            """.trimIndent(),
+        )
+        val foLayout = ArchitectureLayout.layout(fanOutAligned)
+        val foById = foLayout.services.associateBy { it.service.id }
+        assertEquals(
+            foById.getValue("a").iconRect.centerY,
+            foById.getValue("b").iconRect.centerY,
+            0.5f,
+        )
     }
 }
