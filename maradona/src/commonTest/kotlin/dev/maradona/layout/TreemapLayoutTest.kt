@@ -60,6 +60,8 @@ class TreemapLayoutTest {
         assertEquals("$1,250.50", TreemapLayout.formatValue(1250.5, "$,.2f"))
         assertEquals("42.5%", TreemapLayout.formatValue(0.425, ".1%"))
         assertEquals("$1.5M", TreemapLayout.formatValue(1_500_000.0, "$.2s"))
+        assertEquals("120k", TreemapLayout.formatValue(123_456.7, ".2s"))
+        assertEquals("123.5k", TreemapLayout.formatValue(123_456.7, ".4s"))
         assertTrue(TreemapLayout.formatValue(1e20, ",").isNotEmpty())
     }
 
@@ -130,6 +132,28 @@ class TreemapLayoutTest {
         val areaSmall = secSmall.rect.width * secSmall.rect.height
         val areaLarge = secLarge.rect.width * secLarge.rect.height
         assertEquals(9.0, (areaLarge / areaSmall).toDouble(), 0.05)
+
+        // Preserve relative weights for large-valued sections above 1e140
+        val hugeSections = TreemapParser.parse(
+            """
+            ---
+            config:
+              treemap:
+                padding: 0
+            ---
+            treemap-beta
+            "Sec141"
+              "A": 1e141
+            "Sec142"
+              "B": 1e142
+            """.trimIndent(),
+        )
+        val hugeLayout = TreemapLayout.layout(hugeSections)
+        val sec141 = hugeLayout.sections.first { it.node.name == "Sec141" }
+        val sec142 = hugeLayout.sections.first { it.node.name == "Sec142" }
+        val area141 = sec141.rect.width * sec141.rect.height
+        val area142 = sec142.rect.width * sec142.rect.height
+        assertEquals(10.0, (area142 / area141).toDouble(), 0.05)
     }
 
     @Test
