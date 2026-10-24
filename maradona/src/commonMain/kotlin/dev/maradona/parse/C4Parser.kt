@@ -286,7 +286,7 @@ object C4Parser {
             while (statement.endsWith("}")) {
                 val beforeBrace = statement.dropLast(1).trimEnd()
                 // Only treat trailing `}` as a block close if parentheses and quotes are balanced.
-                if (countUnquotedParenDelta(beforeBrace) == 0 && !beforeBrace.endsWith("{")) {
+                if (countUnquotedParenDelta(beforeBrace) == 0) {
                     trailingCloseBraces++
                     statement = beforeBrace
                 } else {

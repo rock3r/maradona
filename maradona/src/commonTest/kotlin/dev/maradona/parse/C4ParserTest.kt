@@ -133,6 +133,11 @@ class C4ParserTest {
         val rel = diagram.relationships.single()
         assertEquals(0f, rel.style?.offsetX)
         assertEquals(0f, rel.style?.offsetY)
+
+        // Single-line empty boundary `System_Boundary(b, "B") {}` is accepted
+        val emptyBnd = C4Parser.parse("C4Context\n  System_Boundary(b, \"B\") {}")
+        assertEquals(1, emptyBnd.boundaries.size)
+        assertEquals("b", emptyBnd.boundaries.single().id)
     }
 
     @Test
