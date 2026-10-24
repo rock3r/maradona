@@ -350,7 +350,15 @@ object ArchitectureLayout {
             )
             val obstacles = buildList {
                 for (s in rawServices) {
-                    if (s.service.id != edge.lhsId && s.service.id != edge.rhsId) add(s.bounds)
+                    if (s.service.id != edge.lhsId && s.service.id != edge.rhsId) {
+                        add(s.bounds)
+                    } else {
+                        val isLhs = s.service.id == edge.lhsId
+                        val dir = if (isLhs) edge.lhsDir else edge.rhsDir
+                        if (dir != ArchitecturePortDir.B && s.labelRect != null) {
+                            add(s.labelRect)
+                        }
+                    }
                 }
                 for (j in rawJunctions) {
                     if (j.junction.id != edge.lhsId && j.junction.id != edge.rhsId) add(j.rect)
@@ -361,6 +369,8 @@ object ArchitectureLayout {
                 startDir = edge.lhsDir,
                 end = endPt,
                 endDir = edge.rhsDir,
+                lhsBounds = serviceById[edge.lhsId]?.bounds,
+                rhsBounds = serviceById[edge.rhsId]?.bounds,
                 obstacles = obstacles,
                 detourClearance = iconSize * 0.72f + 16f * d,
                 d = d,
@@ -1066,18 +1076,30 @@ object ArchitectureLayout {
         startDir: ArchitecturePortDir,
         end: DiagramPoint,
         endDir: ArchitecturePortDir,
+        lhsBounds: DiagramRect? = null,
+        rhsBounds: DiagramRect? = null,
         obstacles: List<DiagramRect> = emptyList(),
         detourClearance: Float = 56f,
         d: Float = 1f,
     ): List<DiagramPoint> {
         val stub = 20f * d
+        val sStubClearX = when (startDir) {
+            ArchitecturePortDir.R -> max(start.x + stub, (lhsBounds?.right ?: start.x) + 12f * d)
+            ArchitecturePortDir.L -> min(start.x - stub, (lhsBounds?.x ?: start.x) - 12f * d)
+            else -> start.x
+        }
+        val eStubClearX = when (endDir) {
+            ArchitecturePortDir.R -> max(end.x + stub, (rhsBounds?.right ?: end.x) + 12f * d)
+            ArchitecturePortDir.L -> min(end.x - stub, (rhsBounds?.x ?: end.x) - 12f * d)
+            else -> end.x
+        }
         if (startDir == endDir) {
             return when (startDir) {
                 ArchitecturePortDir.R, ArchitecturePortDir.L -> {
                     val sign = if (startDir == ArchitecturePortDir.R) 1f else -1f
                     val sStubX = start.x + sign * stub
                     val eStubX = end.x + sign * stub
-                    val outX = if (startDir == ArchitecturePortDir.R) max(sStubX, eStubX) else min(sStubX, eStubX)
+                    val outX = if (startDir == ArchitecturePortDir.R) max(sStubClearX, eStubClearX) else min(sStubClearX, eStubClearX)
                     val directOut = listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
                     if (abs(start.y - end.y) >= detourClearance && !polylineHitsObstacles(directOut, obstacles)) {
                         return directOut
@@ -1086,24 +1108,35 @@ object ArchitectureLayout {
                         val midY = (start.y + end.y) / 2f
                         val midRoute = listOf(
                             start,
+                            DiagramPoint(sStubClearX, start.y),
+                            DiagramPoint(sStubClearX, midY),
+                            DiagramPoint(eStubClearX, midY),
+                            DiagramPoint(eStubClearX, end.y),
+                            end,
+                        )
+                        if (!polylineHitsObstacles(midRoute, obstacles)) {
+                            return midRoute
+                        }
+                        val midRouteTight = listOf(
+                            start,
                             DiagramPoint(sStubX, start.y),
                             DiagramPoint(sStubX, midY),
                             DiagramPoint(eStubX, midY),
                             DiagramPoint(eStubX, end.y),
                             end,
                         )
-                        if (!polylineHitsObstacles(midRoute, obstacles)) {
-                            return midRoute
+                        if (!polylineHitsObstacles(midRouteTight, obstacles)) {
+                            return midRouteTight
                         }
                     }
                     val maxObBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
                     val detourY = max(max(start.y, end.y) + detourClearance, maxObBottom)
                     listOf(
                         start,
-                        DiagramPoint(sStubX, start.y),
-                        DiagramPoint(sStubX, detourY),
-                        DiagramPoint(eStubX, detourY),
-                        DiagramPoint(eStubX, end.y),
+                        DiagramPoint(sStubClearX, start.y),
+                        DiagramPoint(sStubClearX, detourY),
+                        DiagramPoint(eStubClearX, detourY),
+                        DiagramPoint(eStubClearX, end.y),
                         end,
                     )
                 }
@@ -1164,16 +1197,14 @@ object ArchitectureLayout {
                     }
                 }
                 // Backward or obstructed horizontal connection: route via outward stubs and external lane.
-                val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
-                val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
                 val blockingBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
                 val detourY = max(max(start.y, end.y) + detourClearance, blockingBottom)
                 return listOf(
                     start,
-                    DiagramPoint(sStubX, start.y),
-                    DiagramPoint(sStubX, detourY),
-                    DiagramPoint(eStubX, detourY),
-                    DiagramPoint(eStubX, end.y),
+                    DiagramPoint(sStubClearX, start.y),
+                    DiagramPoint(sStubClearX, detourY),
+                    DiagramPoint(eStubClearX, detourY),
+                    DiagramPoint(eStubClearX, end.y),
                     end,
                 )
             } else {
@@ -1228,9 +1259,19 @@ object ArchitectureLayout {
             if (!polylineHitsObstacles(viaStubCorner1, obstacles)) {
                 return viaStubCorner1
             }
+            val viaClearStubCorner = listOf(
+                start,
+                DiagramPoint(sStubClearX, start.y),
+                DiagramPoint(sStubClearX, eStubY),
+                DiagramPoint(end.x, eStubY),
+                end,
+            )
+            if (!polylineHitsObstacles(viaClearStubCorner, obstacles)) {
+                return viaClearStubCorner
+            }
             return listOf(
                 start,
-                DiagramPoint(sStubX, start.y),
+                DiagramPoint(sStubClearX, start.y),
                 DiagramPoint(end.x, start.y),
                 DiagramPoint(end.x, eStubY),
                 end,

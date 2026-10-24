@@ -317,5 +317,19 @@ class ArchitectureLayoutTest {
         val sjEdge = sjLayout.edges.single()
         assertEquals(6, sjEdge.points.size)
         assertTrue(sjEdge.points[2].y > sjJ.rect.bottom)
+
+        // Same-side connection on a service with a very wide label clears the endpoint's own label rectangle.
+        val wideLabelSameSide = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A very long service label]
+              service b(server)[B]
+              a:R -- R:b
+            """.trimIndent(),
+        )
+        val wlLayout = ArchitectureLayout.layout(wideLabelSameSide)
+        val wlA = wlLayout.services.first { it.service.id == "a" }
+        val wlEdge = wlLayout.edges.single()
+        assertTrue(wlEdge.points[1].x > wlA.labelRect!!.right)
     }
 }
