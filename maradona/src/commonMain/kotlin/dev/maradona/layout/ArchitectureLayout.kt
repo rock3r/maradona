@@ -151,14 +151,14 @@ object ArchitectureLayout {
             val hasIcon = !grp.icon.isNullOrBlank()
             val headerW = (if (hasIcon) 24f * d else 0f) + lblSz.width + 16f * d
             maxGroupHeaderW = max(maxGroupHeaderW, headerW)
-            groupHeaderHById[grp.id] = max(GROUP_HEADER_HEIGHT * d, lblSz.height + 6f * d)
+            groupHeaderHById[grp.id] = max(24f * d, lblSz.height + 6f * d)
         }
         fun groupAncestorVerticalOverhead(gId: String): Float {
             var total = 0f
             var cur: String? = gId
             val seen = HashSet<String>()
             while (cur != null && seen.add(cur)) {
-                val hH = groupHeaderHById[cur] ?: (GROUP_HEADER_HEIGHT * d)
+                val hH = groupHeaderHById[cur] ?: (24f * d)
                 total += hH + groupPad * 2.2f + 10f * d
                 cur = parentGroupMap[cur]
             }
