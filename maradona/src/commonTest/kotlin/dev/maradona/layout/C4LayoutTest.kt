@@ -171,6 +171,25 @@ class C4LayoutTest {
         val self0 = mbLayout.relationships[2].labelRect!!
         val self1 = mbLayout.relationships[3].labelRect!!
         assertTrue(!rectsOverlap(self0, self1))
+
+        // Rel_D(a, b) followed by Rel_R(b, c) places a above a row containing b and c
+        val downThenRight = C4Parser.parse(
+            """
+            C4Context
+              System(a, "A")
+              System(b, "B")
+              System(c, "C")
+              Rel_D(a, b, "Down")
+              Rel_R(b, c, "Right")
+            """.trimIndent(),
+        )
+        val dtrLayout = C4Layout.layout(downThenRight)
+        val dtrA = dtrLayout.elements.first { it.element.id == "a" }.rect
+        val dtrB = dtrLayout.elements.first { it.element.id == "b" }.rect
+        val dtrC = dtrLayout.elements.first { it.element.id == "c" }.rect
+        assertTrue(dtrA.centerY < dtrB.centerY)
+        assertEquals(dtrB.centerY, dtrC.centerY, 0.5f)
+        assertTrue(dtrB.centerX < dtrC.centerX)
     }
 
     @Test

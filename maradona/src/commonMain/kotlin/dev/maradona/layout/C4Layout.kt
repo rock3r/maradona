@@ -261,15 +261,11 @@ object C4Layout {
             topBands.addAll(rankedRows)
         } else {
             val (leadingEls, trailingEls) = rootElements.partition { !it.element.kind.isExternal }
-            for (chunk in leadingEls.chunked(shapeInRow)) {
-                topBands += chunk
-            }
+            topBands.addAll(rankElementsIntoRows(leadingEls, diagram.relationships, shapeInRow, effectiveDirection))
             for (chunk in allRootBoundaries.chunked(boundaryInRow)) {
                 topBands += chunk
             }
-            for (chunk in trailingEls.chunked(shapeInRow)) {
-                topBands += chunk
-            }
+            topBands.addAll(rankElementsIntoRows(trailingEls, diagram.relationships, shapeInRow, effectiveDirection))
         }
 
         val isHorizontal = effectiveDirection == Direction.LR || effectiveDirection == Direction.RL
@@ -770,13 +766,13 @@ object C4Layout {
         for (el in elements) sameBandEdges[el.id] = LinkedHashSet()
         var rankChanged = true
         var pass = 0
-        while (rankChanged && pass < elements.size) {
+        while (rankChanged && pass < elements.size * 2) {
             rankChanged = false
             pass++
             for ((fromId, toId, _) in sameBandPairs) {
                 val rFrom = rankOf[fromId] ?: 0
                 val rTo = rankOf[toId] ?: 0
-                val targetRank = min(rFrom, rTo)
+                val targetRank = max(rFrom, rTo)
                 if (rFrom != targetRank) {
                     rankOf[fromId] = targetRank
                     rankChanged = true
@@ -784,6 +780,17 @@ object C4Layout {
                 if (rTo != targetRank) {
                     rankOf[toId] = targetRank
                     rankChanged = true
+                }
+            }
+            for ((u, vs) in adj) {
+                val ru = rankOf[u] ?: 0
+                for (v in vs) {
+                    val rv = rankOf[v] ?: 0
+                    val nextRank = (ru + 1).coerceAtMost(elements.size)
+                    if (rv < nextRank) {
+                        rankOf[v] = nextRank
+                        rankChanged = true
+                    }
                 }
             }
         }
