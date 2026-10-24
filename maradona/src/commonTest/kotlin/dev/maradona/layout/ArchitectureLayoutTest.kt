@@ -403,5 +403,31 @@ class ArchitectureLayoutTest {
                 midY > aIcon.y + 1f && midY < aIcon.bottom - 1f
             assertTrue(!insideA, "Segment ($p0 -> $p1) crossed intervening service a's icon $aIcon")
         }
+
+        // Mixed-axis fallback `a:T -- R:d` checks detour legs against intervening tile `b`
+        val mixedFallbackDiag = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a
+              service b
+              service d
+              align row d b
+              b:B -- B:a
+              a:T -- R:d
+              a:B -- L:b
+            """.trimIndent(),
+        )
+        val mfLayout = ArchitectureLayout.layout(mixedFallbackDiag)
+        val mfBIcon = mfLayout.services.first { it.service.id == "b" }.iconRect
+        val adEdge = mfLayout.edges[1]
+        for (i in 0 until adEdge.points.size - 1) {
+            val p0 = adEdge.points[i]
+            val p1 = adEdge.points[i + 1]
+            val midX = (p0.x + p1.x) / 2f
+            val midY = (p0.y + p1.y) / 2f
+            val insideB = midX > mfBIcon.x + 1f && midX < mfBIcon.right - 1f &&
+                midY > mfBIcon.y + 1f && midY < mfBIcon.bottom - 1f
+            assertTrue(!insideB, "Segment ($p0 -> $p1) crossed intervening service b's icon $mfBIcon")
+        }
     }
 }

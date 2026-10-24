@@ -1257,7 +1257,7 @@ object ArchitectureLayout {
                 val detourBottomY = max(max(start.y, end.y) + detourClearance, blockingBottom)
                 val detourTopY = min(min(start.y, end.y) - detourClearance, blockingTop)
                 val horizFallbacks = buildList {
-                    for (dy in listOf(detourTopY, detourBottomY)) {
+                    for (dy in listOf(detourBottomY, detourTopY)) {
                         add(
                             listOf(
                                 start,
@@ -1271,7 +1271,7 @@ object ArchitectureLayout {
                     }
                     // Also try wider horizontal stub clearances if an obstacle sits directly in the stub column
                     for (extraX in listOf(detourClearance, -detourClearance)) {
-                        for (dy in listOf(detourTopY, detourBottomY)) {
+                        for (dy in listOf(detourBottomY, detourTopY)) {
                             add(
                                 listOf(
                                     start,
@@ -1333,6 +1333,15 @@ object ArchitectureLayout {
             }
         }
 
+        val maxObBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
+        val minObTop = obstacles.minOfOrNull { it.y - 16f * d } ?: 0f
+        val maxObRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: 0f
+        val minObLeft = obstacles.minOfOrNull { it.x - 16f * d } ?: 0f
+        val detourBottomY = max(max(start.y, end.y) + detourClearance, maxObBottom)
+        val detourTopY = min(min(start.y, end.y) - detourClearance, minObTop)
+        val detourRightX = max(max(start.x, end.x) + detourClearance, maxObRight)
+        val detourLeftX = min(min(start.x, end.x) - detourClearance, minObLeft)
+
         if (startXAxis) {
             // startDir is L or R, endDir is T or B
             val startOutwardOk = (startDir == ArchitecturePortDir.R && end.x >= start.x + stub) ||
@@ -1344,34 +1353,44 @@ object ArchitectureLayout {
                 return directBend
             }
             val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
-            val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
-            val viaStubCorner1 = listOf(
-                start,
-                DiagramPoint(sStubX, start.y),
-                DiagramPoint(sStubX, eStubY),
-                DiagramPoint(end.x, eStubY),
-                end,
-            )
-            if (!polylineHitsObstacles(viaStubCorner1, obstacles)) {
-                return viaStubCorner1
+            val eStubY = if (endDir == ArchitecturePortDir.B && rhsBounds != null) {
+                max(end.y + stub, rhsBounds.bottom + 12f * d)
+            } else {
+                end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
             }
-            val viaClearStubCorner = listOf(
-                start,
-                DiagramPoint(sStubClearX, start.y),
-                DiagramPoint(sStubClearX, eStubY),
-                DiagramPoint(end.x, eStubY),
-                end,
-            )
-            if (!polylineHitsObstacles(viaClearStubCorner, obstacles)) {
-                return viaClearStubCorner
+            val candidates = buildList {
+                add(listOf(start, DiagramPoint(sStubX, start.y), DiagramPoint(sStubX, eStubY), DiagramPoint(end.x, eStubY), end))
+                add(listOf(start, DiagramPoint(sStubClearX, start.y), DiagramPoint(sStubClearX, eStubY), DiagramPoint(end.x, eStubY), end))
+                add(listOf(start, DiagramPoint(sStubClearX, start.y), DiagramPoint(end.x, start.y), DiagramPoint(end.x, eStubY), end))
+                for (dy in listOf(detourBottomY, detourTopY)) {
+                    add(
+                        listOf(
+                            start,
+                            DiagramPoint(sStubClearX, start.y),
+                            DiagramPoint(sStubClearX, dy),
+                            DiagramPoint(end.x, dy),
+                            DiagramPoint(end.x, eStubY),
+                            end,
+                        ),
+                    )
+                }
+                for (dx in listOf(detourRightX, detourLeftX)) {
+                    for (dy in listOf(detourBottomY, detourTopY)) {
+                        add(
+                            listOf(
+                                start,
+                                DiagramPoint(sStubClearX, start.y),
+                                DiagramPoint(sStubClearX, dy),
+                                DiagramPoint(dx, dy),
+                                DiagramPoint(dx, eStubY),
+                                DiagramPoint(end.x, eStubY),
+                                end,
+                            ),
+                        )
+                    }
+                }
             }
-            return listOf(
-                start,
-                DiagramPoint(sStubClearX, start.y),
-                DiagramPoint(end.x, start.y),
-                DiagramPoint(end.x, eStubY),
-                end,
-            )
+            return candidates.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: candidates[2]
         } else {
             // startDir is T or B, endDir is L or R
             val startOutwardOk = (startDir == ArchitecturePortDir.B && end.y >= start.y + stub) ||
@@ -1384,23 +1403,49 @@ object ArchitectureLayout {
             }
             val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
             val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
-            val viaStubCorner1 = listOf(
-                start,
-                DiagramPoint(start.x, sStubY),
-                DiagramPoint(eStubX, sStubY),
-                DiagramPoint(eStubX, end.y),
-                end,
-            )
-            if (!polylineHitsObstacles(viaStubCorner1, obstacles)) {
-                return viaStubCorner1
+            val candidates = buildList {
+                add(listOf(start, DiagramPoint(start.x, sStubY), DiagramPoint(eStubX, sStubY), DiagramPoint(eStubX, end.y), end))
+                add(listOf(start, DiagramPoint(start.x, sStubY), DiagramPoint(eStubClearX, sStubY), DiagramPoint(eStubClearX, end.y), end))
+                add(listOf(start, DiagramPoint(start.x, sStubY), DiagramPoint(start.x, end.y), DiagramPoint(eStubClearX, end.y), end))
+                for (dy in listOf(detourTopY, detourBottomY)) {
+                    add(
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, dy),
+                            DiagramPoint(eStubClearX, dy),
+                            DiagramPoint(eStubClearX, end.y),
+                            end,
+                        ),
+                    )
+                }
+                for (dx in listOf(detourRightX, detourLeftX)) {
+                    add(
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, sStubY),
+                            DiagramPoint(dx, sStubY),
+                            DiagramPoint(dx, end.y),
+                            DiagramPoint(eStubClearX, end.y),
+                            end,
+                        ),
+                    )
+                }
+                for (dy in listOf(detourTopY, detourBottomY)) {
+                    for (dx in listOf(detourRightX, detourLeftX)) {
+                        add(
+                            listOf(
+                                start,
+                                DiagramPoint(start.x, dy),
+                                DiagramPoint(dx, dy),
+                                DiagramPoint(dx, end.y),
+                                DiagramPoint(eStubClearX, end.y),
+                                end,
+                            ),
+                        )
+                    }
+                }
             }
-            return listOf(
-                start,
-                DiagramPoint(start.x, sStubY),
-                DiagramPoint(start.x, end.y),
-                DiagramPoint(eStubX, end.y),
-                end,
-            )
+            return candidates.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: candidates[2]
         }
     }
 
