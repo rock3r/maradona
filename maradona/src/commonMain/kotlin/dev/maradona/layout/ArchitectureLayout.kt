@@ -271,17 +271,26 @@ object ArchitectureLayout {
 
             val isEmptyGroup = !minX.isFinite()
             if (isEmptyGroup) {
-                minX = emptyGroupCursorX + groupPad
-                minY = groupPad + headerH
-                maxX = minX + max(iconSize, headerW)
-                maxY = minY + iconSize
+                val center = rawCenterById[group.id]
+                if (center != null) {
+                    val w = max(iconSize, headerW)
+                    minX = center.x - w / 2f
+                    maxX = center.x + w / 2f
+                    minY = center.y - iconSize / 2f
+                    maxY = center.y + iconSize / 2f
+                } else {
+                    minX = emptyGroupCursorX + groupPad
+                    minY = groupPad + headerH
+                    maxX = minX + max(iconSize, headerW)
+                    maxY = minY + iconSize
+                }
             }
 
             val boxLeft = minX - groupPad
             val boxTop = minY - groupPad - headerH
             val boxWidth = max(maxX - minX + groupPad * 2f, headerW + groupPad)
             val boxHeight = (maxY + groupPad) - boxTop
-            if (isEmptyGroup) {
+            if (isEmptyGroup && rawCenterById[group.id] == null) {
                 emptyGroupCursorX = boxLeft + boxWidth + nodeSpacing.coerceAtLeast(24f * d)
             }
 
@@ -483,6 +492,18 @@ object ArchitectureLayout {
         for (j in diagram.junctions) {
             rawNodeIds += j.id
             parentByNode[j.id] = j.parentId
+        }
+        // Include empty leaf groups in grid packing so empty child groups stay inside their parent group
+        // alongside sibling services and never span across unrelated ungrouped nodes.
+        val nonEmptyGroupIds = HashSet<String>()
+        for (s in diagram.services) s.parentId?.let { nonEmptyGroupIds += it }
+        for (j in diagram.junctions) j.parentId?.let { nonEmptyGroupIds += it }
+        for (g in diagram.groups) g.parentId?.let { nonEmptyGroupIds += it }
+        for (g in diagram.groups) {
+            if (g.id !in nonEmptyGroupIds) {
+                rawNodeIds += g.id
+                parentByNode[g.id] = g.parentId
+            }
         }
         if (rawNodeIds.isEmpty()) return emptyMap()
 
@@ -1059,12 +1080,43 @@ object ArchitectureLayout {
             }
         }
 
-        val bend = if (!startXAxis) {
-            DiagramPoint(start.x, end.y)
+        if (startXAxis) {
+            // startDir is L or R, endDir is T or B
+            val startOutwardOk = (startDir == ArchitecturePortDir.R && end.x >= start.x + stub) ||
+                (startDir == ArchitecturePortDir.L && end.x <= start.x - stub)
+            val endOutwardOk = (endDir == ArchitecturePortDir.T && start.y <= end.y - stub) ||
+                (endDir == ArchitecturePortDir.B && start.y >= end.y + stub)
+            if (startOutwardOk && endOutwardOk) {
+                return listOf(start, DiagramPoint(end.x, start.y), end)
+            }
+            val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
+            val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
+            return listOf(
+                start,
+                DiagramPoint(sStubX, start.y),
+                DiagramPoint(sStubX, eStubY),
+                DiagramPoint(end.x, eStubY),
+                end,
+            )
         } else {
-            DiagramPoint(end.x, start.y)
+            // startDir is T or B, endDir is L or R
+            val startOutwardOk = (startDir == ArchitecturePortDir.B && end.y >= start.y + stub) ||
+                (startDir == ArchitecturePortDir.T && end.y <= start.y - stub)
+            val endOutwardOk = (endDir == ArchitecturePortDir.L && start.x <= end.x - stub) ||
+                (endDir == ArchitecturePortDir.R && start.x >= end.x + stub)
+            if (startOutwardOk && endOutwardOk) {
+                return listOf(start, DiagramPoint(start.x, end.y), end)
+            }
+            val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
+            val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
+            return listOf(
+                start,
+                DiagramPoint(start.x, sStubY),
+                DiagramPoint(eStubX, sStubY),
+                DiagramPoint(eStubX, end.y),
+                end,
+            )
         }
-        return listOf(start, bend, end)
     }
 
     private fun computePolylineMidpoint(pts: List<DiagramPoint>): DiagramPoint {

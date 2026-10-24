@@ -194,25 +194,32 @@ class ArchitectureLayoutTest {
         val backEdge = cycLayout.edges.first { it.points.size == 6 }
         assertTrue(backEdge.points[2].y > cycById.getValue("a").iconRect.bottom)
 
-        // Empty groups and deeply nested groups do not overlap unrelated ungrouped services.
+        // Empty groups (including empty child groups) and deeply nested groups do not overlap unrelated ungrouped services.
         val emptyAndNested = ArchitectureParser.parse(
             """
             architecture-beta
               group emptyGrp(cloud)[Empty Group]
               group outer(cloud)[Outer]
+              group emptyChild(cloud)[Empty Child] in outer
               group middle(cloud)[Middle] in outer
               group inner(cloud)[Inner] in middle
               group leaf(cloud)[Leaf] in inner
               service a(server)[A] in leaf
               service outside(server)[Outside]
               outside:B -- T:a
+              align row outside a
+              outside:R --> T:a
             """.trimIndent(),
         )
         val enLayout = ArchitectureLayout.layout(emptyAndNested)
         val enOut = enLayout.services.first { it.service.id == "outside" }
+        val enA = enLayout.services.first { it.service.id == "a" }
         val emptyRect = enLayout.groups.first { it.group.id == "emptyGrp" }.rect
         val outerRect = enLayout.groups.first { it.group.id == "outer" }.rect
         assertTrue(enOut.bounds.right < emptyRect.x || enOut.bounds.x > emptyRect.right)
-        assertTrue(enOut.bounds.bottom < outerRect.y)
+        assertTrue(enOut.bounds.right < outerRect.x || enOut.bounds.x > outerRect.right)
+        // Mixed-axis edge `outside:R --> T:a` on row-aligned nodes approaches `a`'s top port from above `a.iconRect.y`.
+        val mixedEdge = enLayout.edges.last()
+        assertTrue(mixedEdge.points[mixedEdge.points.size - 2].y < enA.iconRect.y)
     }
 }
