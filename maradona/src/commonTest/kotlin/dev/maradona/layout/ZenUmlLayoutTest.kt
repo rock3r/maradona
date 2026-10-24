@@ -106,6 +106,26 @@ class ZenUmlLayoutTest {
         val blockNote = branchedLayout.messages.first { it.commentText == "check condition" }
         assertNotNull(blockNote.commentRect)
         assertEquals(listOf("x = call()", "", "yes", "no"), branchedLayout.messages.map { it.displayText })
+
+        // Wide group headers reserve horizontal space so adjacent groups do not overlap
+        val twoGroupsDiag = ZenUmlParser.parse(
+            """
+            zenuml
+              group "Group One" {
+                A
+              }
+              group "Group Two" {
+                B
+              }
+              A->B.ping()
+            """.trimIndent(),
+        )
+        val tgLayout = ZenUmlLayout.layout(
+            diagram = twoGroupsDiag,
+            groupHeaderSizes = mapOf(0 to DiagramSize(600f, 24f), 1 to DiagramSize(100f, 24f)),
+        )
+        assertEquals(2, tgLayout.groups.size)
+        assertTrue(tgLayout.groups[0].rect.right < tgLayout.groups[1].rect.x)
     }
 
     @Test

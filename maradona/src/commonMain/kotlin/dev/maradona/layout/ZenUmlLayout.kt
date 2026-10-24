@@ -320,6 +320,28 @@ object ZenUmlLayout {
             }
         }
 
+        // Reserve horizontal space for wide group headers so neighboring groups never overlap
+        for ((gIdx, grp) in diagram.groups.withIndex()) {
+            val memberIndices = grp.participantIds.mapNotNull { pIndexById[it] }.sorted()
+            if (memberIndices.isEmpty()) continue
+            val firstIdx = memberIndices.first()
+            val lastIdx = memberIndices.last()
+            val rawLeft = centerX[firstIdx] - pSizes[firstIdx].width / 2f - GROUP_PAD_X * d
+            val rawRight = centerX[lastIdx] + pSizes[lastIdx].width / 2f + GROUP_PAD_X * d
+            val rawW = rawRight - rawLeft
+            val minHdrW = (groupHeaderSizes[gIdx]?.width ?: 0f) + 20f * d
+            if (minHdrW > rawW) {
+                val extra = minHdrW - rawW
+                val halfExtra = extra / 2f
+                for (k in firstIdx..lastIdx) {
+                    centerX[k] += halfExtra
+                }
+                for (k in (lastIdx + 1) until participants.size) {
+                    centerX[k] += extra
+                }
+            }
+        }
+
         // Expand participant spacing if any message label between pA and pB is wider than current span
         for (spec in msgSpecs) {
             val idxA = pIndexById[spec.fromId] ?: continue
