@@ -96,10 +96,10 @@ class ArchitectureLayoutTest {
         // `outside` is not enclosed inside group `g`.
         assertTrue(outside.bounds.x > groupRect.right || outside.bounds.right < groupRect.x)
 
-        // Same-side edge `a:R --> R:b` routes externally to the right of both `a` and `b`.
+        // Same-side edge `a:R --> R:b` on row-aligned nodes detours below both `a` and `b`.
         val edge = layout.edges.single()
-        assertEquals(4, edge.points.size)
-        assertTrue(edge.points[1].x > maxOf(a.iconRect.right, b.iconRect.right))
+        assertEquals(6, edge.points.size)
+        assertTrue(edge.points[2].y > maxOf(a.iconRect.bottom, b.iconRect.bottom))
 
         // When a grouped node connects to an outside node and the group also has a disconnected member,
         // the group enclosure still excludes the outside node.
@@ -193,5 +193,26 @@ class ArchitectureLayoutTest {
         val cycById = cycLayout.services.associateBy { it.service.id }
         val backEdge = cycLayout.edges.first { it.points.size == 6 }
         assertTrue(backEdge.points[2].y > cycById.getValue("a").iconRect.bottom)
+
+        // Empty groups and deeply nested groups do not overlap unrelated ungrouped services.
+        val emptyAndNested = ArchitectureParser.parse(
+            """
+            architecture-beta
+              group emptyGrp(cloud)[Empty Group]
+              group outer(cloud)[Outer]
+              group middle(cloud)[Middle] in outer
+              group inner(cloud)[Inner] in middle
+              group leaf(cloud)[Leaf] in inner
+              service a(server)[A] in leaf
+              service outside(server)[Outside]
+              outside:B -- T:a
+            """.trimIndent(),
+        )
+        val enLayout = ArchitectureLayout.layout(emptyAndNested)
+        val enOut = enLayout.services.first { it.service.id == "outside" }
+        val emptyRect = enLayout.groups.first { it.group.id == "emptyGrp" }.rect
+        val outerRect = enLayout.groups.first { it.group.id == "outer" }.rect
+        assertTrue(enOut.bounds.right < emptyRect.x || enOut.bounds.x > emptyRect.right)
+        assertTrue(enOut.bounds.bottom < outerRect.y)
     }
 }

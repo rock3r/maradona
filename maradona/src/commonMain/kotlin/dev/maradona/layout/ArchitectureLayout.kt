@@ -126,11 +126,24 @@ object ArchitectureLayout {
             }
         }
 
-        // Add extra spacing when edges carry labels or cross group boundaries, or when group headers are wide.
+        // Add extra spacing when edges carry labels or cross group boundaries (scaled by maximum group nesting depth),
+        // or when group headers are wide.
         val maxEdgeLblW = diagram.edges.mapNotNull { it.title?.takeIf { t -> t.isNotBlank() } }
             .maxOfOrNull { edgeLabelSize(it).width + 24f * d } ?: 0f
-        val hasGroups = diagram.groups.isNotEmpty()
-        val extraGroupGap = if (hasGroups) groupPad * 2.2f + 22f * d else 0f
+        val parentGroupMap = diagram.groups.associate { it.id to it.parentId }
+        fun groupDepth(gId: String): Int {
+            var depth = 0
+            var cur: String? = gId
+            val seen = HashSet<String>()
+            while (cur != null && seen.add(cur)) {
+                depth++
+                cur = parentGroupMap[cur]
+            }
+            return depth
+        }
+        val maxGroupDepth = diagram.groups.maxOfOrNull { groupDepth(it.id) } ?: 0
+        val extraGroupGapX = maxGroupDepth * (groupPad * 2.2f + 18f * d)
+        val extraGroupGapY = maxGroupDepth * (groupPad * 2.2f + 32f * d)
         var maxGroupHeaderW = 0f
         for (grp in diagram.groups) {
             val lblText = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
@@ -141,11 +154,11 @@ object ArchitectureLayout {
         }
 
         val pitchX = maxOf(
-            maxServiceW + nodeSpacing + extraGroupGap,
+            maxServiceW + nodeSpacing + extraGroupGapX,
             iconSize + maxEdgeLblW,
-            if (hasGroups) maxGroupHeaderW + nodeSpacing + extraGroupGap else 0f,
+            if (maxGroupDepth > 0) maxGroupHeaderW + nodeSpacing + extraGroupGapX else 0f,
         )
-        val pitchY = maxServiceH + nodeSpacing + extraGroupGap
+        val pitchY = maxServiceH + nodeSpacing + extraGroupGapY
 
         // Compute initial unshifted node centers from grid coordinates.
         val rawCenterById = LinkedHashMap<String, DiagramPoint>()
@@ -215,6 +228,10 @@ object ArchitectureLayout {
         val rawGroupsById = LinkedHashMap<String, PositionedArchitectureGroup>()
         val groupIconBoxSize = 18f * d
         val groupHeaderGap = 6f * d
+        var emptyGroupCursorX = listOfNotNull(
+            rawServices.maxOfOrNull { it.bounds.right },
+            rawJunctions.maxOfOrNull { it.rect.right },
+        ).maxOrNull()?.let { it + pitchX } ?: 0f
 
         fun computeGroupBox(group: ArchitectureGroup): PositionedArchitectureGroup {
             rawGroupsById[group.id]?.let { return it }
@@ -246,24 +263,27 @@ object ArchitectureLayout {
                 maxY = max(maxY, cg.rect.bottom)
             }
 
-            if (!minX.isFinite()) {
-                val idx = diagram.groups.indexOfFirst { it.id == group.id }.coerceAtLeast(0)
-                minX = idx * (iconSize + groupPad * 2f)
-                minY = 0f
-                maxX = minX + iconSize
-                maxY = iconSize
-            }
-
             val lblText = group.title?.takeIf { it.isNotBlank() } ?: group.id
             val lblSz = groupLabelSize(group.id, lblText)
             val hasIcon = !group.icon.isNullOrBlank()
             val headerH = max(if (hasIcon) groupIconBoxSize else 0f, lblSz.height) + 8f * d
             val headerW = (if (hasIcon) groupIconBoxSize + groupHeaderGap else 0f) + lblSz.width + 16f * d
 
+            val isEmptyGroup = !minX.isFinite()
+            if (isEmptyGroup) {
+                minX = emptyGroupCursorX + groupPad
+                minY = groupPad + headerH
+                maxX = minX + max(iconSize, headerW)
+                maxY = minY + iconSize
+            }
+
             val boxLeft = minX - groupPad
             val boxTop = minY - groupPad - headerH
             val boxWidth = max(maxX - minX + groupPad * 2f, headerW + groupPad)
             val boxHeight = (maxY + groupPad) - boxTop
+            if (isEmptyGroup) {
+                emptyGroupCursorX = boxLeft + boxWidth + nodeSpacing.coerceAtLeast(24f * d)
+            }
 
             val rect = DiagramRect(boxLeft, boxTop, boxWidth, boxHeight)
             val iconRect = if (hasIcon) {
@@ -917,20 +937,76 @@ object ArchitectureLayout {
         if (startDir == endDir) {
             return when (startDir) {
                 ArchitecturePortDir.R -> {
-                    val outX = max(start.x, end.x) + stub
-                    listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                    if (abs(start.y - end.y) < detourClearance) {
+                        val sStubX = start.x + stub
+                        val eStubX = end.x + stub
+                        val detourY = max(start.y, end.y) + detourClearance
+                        listOf(
+                            start,
+                            DiagramPoint(sStubX, start.y),
+                            DiagramPoint(sStubX, detourY),
+                            DiagramPoint(eStubX, detourY),
+                            DiagramPoint(eStubX, end.y),
+                            end,
+                        )
+                    } else {
+                        val outX = max(start.x, end.x) + stub
+                        listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                    }
                 }
                 ArchitecturePortDir.L -> {
-                    val outX = min(start.x, end.x) - stub
-                    listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                    if (abs(start.y - end.y) < detourClearance) {
+                        val sStubX = start.x - stub
+                        val eStubX = end.x - stub
+                        val detourY = max(start.y, end.y) + detourClearance
+                        listOf(
+                            start,
+                            DiagramPoint(sStubX, start.y),
+                            DiagramPoint(sStubX, detourY),
+                            DiagramPoint(eStubX, detourY),
+                            DiagramPoint(eStubX, end.y),
+                            end,
+                        )
+                    } else {
+                        val outX = min(start.x, end.x) - stub
+                        listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                    }
                 }
                 ArchitecturePortDir.B -> {
-                    val outY = max(start.y, end.y) + stub
-                    listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                    if (abs(start.x - end.x) < detourClearance) {
+                        val sStubY = start.y + stub
+                        val eStubY = end.y + stub
+                        val detourX = max(start.x, end.x) + detourClearance
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, sStubY),
+                            DiagramPoint(detourX, sStubY),
+                            DiagramPoint(detourX, eStubY),
+                            DiagramPoint(end.x, eStubY),
+                            end,
+                        )
+                    } else {
+                        val outY = max(start.y, end.y) + stub
+                        listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                    }
                 }
                 ArchitecturePortDir.T -> {
-                    val outY = min(start.y, end.y) - stub
-                    listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                    if (abs(start.x - end.x) < detourClearance) {
+                        val sStubY = start.y - stub
+                        val eStubY = end.y - stub
+                        val detourX = max(start.x, end.x) + detourClearance
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, sStubY),
+                            DiagramPoint(detourX, sStubY),
+                            DiagramPoint(detourX, eStubY),
+                            DiagramPoint(end.x, eStubY),
+                            end,
+                        )
+                    } else {
+                        val outY = min(start.y, end.y) - stub
+                        listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                    }
                 }
             }
         }
