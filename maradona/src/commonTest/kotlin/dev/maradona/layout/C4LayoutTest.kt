@@ -190,6 +190,26 @@ class C4LayoutTest {
         assertTrue(dtrA.centerY < dtrB.centerY)
         assertEquals(dtrB.centerY, dtrC.centerY, 0.5f)
         assertTrue(dtrB.centerX < dtrC.centerX)
+        // Self-loop label on `a` does not overlap neighbor `b` in the same row
+        assertTrue(!rectsOverlap(self0, mbB))
+
+        // Boundaries connected by Rel_D(b1, b2) place b2 below b1
+        val bndRelDiag = C4Parser.parse(
+            """
+            C4Context
+              System_Boundary(b1, "Boundary 1") {
+                System(s1, "S1")
+              }
+              System_Boundary(b2, "Boundary 2") {
+                System(s2, "S2")
+              }
+              Rel_D(b1, b2, "Calls")
+            """.trimIndent(),
+        )
+        val bndRelLayout = C4Layout.layout(bndRelDiag)
+        val b1Rect = bndRelLayout.boundaries.first { it.boundary.id == "b1" }.rect
+        val b2Rect = bndRelLayout.boundaries.first { it.boundary.id == "b2" }.rect
+        assertTrue(b1Rect.centerY < b2Rect.centerY)
     }
 
     @Test

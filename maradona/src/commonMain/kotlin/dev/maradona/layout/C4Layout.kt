@@ -174,6 +174,25 @@ object C4Layout {
 
         val visitedBoundaries = HashSet<String>()
 
+        // Precompute horizontal extra width needed to the right of any node that has self-relationships
+        val selfRelCounts = HashMap<String, Int>()
+        val selfRelMaxLblW = HashMap<String, Float>()
+        for ((idx, rel) in diagram.relationships.withIndex()) {
+            if (rel.from == rel.to) {
+                selfRelCounts[rel.from] = (selfRelCounts[rel.from] ?: 0) + 1
+                val hasLbl = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
+                val w = if (hasLbl) (relLabelSizes[idx] ?: defaultRelLabelSize(rel, d)).width else 0f
+                selfRelMaxLblW[rel.from] = max(selfRelMaxLblW[rel.from] ?: 0f, w)
+            }
+        }
+        val selfLoopExtraW = HashMap<String, Float>()
+        for ((nodeId, count) in selfRelCounts) {
+            val lblW = selfRelMaxLblW[nodeId] ?: 0f
+            val loopStep = max(lblW + 24f * d, 42f * d)
+            val rightmostX = 16f * d + lblW + 12f * d + (count - 1) * loopStep
+            selfLoopExtraW[nodeId] = rightmostX + 12f * d
+        }
+
         fun buildBoundarySubtree(b: C4Boundary, depth: Int): LayoutTreeItem.BoundaryNode {
             visitedBoundaries += b.id
             val hSize = boundaryHeaderSizes[b.id] ?: defaultBoundaryHeaderSize(b, d)
@@ -195,6 +214,7 @@ object C4Layout {
             measureBoundaryNode(
                 node = node,
                 relationships = diagram.relationships,
+                selfLoopExtraW = selfLoopExtraW,
                 direction = effectiveDirection,
                 shapeInRow = shapeInRow,
                 boundaryInRow = boundaryInRow,
@@ -257,15 +277,13 @@ object C4Layout {
         val topBands = mutableListOf<List<LayoutTreeItem>>()
         if (allRootBoundaries.isEmpty()) {
             // Rank root elements by relationship topological depth or chunk by shapeInRow
-            val rankedRows = rankElementsIntoRows(rootElements, diagram.relationships, shapeInRow, effectiveDirection)
+            val rankedRows = rankItemsIntoRows(rootElements, diagram.relationships, shapeInRow, effectiveDirection)
             topBands.addAll(rankedRows)
         } else {
             val (leadingEls, trailingEls) = rootElements.partition { !it.element.kind.isExternal }
-            topBands.addAll(rankElementsIntoRows(leadingEls, diagram.relationships, shapeInRow, effectiveDirection))
-            for (chunk in allRootBoundaries.chunked(boundaryInRow)) {
-                topBands += chunk
-            }
-            topBands.addAll(rankElementsIntoRows(trailingEls, diagram.relationships, shapeInRow, effectiveDirection))
+            topBands.addAll(rankItemsIntoRows(leadingEls, diagram.relationships, shapeInRow, effectiveDirection))
+            topBands.addAll(rankItemsIntoRows(allRootBoundaries, diagram.relationships, boundaryInRow, effectiveDirection))
+            topBands.addAll(rankItemsIntoRows(trailingEls, diagram.relationships, shapeInRow, effectiveDirection))
         }
 
         val isHorizontal = effectiveDirection == Direction.LR || effectiveDirection == Direction.RL
@@ -275,13 +293,15 @@ object C4Layout {
             topBands
         }
 
+        fun itemAllocatedWidth(item: LayoutTreeItem): Float = item.width + (selfLoopExtraW[item.id] ?: 0f)
+
         val bandSizes = orderedBands.map { band ->
             if (!isHorizontal) {
-                val w = band.sumOf { it.width.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapX
+                val w = band.sumOf { itemAllocatedWidth(it).toDouble() }.toFloat() + max(0, band.size - 1) * cardGapX
                 val h = band.maxOfOrNull { it.height } ?: 0f
                 DiagramSize(w, h)
             } else {
-                val w = band.maxOfOrNull { it.width } ?: 0f
+                val w = band.maxOfOrNull { itemAllocatedWidth(it) } ?: 0f
                 val h = band.sumOf { it.height.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapY
                 DiagramSize(w, h)
             }
@@ -320,7 +340,7 @@ object C4Layout {
                             placeBoundarySubtree(item, curX, itemY)
                         }
                     }
-                    curX += item.width + cardGapX
+                    curX += itemAllocatedWidth(item) + cardGapX
                 }
                 curY += bSize.height + cardGapY * 1.25f
             }
@@ -330,7 +350,7 @@ object C4Layout {
                 val bSize = bandSizes[bIdx]
                 var curY = contentStartY + (contentHeight - bSize.height) / 2f
                 for (item in band) {
-                    val itemX = curX + (bSize.width - item.width) / 2f
+                    val itemX = curX + (bSize.width - itemAllocatedWidth(item)) / 2f
                     when (item) {
                         is LayoutTreeItem.ElementNode -> {
                             elementRects[item.id] = DiagramRect(itemX, curY, item.width, item.height)
@@ -560,6 +580,7 @@ object C4Layout {
     private fun measureBoundaryNode(
         node: LayoutTreeItem.BoundaryNode,
         relationships: List<C4Relationship>,
+        selfLoopExtraW: Map<String, Float>,
         direction: Direction,
         shapeInRow: Int,
         boundaryInRow: Int,
@@ -573,23 +594,26 @@ object C4Layout {
     ) {
         val headerH = max(BOUNDARY_HEADER_HEIGHT * d, node.headerSize.height) + 10f * d
         val isHorizontal = direction == Direction.LR || direction == Direction.RL
-        val rawElBands = rankElementsIntoRows(node.childElements, relationships, shapeInRow, direction)
+        val rawElBands = rankItemsIntoRows(node.childElements, relationships, shapeInRow, direction)
         val elBands = if (direction == Direction.BT || direction == Direction.RL) rawElBands.asReversed() else rawElBands
-        val bndRows = node.childBoundaries.chunked(boundaryInRow)
+        val rawBndRows = rankItemsIntoRows(node.childBoundaries, relationships, boundaryInRow, direction)
+        val bndRows = if (direction == Direction.BT || direction == Direction.RL) rawBndRows.asReversed() else rawBndRows
+
+        fun allocW(item: LayoutTreeItem): Float = item.width + (selfLoopExtraW[item.id] ?: 0f)
 
         val elBandSizes = elBands.map { band ->
             if (!isHorizontal) {
-                val w = band.sumOf { it.width.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapX
+                val w = band.sumOf { allocW(it).toDouble() }.toFloat() + max(0, band.size - 1) * cardGapX
                 val h = band.maxOfOrNull { it.height } ?: 0f
                 DiagramSize(w, h)
             } else {
-                val w = band.maxOfOrNull { it.width } ?: 0f
+                val w = band.maxOfOrNull { allocW(it) } ?: 0f
                 val h = band.sumOf { it.height.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapY
                 DiagramSize(w, h)
             }
         }
         val bndRowSizes = bndRows.map { row ->
-            val w = row.sumOf { it.width.toDouble() }.toFloat() + max(0, row.size - 1) * bndGapX
+            val w = row.sumOf { allocW(it).toDouble() }.toFloat() + max(0, row.size - 1) * bndGapX
             val h = row.maxOfOrNull { it.height } ?: 0f
             DiagramSize(w, h)
         }
@@ -623,7 +647,7 @@ object C4Layout {
                     for (el in band) {
                         val elY = curY + (bSize.height - el.height) / 2f
                         offsets[el.id] = DiagramPoint(curX, elY)
-                        curX += el.width + cardGapX
+                        curX += allocW(el) + cardGapX
                     }
                     curY += bSize.height + cardGapY
                 }
@@ -633,7 +657,7 @@ object C4Layout {
                     val bSize = elBandSizes[rIdx]
                     var itemY = curY + (elTotalH - bSize.height) / 2f
                     for (el in band) {
-                        val elX = curX + (bSize.width - el.width) / 2f
+                        val elX = curX + (bSize.width - allocW(el)) / 2f
                         offsets[el.id] = DiagramPoint(elX, itemY)
                         itemY += el.height + cardGapY
                     }
@@ -649,7 +673,7 @@ object C4Layout {
             for (childB in row) {
                 val bY = curY + (rSize.height - childB.height) / 2f
                 offsets[childB.id] = DiagramPoint(curX, bY)
-                curX += childB.width + bndGapX
+                curX += allocW(childB) + bndGapX
             }
             curY += rSize.height + bndGapY
         }
@@ -666,12 +690,12 @@ object C4Layout {
         node.localChildOffsets = offsets
     }
 
-    private fun rankElementsIntoRows(
-        elements: List<LayoutTreeItem.ElementNode>,
+    private fun <T : LayoutTreeItem> rankItemsIntoRows(
+        elements: List<T>,
         relationships: List<C4Relationship>,
         shapeInRow: Int,
         direction: Direction,
-    ): List<List<LayoutTreeItem.ElementNode>> {
+    ): List<List<T>> {
         if (elements.isEmpty()) return emptyList()
         if (elements.size <= shapeInRow && relationships.isEmpty()) return listOf(elements)
 
@@ -806,7 +830,7 @@ object C4Layout {
         }
 
         val distinctRanks = rankOf.values.distinct().sorted()
-        val rows = mutableListOf<List<LayoutTreeItem.ElementNode>>()
+        val rows = mutableListOf<List<T>>()
         for (r in distinctRanks) {
             val inRank = elements.filter { rankOf[it.id] == r }
             val rankSet = inRank.map { it.id }.toSet()
@@ -819,7 +843,7 @@ object C4Layout {
             val ready = inRank.filter { (bandInDeg[it.id] ?: 0) == 0 }
                 .sortedBy { declIndex[it.id] ?: 0 }
                 .toMutableList()
-            val orderedInRank = mutableListOf<LayoutTreeItem.ElementNode>()
+            val orderedInRank = mutableListOf<T>()
             while (ready.isNotEmpty()) {
                 val nextEl = ready.removeAt(0)
                 orderedInRank += nextEl
