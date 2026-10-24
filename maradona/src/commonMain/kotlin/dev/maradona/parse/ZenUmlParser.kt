@@ -733,7 +733,7 @@ object ZenUmlParser {
                 i += 2
                 continue
             }
-            if (activeQuote == null && (c == '"' || c == '\'')) {
+            if (activeQuote == null && (c == '"' || (c == '\'' && isQuoteOpeningContext(line, i)))) {
                 activeQuote = c
                 cur.append(c)
                 i++
@@ -800,7 +800,7 @@ object ZenUmlParser {
                 i += 2
                 continue
             }
-            if (activeQuote == null && (c == '"' || c == '\'')) {
+            if (activeQuote == null && (c == '"' || (c == '\'' && isQuoteOpeningContext(line, i)))) {
                 activeQuote = c
                 i++
                 continue

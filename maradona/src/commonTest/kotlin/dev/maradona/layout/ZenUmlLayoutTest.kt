@@ -126,6 +126,11 @@ class ZenUmlLayoutTest {
         )
         assertEquals(2, tgLayout.groups.size)
         assertTrue(tgLayout.groups[0].rect.right < tgLayout.groups[1].rect.x)
+
+        // Nested self-call activations are ordered shallowest-first (depth 1 before depth 2)
+        val nestedSelfDiag = ZenUmlParser.parse("zenuml\n  A->B.outer() { self() }")
+        val nsLayout = ZenUmlLayout.layout(nestedSelfDiag)
+        assertEquals(listOf(1, 2), nsLayout.activations.map { it.depth })
     }
 
     @Test

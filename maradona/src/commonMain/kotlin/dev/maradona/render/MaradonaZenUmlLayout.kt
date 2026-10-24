@@ -542,10 +542,10 @@ private fun DrawScope.drawZenUmlUnderlay(
         }
     }
 
-    // 4. Activation bars
+    // 4. Activation bars (shallowest first so nested self-call activations render on top)
     val actFill = if (isDark) Color(0xFF1E3A8A) else Color(0xFFDBEAFE)
     val actStroke = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
-    for (act in layout.activations) {
+    for (act in layout.activations.sortedBy { it.depth }) {
         val r = act.rect
         val cr = CornerRadius(2f * density, 2f * density)
         drawRoundRect(

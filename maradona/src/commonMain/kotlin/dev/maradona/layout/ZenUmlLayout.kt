@@ -814,10 +814,8 @@ object ZenUmlLayout {
                     it.copy(rect = shiftRect(it.rect), headerRect = shiftRect(it.headerRect))
                 }
             },
-            activations = if (shiftX == 0f) {
-                activations
-            } else {
-                activations.map { it.copy(rect = shiftRect(it.rect)) }
+            activations = activations.sortedBy { it.depth }.map {
+                if (shiftX == 0f) it else it.copy(rect = shiftRect(it.rect))
             },
             messages = positionedMessages.sortedBy { it.messageIndex }.map {
                 if (shiftX == 0f) {

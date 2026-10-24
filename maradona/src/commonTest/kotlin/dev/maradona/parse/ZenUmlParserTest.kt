@@ -190,6 +190,12 @@ class ZenUmlParserTest {
         val arrowRetMsg = (arrowReturnDiag.statements.single() as ZenUmlStatement.Message).nestedStatements.single() as ZenUmlStatement.Message
         assertEquals(ZenUmlMessageKind.RETURN, arrowRetMsg.kind)
         assertEquals("A->B", arrowRetMsg.text)
+
+        // Apostrophes in inline async message text do not swallow closing braces
+        val apostropheDiag = ZenUmlParser.parse("zenuml\n  A->B.call() { B->A: Here's the result }")
+        val apRoot = apostropheDiag.statements.single() as ZenUmlStatement.Message
+        val apInner = apRoot.nestedStatements.single() as ZenUmlStatement.Message
+        assertEquals("Here's the result", apInner.text)
     }
 
     @Test
