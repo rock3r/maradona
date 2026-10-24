@@ -1068,77 +1068,73 @@ object ArchitectureLayout {
         val stub = 20f * d
         if (startDir == endDir) {
             return when (startDir) {
-                ArchitecturePortDir.R -> {
-                    if (abs(start.y - end.y) < detourClearance) {
-                        val sStubX = start.x + stub
-                        val eStubX = end.x + stub
-                        val detourY = max(start.y, end.y) + detourClearance
-                        listOf(
+                ArchitecturePortDir.R, ArchitecturePortDir.L -> {
+                    val sign = if (startDir == ArchitecturePortDir.R) 1f else -1f
+                    val sStubX = start.x + sign * stub
+                    val eStubX = end.x + sign * stub
+                    val outX = if (startDir == ArchitecturePortDir.R) max(sStubX, eStubX) else min(sStubX, eStubX)
+                    val directOut = listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                    if (abs(start.y - end.y) >= detourClearance && !polylineHitsObstacles(directOut, obstacles)) {
+                        return directOut
+                    }
+                    if (abs(start.y - end.y) >= detourClearance) {
+                        val midY = (start.y + end.y) / 2f
+                        val midRoute = listOf(
                             start,
                             DiagramPoint(sStubX, start.y),
-                            DiagramPoint(sStubX, detourY),
-                            DiagramPoint(eStubX, detourY),
+                            DiagramPoint(sStubX, midY),
+                            DiagramPoint(eStubX, midY),
                             DiagramPoint(eStubX, end.y),
                             end,
                         )
-                    } else {
-                        val outX = max(start.x, end.x) + stub
-                        listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                        if (!polylineHitsObstacles(midRoute, obstacles)) {
+                            return midRoute
+                        }
                     }
+                    val maxObBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
+                    val detourY = max(max(start.y, end.y) + detourClearance, maxObBottom)
+                    listOf(
+                        start,
+                        DiagramPoint(sStubX, start.y),
+                        DiagramPoint(sStubX, detourY),
+                        DiagramPoint(eStubX, detourY),
+                        DiagramPoint(eStubX, end.y),
+                        end,
+                    )
                 }
-                ArchitecturePortDir.L -> {
-                    if (abs(start.y - end.y) < detourClearance) {
-                        val sStubX = start.x - stub
-                        val eStubX = end.x - stub
-                        val detourY = max(start.y, end.y) + detourClearance
-                        listOf(
-                            start,
-                            DiagramPoint(sStubX, start.y),
-                            DiagramPoint(sStubX, detourY),
-                            DiagramPoint(eStubX, detourY),
-                            DiagramPoint(eStubX, end.y),
-                            end,
-                        )
-                    } else {
-                        val outX = min(start.x, end.x) - stub
-                        listOf(start, DiagramPoint(outX, start.y), DiagramPoint(outX, end.y), end)
+                ArchitecturePortDir.B, ArchitecturePortDir.T -> {
+                    val sign = if (startDir == ArchitecturePortDir.B) 1f else -1f
+                    val sStubY = start.y + sign * stub
+                    val eStubY = end.y + sign * stub
+                    val outY = if (startDir == ArchitecturePortDir.B) max(sStubY, eStubY) else min(sStubY, eStubY)
+                    val directOut = listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                    if (abs(start.x - end.x) >= detourClearance && !polylineHitsObstacles(directOut, obstacles)) {
+                        return directOut
                     }
-                }
-                ArchitecturePortDir.B -> {
-                    if (abs(start.x - end.x) < detourClearance) {
-                        val sStubY = start.y + stub
-                        val eStubY = end.y + stub
-                        val detourX = max(start.x, end.x) + detourClearance
-                        listOf(
+                    if (abs(start.x - end.x) >= detourClearance) {
+                        val midX = (start.x + end.x) / 2f
+                        val midRoute = listOf(
                             start,
                             DiagramPoint(start.x, sStubY),
-                            DiagramPoint(detourX, sStubY),
-                            DiagramPoint(detourX, eStubY),
+                            DiagramPoint(midX, sStubY),
+                            DiagramPoint(midX, eStubY),
                             DiagramPoint(end.x, eStubY),
                             end,
                         )
-                    } else {
-                        val outY = max(start.y, end.y) + stub
-                        listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
+                        if (!polylineHitsObstacles(midRoute, obstacles)) {
+                            return midRoute
+                        }
                     }
-                }
-                ArchitecturePortDir.T -> {
-                    if (abs(start.x - end.x) < detourClearance) {
-                        val sStubY = start.y - stub
-                        val eStubY = end.y - stub
-                        val detourX = max(start.x, end.x) + detourClearance
-                        listOf(
-                            start,
-                            DiagramPoint(start.x, sStubY),
-                            DiagramPoint(detourX, sStubY),
-                            DiagramPoint(detourX, eStubY),
-                            DiagramPoint(end.x, eStubY),
-                            end,
-                        )
-                    } else {
-                        val outY = min(start.y, end.y) - stub
-                        listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
-                    }
+                    val maxObRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: 0f
+                    val detourX = max(max(start.x, end.x) + detourClearance, maxObRight)
+                    listOf(
+                        start,
+                        DiagramPoint(start.x, sStubY),
+                        DiagramPoint(detourX, sStubY),
+                        DiagramPoint(detourX, eStubY),
+                        DiagramPoint(end.x, eStubY),
+                        end,
+                    )
                 }
             }
         }
@@ -1151,21 +1147,21 @@ object ArchitectureLayout {
             if (startXAxis) {
                 val forward = (startDir == ArchitecturePortDir.R && end.x >= start.x) ||
                     (startDir == ArchitecturePortDir.L && end.x <= start.x)
-                val minSegX = min(start.x, end.x) + 1f
-                val maxSegX = max(start.x, end.x) - 1f
-                val blocking = obstacles.filter { ob ->
-                    ob.x < maxSegX && ob.right > minSegX &&
-                        start.y >= ob.y - 2f && start.y <= ob.bottom + 2f
-                }
-                if (forward && blocking.isEmpty()) {
-                    if (abs(start.y - end.y) < 1f) return listOf(start, end)
-                    val midX = (start.x + end.x) / 2f
-                    return listOf(start, DiagramPoint(midX, start.y), DiagramPoint(midX, end.y), end)
+                if (forward) {
+                    val candidate = if (abs(start.y - end.y) < 1f) {
+                        listOf(start, end)
+                    } else {
+                        val midX = (start.x + end.x) / 2f
+                        listOf(start, DiagramPoint(midX, start.y), DiagramPoint(midX, end.y), end)
+                    }
+                    if (!polylineHitsObstacles(candidate, obstacles)) {
+                        return candidate
+                    }
                 }
                 // Backward or obstructed horizontal connection: route via outward stubs and external lane.
                 val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
                 val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
-                val blockingBottom = blocking.maxOfOrNull { it.bottom + 16f * d } ?: 0f
+                val blockingBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
                 val detourY = max(max(start.y, end.y) + detourClearance, blockingBottom)
                 return listOf(
                     start,
@@ -1178,21 +1174,21 @@ object ArchitectureLayout {
             } else {
                 val forward = (startDir == ArchitecturePortDir.B && end.y >= start.y) ||
                     (startDir == ArchitecturePortDir.T && end.y <= start.y)
-                val minSegY = min(start.y, end.y) + 1f
-                val maxSegY = max(start.y, end.y) - 1f
-                val blocking = obstacles.filter { ob ->
-                    ob.y < maxSegY && ob.bottom > minSegY &&
-                        start.x >= ob.x - 2f && start.x <= ob.right + 2f
-                }
-                if (forward && blocking.isEmpty()) {
-                    if (abs(start.x - end.x) < 1f) return listOf(start, end)
-                    val midY = (start.y + end.y) / 2f
-                    return listOf(start, DiagramPoint(start.x, midY), DiagramPoint(end.x, midY), end)
+                if (forward) {
+                    val candidate = if (abs(start.x - end.x) < 1f) {
+                        listOf(start, end)
+                    } else {
+                        val midY = (start.y + end.y) / 2f
+                        listOf(start, DiagramPoint(start.x, midY), DiagramPoint(end.x, midY), end)
+                    }
+                    if (!polylineHitsObstacles(candidate, obstacles)) {
+                        return candidate
+                    }
                 }
                 // Backward or obstructed vertical connection: route via outward stubs and external vertical lane.
                 val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
                 val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
-                val blockingRight = blocking.maxOfOrNull { it.right + 16f * d } ?: 0f
+                val blockingRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: 0f
                 val detourX = max(max(start.x, end.x) + detourClearance, blockingRight)
                 return listOf(
                     start,

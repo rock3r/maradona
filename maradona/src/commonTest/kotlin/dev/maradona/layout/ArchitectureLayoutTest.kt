@@ -282,5 +282,23 @@ class ArchitectureLayoutTest {
         val ciGrp = ciLayout.groups.single().rect
         assertEquals(ciById.getValue("a").iconRect.centerX, ciById.getValue("b").iconRect.centerX, 0.5f)
         assertTrue(ciById.getValue("b").bounds.y > ciGrp.bottom)
+
+        // Same-side connection `a:R --> R:c` obstructed by `b` (`align row a b`, `align column b c`) detours around `b`.
+        val sameSideCorner = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)
+              service b(server)
+              service c(server)
+              align row a b
+              align column b c
+              a:R --> R:c
+            """.trimIndent(),
+        )
+        val sscLayout = ArchitectureLayout.layout(sameSideCorner)
+        val sscB = sscLayout.services.first { it.service.id == "b" }
+        val sscEdge = sscLayout.edges.single()
+        assertEquals(6, sscEdge.points.size)
+        assertTrue(sscEdge.points[1].x < sscB.bounds.x)
     }
 }
