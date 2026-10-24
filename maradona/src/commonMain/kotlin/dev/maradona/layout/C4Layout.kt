@@ -394,7 +394,7 @@ object C4Layout {
             val midAnchor: DiagramPoint
             if (rel.from == rel.to) {
                 val loopSpread = 12f * d
-                val lblW = lblSize?.width ?: 0f
+                val lblW = max(lblSize?.width ?: 0f, pairMaxLblWidth[pairKey] ?: 0f)
                 val loopStep = max(lblW + 24f * d, 42f * d)
                 val anchorX = fromRect.right + 16f * d + lblW / 2f + seenIdx * loopStep
                 val loopRightX = anchorX + lblW / 2f + 12f * d
@@ -576,14 +576,21 @@ object C4Layout {
         d: Float,
     ) {
         val headerH = max(BOUNDARY_HEADER_HEIGHT * d, node.headerSize.height) + 10f * d
-        val rawElRows = rankElementsIntoRows(node.childElements, relationships, shapeInRow, direction)
-        val elRows = if (direction == Direction.BT || direction == Direction.RL) rawElRows.asReversed() else rawElRows
+        val isHorizontal = direction == Direction.LR || direction == Direction.RL
+        val rawElBands = rankElementsIntoRows(node.childElements, relationships, shapeInRow, direction)
+        val elBands = if (direction == Direction.BT || direction == Direction.RL) rawElBands.asReversed() else rawElBands
         val bndRows = node.childBoundaries.chunked(boundaryInRow)
 
-        val elRowSizes = elRows.map { row ->
-            val w = row.sumOf { it.width.toDouble() }.toFloat() + max(0, row.size - 1) * cardGapX
-            val h = row.maxOfOrNull { it.height } ?: 0f
-            DiagramSize(w, h)
+        val elBandSizes = elBands.map { band ->
+            if (!isHorizontal) {
+                val w = band.sumOf { it.width.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapX
+                val h = band.maxOfOrNull { it.height } ?: 0f
+                DiagramSize(w, h)
+            } else {
+                val w = band.maxOfOrNull { it.width } ?: 0f
+                val h = band.sumOf { it.height.toDouble() }.toFloat() + max(0, band.size - 1) * cardGapY
+                DiagramSize(w, h)
+            }
         }
         val bndRowSizes = bndRows.map { row ->
             val w = row.sumOf { it.width.toDouble() }.toFloat() + max(0, row.size - 1) * bndGapX
@@ -591,8 +598,19 @@ object C4Layout {
             DiagramSize(w, h)
         }
 
+        val elTotalW = if (!isHorizontal) {
+            elBandSizes.maxOfOrNull { it.width } ?: 0f
+        } else {
+            elBandSizes.sumOf { it.width.toDouble() }.toFloat() + max(0, elBandSizes.size - 1) * cardGapX
+        }
+        val elTotalH = if (!isHorizontal) {
+            elBandSizes.sumOf { it.height.toDouble() }.toFloat() + max(0, elBandSizes.size - 1) * cardGapY
+        } else {
+            elBandSizes.maxOfOrNull { it.height } ?: 0f
+        }
+
         val maxRowW = max(
-            elRowSizes.maxOfOrNull { it.width } ?: 0f,
+            elTotalW,
             bndRowSizes.maxOfOrNull { it.width } ?: 0f,
         )
         val innerW = max(maxRowW, node.headerSize.width + 16f * d)
@@ -601,15 +619,32 @@ object C4Layout {
         val offsets = LinkedHashMap<String, DiagramPoint>()
         var curY = headerH
 
-        for ((rIdx, row) in elRows.withIndex()) {
-            val rSize = elRowSizes[rIdx]
-            var curX = bndPadX + (innerW - rSize.width) / 2f
-            for (el in row) {
-                val elY = curY + (rSize.height - el.height) / 2f
-                offsets[el.id] = DiagramPoint(curX, elY)
-                curX += el.width + cardGapX
+        if (elBands.isNotEmpty()) {
+            if (!isHorizontal) {
+                for ((rIdx, band) in elBands.withIndex()) {
+                    val bSize = elBandSizes[rIdx]
+                    var curX = bndPadX + (innerW - bSize.width) / 2f
+                    for (el in band) {
+                        val elY = curY + (bSize.height - el.height) / 2f
+                        offsets[el.id] = DiagramPoint(curX, elY)
+                        curX += el.width + cardGapX
+                    }
+                    curY += bSize.height + cardGapY
+                }
+            } else {
+                var curX = bndPadX + (innerW - elTotalW) / 2f
+                for ((rIdx, band) in elBands.withIndex()) {
+                    val bSize = elBandSizes[rIdx]
+                    var itemY = curY + (elTotalH - bSize.height) / 2f
+                    for (el in band) {
+                        val elX = curX + (bSize.width - el.width) / 2f
+                        offsets[el.id] = DiagramPoint(elX, itemY)
+                        itemY += el.height + cardGapY
+                    }
+                    curX += bSize.width + cardGapX
+                }
+                curY += elTotalH + cardGapY
             }
-            curY += rSize.height + cardGapY
         }
 
         for ((rIdx, row) in bndRows.withIndex()) {
@@ -623,7 +658,7 @@ object C4Layout {
             curY += rSize.height + bndGapY
         }
 
-        val contentBottom = if (elRows.isEmpty() && bndRows.isEmpty()) {
+        val contentBottom = if (elBands.isEmpty() && bndRows.isEmpty()) {
             headerH + 40f * d
         } else {
             val lastGap = if (bndRows.isNotEmpty()) bndGapY else cardGapY
@@ -730,21 +765,72 @@ object C4Layout {
         }
 
         // Apply same-band hints (`Rel_L`/`Rel_R` in TB/BT, `Rel_U`/`Rel_D` in LR/RL)
+        val declIndex = elements.withIndex().associate { (i, el) -> el.id to i }
+        val sameBandEdges = LinkedHashMap<String, MutableSet<String>>()
+        for (el in elements) sameBandEdges[el.id] = LinkedHashSet()
+        var rankChanged = true
+        var pass = 0
+        while (rankChanged && pass < elements.size) {
+            rankChanged = false
+            pass++
+            for ((fromId, toId, _) in sameBandPairs) {
+                val rFrom = rankOf[fromId] ?: 0
+                val rTo = rankOf[toId] ?: 0
+                val targetRank = min(rFrom, rTo)
+                if (rFrom != targetRank) {
+                    rankOf[fromId] = targetRank
+                    rankChanged = true
+                }
+                if (rTo != targetRank) {
+                    rankOf[toId] = targetRank
+                    rankChanged = true
+                }
+            }
+        }
+        val seenBandEdges = HashSet<Pair<String, String>>()
         for ((fromId, toId, kind) in sameBandPairs) {
-            val rFrom = rankOf[fromId] ?: 0
-            rankOf[toId] = rFrom
-            val baseOrder = sameBandOrder[fromId] ?: 0
             val placeBefore = kind == C4RelKind.REL_LEFT || kind == C4RelKind.REL_UP
-            sameBandOrder[toId] = if (placeBefore) baseOrder - 1 else baseOrder + 1
+            val beforeId = if (placeBefore) toId else fromId
+            val afterId = if (placeBefore) fromId else toId
+            if ((afterId to beforeId) !in seenBandEdges && (beforeId to afterId) !in seenBandEdges) {
+                seenBandEdges += (beforeId to afterId)
+                sameBandEdges.getValue(beforeId) += afterId
+            }
         }
 
         val distinctRanks = rankOf.values.distinct().sorted()
         val rows = mutableListOf<List<LayoutTreeItem.ElementNode>>()
         for (r in distinctRanks) {
-            val inRank = elements
-                .filter { rankOf[it.id] == r }
-                .sortedBy { sameBandOrder[it.id] ?: 0 }
-            rows.addAll(inRank.chunked(shapeInRow))
+            val inRank = elements.filter { rankOf[it.id] == r }
+            val rankSet = inRank.map { it.id }.toSet()
+            val bandInDeg = inRank.associate { it.id to 0 }.toMutableMap()
+            for (u in rankSet) {
+                for (v in sameBandEdges[u].orEmpty()) {
+                    if (v in rankSet) bandInDeg[v] = (bandInDeg[v] ?: 0) + 1
+                }
+            }
+            val ready = inRank.filter { (bandInDeg[it.id] ?: 0) == 0 }
+                .sortedBy { declIndex[it.id] ?: 0 }
+                .toMutableList()
+            val orderedInRank = mutableListOf<LayoutTreeItem.ElementNode>()
+            while (ready.isNotEmpty()) {
+                val nextEl = ready.removeAt(0)
+                orderedInRank += nextEl
+                for (v in sameBandEdges[nextEl.id].orEmpty()) {
+                    if (v in rankSet) {
+                        val deg = (bandInDeg[v] ?: 1) - 1
+                        bandInDeg[v] = deg
+                        if (deg == 0) {
+                            ready += byId.getValue(v)
+                            ready.sortBy { declIndex[it.id] ?: 0 }
+                        }
+                    }
+                }
+            }
+            for (el in inRank) {
+                if (el !in orderedInRank) orderedInRank += el
+            }
+            rows.addAll(orderedInRank.chunked(shapeInRow))
         }
         return rows
     }

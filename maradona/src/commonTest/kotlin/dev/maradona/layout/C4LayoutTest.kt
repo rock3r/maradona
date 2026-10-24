@@ -148,6 +148,29 @@ class C4LayoutTest {
         assertTrue(!rectsOverlap(r0, r1))
         assertTrue(!rectsOverlap(selfLbl, aCard))
         assertTrue(b2Card.centerY < aCard.centerY)
+
+        // Transitive Rel_R constraints (Rel_R(a, b) and Rel_R(c, a)) produce order c, a, b;
+        // multiple self-loops with different label widths do not overlap.
+        val multiBandDiag = C4Parser.parse(
+            """
+            C4Context
+              System(a, "A")
+              System(b, "B")
+              System(c, "C")
+              Rel_R(a, b, "Calls")
+              Rel_R(c, a, "Calls")
+              Rel(a, a, "Retries the failed operation")
+              Rel(a, a, "Retry")
+            """.trimIndent(),
+        )
+        val mbLayout = C4Layout.layout(multiBandDiag)
+        val mbA = mbLayout.elements.first { it.element.id == "a" }.rect
+        val mbB = mbLayout.elements.first { it.element.id == "b" }.rect
+        val mbC = mbLayout.elements.first { it.element.id == "c" }.rect
+        assertTrue(mbC.centerX < mbA.centerX && mbA.centerX < mbB.centerX)
+        val self0 = mbLayout.relationships[2].labelRect!!
+        val self1 = mbLayout.relationships[3].labelRect!!
+        assertTrue(!rectsOverlap(self0, self1))
     }
 
     @Test
