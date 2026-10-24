@@ -376,5 +376,32 @@ class ArchitectureLayoutTest {
             assertTrue(!insideB, "Segment ($p0 -> $p1) crossed endpoint b's icon $bIcon")
         }
         assertTrue(sseLayout.width > 0f && sseLayout.height > 0f)
+
+        // Opposite-port fallback `b:R -- L:d` checks detour legs against intervening tile `a`
+        val oppositeDetourDiag = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a
+              service b
+              service c
+              service d
+              b:R -- L:d
+              b:B -- T:a
+              c:B -- T:a
+              a:B -- T:d
+            """.trimIndent(),
+        )
+        val odLayout = ArchitectureLayout.layout(oppositeDetourDiag)
+        val aIcon = odLayout.services.first { it.service.id == "a" }.iconRect
+        val bdEdge = odLayout.edges.first()
+        for (i in 0 until bdEdge.points.size - 1) {
+            val p0 = bdEdge.points[i]
+            val p1 = bdEdge.points[i + 1]
+            val midX = (p0.x + p1.x) / 2f
+            val midY = (p0.y + p1.y) / 2f
+            val insideA = midX > aIcon.x + 1f && midX < aIcon.right - 1f &&
+                midY > aIcon.y + 1f && midY < aIcon.bottom - 1f
+            assertTrue(!insideA, "Segment ($p0 -> $p1) crossed intervening service a's icon $aIcon")
+        }
     }
 }

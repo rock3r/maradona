@@ -1253,15 +1253,39 @@ object ArchitectureLayout {
                 }
                 // Backward or obstructed horizontal connection: route via outward stubs and external lane.
                 val blockingBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
-                val detourY = max(max(start.y, end.y) + detourClearance, blockingBottom)
-                return listOf(
-                    start,
-                    DiagramPoint(sStubClearX, start.y),
-                    DiagramPoint(sStubClearX, detourY),
-                    DiagramPoint(eStubClearX, detourY),
-                    DiagramPoint(eStubClearX, end.y),
-                    end,
-                )
+                val blockingTop = obstacles.minOfOrNull { it.y - 16f * d } ?: 0f
+                val detourBottomY = max(max(start.y, end.y) + detourClearance, blockingBottom)
+                val detourTopY = min(min(start.y, end.y) - detourClearance, blockingTop)
+                val horizFallbacks = buildList {
+                    for (dy in listOf(detourTopY, detourBottomY)) {
+                        add(
+                            listOf(
+                                start,
+                                DiagramPoint(sStubClearX, start.y),
+                                DiagramPoint(sStubClearX, dy),
+                                DiagramPoint(eStubClearX, dy),
+                                DiagramPoint(eStubClearX, end.y),
+                                end,
+                            ),
+                        )
+                    }
+                    // Also try wider horizontal stub clearances if an obstacle sits directly in the stub column
+                    for (extraX in listOf(detourClearance, -detourClearance)) {
+                        for (dy in listOf(detourTopY, detourBottomY)) {
+                            add(
+                                listOf(
+                                    start,
+                                    DiagramPoint(sStubClearX + extraX, start.y),
+                                    DiagramPoint(sStubClearX + extraX, dy),
+                                    DiagramPoint(eStubClearX - extraX, dy),
+                                    DiagramPoint(eStubClearX - extraX, end.y),
+                                    end,
+                                ),
+                            )
+                        }
+                    }
+                }
+                return horizFallbacks.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: horizFallbacks.first()
             } else {
                 val forward = (startDir == ArchitecturePortDir.B && end.y >= start.y) ||
                     (startDir == ArchitecturePortDir.T && end.y <= start.y)
@@ -1278,17 +1302,34 @@ object ArchitectureLayout {
                 }
                 // Backward or obstructed vertical connection: route via outward stubs and external vertical lane.
                 val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
-                val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
+                val eStubY = if (endDir == ArchitecturePortDir.B && rhsBounds != null) {
+                    max(end.y + stub, rhsBounds.bottom + 12f * d)
+                } else {
+                    end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
+                }
                 val blockingRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: 0f
-                val detourX = max(max(start.x, end.x) + detourClearance, blockingRight)
-                return listOf(
-                    start,
-                    DiagramPoint(start.x, sStubY),
-                    DiagramPoint(detourX, sStubY),
-                    DiagramPoint(detourX, eStubY),
-                    DiagramPoint(end.x, eStubY),
-                    end,
+                val blockingLeft = obstacles.minOfOrNull { it.x - 16f * d } ?: 0f
+                val detourRightX = max(max(start.x, end.x) + detourClearance, blockingRight)
+                val detourLeftX = min(min(start.x, end.x) - detourClearance, blockingLeft)
+                val vertFallbacks = listOf(
+                    listOf(
+                        start,
+                        DiagramPoint(start.x, sStubY),
+                        DiagramPoint(detourLeftX, sStubY),
+                        DiagramPoint(detourLeftX, eStubY),
+                        DiagramPoint(end.x, eStubY),
+                        end,
+                    ),
+                    listOf(
+                        start,
+                        DiagramPoint(start.x, sStubY),
+                        DiagramPoint(detourRightX, sStubY),
+                        DiagramPoint(detourRightX, eStubY),
+                        DiagramPoint(end.x, eStubY),
+                        end,
+                    ),
                 )
+                return vertFallbacks.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: vertFallbacks.last()
             }
         }
 

@@ -638,7 +638,8 @@ object ArchitectureParser {
             return true
         }
         // Also allow quote opening for `service <id>"iconText"` or `service <id>'iconText'` or `title '...'`
-        val prefix = s.substring(0, j + 1).trimStart()
+        val stmtStart = maxOf(s.lastIndexOf('\n', j), s.lastIndexOf('\r', j), s.lastIndexOf(';', j)) + 1
+        val prefix = s.substring(stmtStart, j + 1).trimStart()
         if (Regex("""^(?:service\s+[A-Za-z0-9_][A-Za-z0-9_-]*|(?:architecture(?:-beta)?\s+)?title)$""", RegexOption.IGNORE_CASE).matches(prefix)) {
             return true
         }

@@ -148,5 +148,16 @@ class ArchitectureParserTest {
                 """.trimIndent(),
             )
         }
+
+        // Single-quoted title after a service declaration preserves literal init directive text
+        val singleTitleDiag = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a
+              title 'Literal %%{init: {"architecture": {"iconSize": 120}}}%%'
+            """.trimIndent(),
+        )
+        assertEquals("Literal %%{init: {\"architecture\": {\"iconSize\": 120}}}%%", singleTitleDiag.title)
+        assertEquals(64f, singleTitleDiag.config.iconSize)
     }
 }
