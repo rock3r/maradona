@@ -112,12 +112,12 @@ class C4LayoutTest {
               System(c, "C")
               Rel(a, b, "Step 1")
               Rel(b, c, "Step 2")
-              Rel(a, c, "Skip")
+              Rel(a, c, "Retries the failed operation")
             """.trimIndent(),
         )
         val chainLayout = C4Layout.layout(chain)
         val bCard = chainLayout.elements.first { it.element.id == "b" }.rect
-        val skipRel = chainLayout.relationships.first { it.relationship.label == "Skip" }
+        val skipRel = chainLayout.relationships.first { it.relationship.label == "Retries the failed operation" }
         assertNotNull(skipRel.labelRect)
         assertTrue(!rectsOverlap(skipRel.labelRect, bCard))
 
@@ -236,18 +236,20 @@ class C4LayoutTest {
         assertTrue(naRect.centerX < nbRect.centerX)
         assertTrue(nlrLayout.width > 0f && nlrLayout.height > 0f)
 
-        // Root element and root boundary connected by Rel_U(a, b) place boundary b above element a
+        // Root element and root boundary (and sibling element + boundary inside an outer boundary) connected by Rel_U(a, b) place b above a
         val mixedRootDiag = C4Parser.parse(
             """
             C4Context
-              System(a, "A")
-              System_Boundary(b, "B") {}
+              Enterprise_Boundary(ent, "Enterprise") {
+                System(a, "A")
+                System_Boundary(b, "B") {}
+              }
               Rel_U(a, b, "Above")
             """.trimIndent(),
         )
         val mrLayout = C4Layout.layout(mixedRootDiag)
         val mrA = mrLayout.elements.single().rect
-        val mrB = mrLayout.boundaries.single().rect
+        val mrB = mrLayout.boundaries.first { it.boundary.id == "b" }.rect
         assertTrue(mrB.centerY < mrA.centerY)
     }
 
