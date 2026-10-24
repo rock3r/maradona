@@ -102,6 +102,24 @@ class C4LayoutTest {
         // Offset relationship label is unioned into overall diagram bounds
         assertTrue(req.labelRect.x >= 0f && req.labelRect.right <= layout.width)
         assertTrue(req.labelRect.y >= 0f && req.labelRect.bottom <= layout.height)
+
+        // Skip-level relationship A->C in a vertical chain A->B, B->C, A->C detours around B
+        val chain = C4Parser.parse(
+            """
+            C4Context
+              System(a, "A")
+              System(b, "B")
+              System(c, "C")
+              Rel(a, b, "Step 1")
+              Rel(b, c, "Step 2")
+              Rel(a, c, "Skip")
+            """.trimIndent(),
+        )
+        val chainLayout = C4Layout.layout(chain)
+        val bCard = chainLayout.elements.first { it.element.id == "b" }.rect
+        val skipRel = chainLayout.relationships.first { it.relationship.label == "Skip" }
+        assertNotNull(skipRel.labelRect)
+        assertTrue(!rectsOverlap(skipRel.labelRect, bCard))
     }
 
     @Test

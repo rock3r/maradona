@@ -108,6 +108,28 @@ class TreemapLayoutTest {
                 assertTrue(leaf.rect.y >= sec.headerRect.bottom - 0.01f)
             }
         }
+
+        // Preserve relative weights for small-valued sections below 0.001
+        val tinySections = TreemapParser.parse(
+            """
+            ---
+            config:
+              treemap:
+                padding: 0
+            ---
+            treemap-beta
+            "SecSmall"
+              "A": 0.0001
+            "SecLarge"
+              "B": 0.0009
+            """.trimIndent(),
+        )
+        val tinyLayout = TreemapLayout.layout(tinySections)
+        val secSmall = tinyLayout.sections.first { it.node.name == "SecSmall" }
+        val secLarge = tinyLayout.sections.first { it.node.name == "SecLarge" }
+        val areaSmall = secSmall.rect.width * secSmall.rect.height
+        val areaLarge = secLarge.rect.width * secLarge.rect.height
+        assertEquals(9.0, (areaLarge / areaSmall).toDouble(), 0.05)
     }
 
     @Test
