@@ -563,8 +563,8 @@ object C4Parser {
             "updateelementstyle", "updateboundarystyle" -> {
                 val targetId = args.get(0, "elementname", "alias")?.takeIf { it.isNotEmpty() }
                     ?: throw IllegalArgumentException("Missing elementName in $macroName: $statement")
-                val fontColor = args.get(1, "fontcolor")
-                val bgColor = args.get(2, "bgcolor")
+                val bgColor = args.get(1, "bgcolor")
+                val fontColor = args.get(2, "fontcolor")
                 val borderColor = args.get(3, "bordercolor")
                 val shadowingRaw = args.get(4, "shadowing")
                 val shape = args.get(5, "shape")

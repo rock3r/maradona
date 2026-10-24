@@ -401,19 +401,47 @@ object C4Layout {
                 val nx = -dy / len
                 val ny = dx / len
 
-                if (abs(pairOffset) > 0.5f) {
+                // Check if the straight line segment intersects any intervening element card
+                val lineMidX = (pStart.x + pEnd.x) / 2f
+                val lineMidY = (pStart.y + pEnd.y) / 2f
+                var obstacleCurveDisplacement = 0f
+                for ((otherId, otherRect) in elementRects) {
+                    if (otherId == rel.from || otherId == rel.to) continue
+                    val padded = DiagramRect(
+                        x = otherRect.x - 10f * d,
+                        y = otherRect.y - 10f * d,
+                        width = otherRect.width + 20f * d,
+                        height = otherRect.height + 20f * d,
+                    )
+                    if (segmentIntersectsRect(pStart, pEnd, padded)) {
+                        // Compute perpendicular distance from line midpoint needed to clear the obstacle
+                        val halfExtent = abs(nx) * (otherRect.width / 2f) + abs(ny) * (otherRect.height / 2f)
+                        val needed = halfExtent + 44f * d
+                        if (needed > abs(obstacleCurveDisplacement)) {
+                            obstacleCurveDisplacement = if (pairOffset < -0.5f) -needed else needed
+                        }
+                    }
+                }
+
+                val curveDisplacement = if (abs(obstacleCurveDisplacement) > 0.5f) {
+                    obstacleCurveDisplacement + pairOffset * 0.6f
+                } else {
+                    pairOffset * 0.6f
+                }
+
+                if (abs(curveDisplacement) > 0.5f) {
                     val mid = DiagramPoint(
-                        x = (pStart.x + pEnd.x) / 2f + nx * pairOffset,
-                        y = (pStart.y + pEnd.y) / 2f + ny * pairOffset,
+                        x = lineMidX + nx * curveDisplacement * 2f,
+                        y = lineMidY + ny * curveDisplacement * 2f,
                     )
                     points = listOf(pStart, mid, pEnd)
                     midAnchor = DiagramPoint(
-                        x = (pStart.x + pEnd.x) / 2f + nx * pairOffset * 0.6f,
-                        y = (pStart.y + pEnd.y) / 2f + ny * pairOffset * 0.6f,
+                        x = lineMidX + nx * curveDisplacement,
+                        y = lineMidY + ny * curveDisplacement,
                     )
                 } else {
                     points = listOf(pStart, pEnd)
-                    midAnchor = DiagramPoint((pStart.x + pEnd.x) / 2f, (pStart.y + pEnd.y) / 2f)
+                    midAnchor = DiagramPoint(lineMidX, lineMidY)
                 }
             }
 
@@ -688,5 +716,25 @@ object C4Layout {
         val ty = if (abs(dy) > 0.01f) hh / abs(dy) else Float.MAX_VALUE
         val t = min(tx, ty)
         return DiagramPoint(cx + dx * t, cy + dy * t)
+    }
+
+    private fun segmentIntersectsRect(a: DiagramPoint, b: DiagramPoint, rect: DiagramRect): Boolean {
+        val minSegX = min(a.x, b.x)
+        val maxSegX = max(a.x, b.x)
+        val minSegY = min(a.y, b.y)
+        val maxSegY = max(a.y, b.y)
+        if (maxSegX < rect.x || minSegX > rect.right || maxSegY < rect.y || minSegY > rect.bottom) {
+            return false
+        }
+        // Sample 9 interior points along segment `(a, b)` for fast, exact axis-aligned card hit detection
+        for (step in 1..9) {
+            val t = step / 10f
+            val px = a.x + (b.x - a.x) * t
+            val py = a.y + (b.y - a.y) * t
+            if (px >= rect.x && px <= rect.right && py >= rect.y && py <= rect.bottom) {
+                return true
+            }
+        }
+        return false
     }
 }

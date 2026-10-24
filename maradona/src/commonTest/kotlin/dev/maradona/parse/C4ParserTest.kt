@@ -121,10 +121,15 @@ class C4ParserTest {
               System(a, "A")
               System(b, "B")
               Rel(a, b, "Uses")
+              UpdateElementStyle(a, "red", "white", "darkred")
               UpdateRelStyle(a, b, ${'$'}offsetX="100", ${'$'}offsetY="50")
               UpdateRelStyle(a, b, ${'$'}offsetX="0", ${'$'}offsetY="0")
             """.trimIndent(),
         )
+        val aEl = diagram.elements.first { it.id == "a" }
+        assertEquals("red", aEl.style?.bgColor)
+        assertEquals("white", aEl.style?.fontColor)
+        assertEquals("darkred", aEl.style?.borderColor)
         val rel = diagram.relationships.single()
         assertEquals(0f, rel.style?.offsetX)
         assertEquals(0f, rel.style?.offsetY)
