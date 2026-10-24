@@ -8,7 +8,7 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.22 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.23 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
@@ -19,9 +19,9 @@ user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
 packet diagrams (`packet` / `packet-beta`), radar charts
 (`radar` / `radar-beta`), block diagrams (`block` / `block-beta`),
 architecture diagrams (`architecture` / `architecture-beta`), treemap
-diagrams (`treemap` / `treemap-beta`), and C4 diagrams (`C4Context`,
-`C4Container`, `C4Component`, `C4Dynamic`, `C4Deployment`).
-Other Mermaid diagram types are not supported yet.
+diagrams (`treemap` / `treemap-beta`), C4 diagrams (`C4Context`,
+`C4Container`, `C4Component`, `C4Dynamic`, `C4Deployment`), and ZenUML
+sequence diagrams (`zenuml`).
 
 Supported in flowcharts:
 
@@ -281,6 +281,22 @@ Supported in C4 diagrams (`C4Context`, `C4Container`, `C4Component`, `C4Dynamic`
   `RelIndex`, `UpdateElementStyle`, `UpdateBoundaryStyle`, `UpdateRelStyle`, and
   `UpdateLayoutConfig`
 
+Supported in ZenUML diagrams (`zenuml`):
+
+- Headers and directives: `zenuml`, YAML frontmatter and `%%{init}%%`
+  configuration (`title`, `mirrorParticipants`), `title`, and `accTitle` /
+  `accDescr`
+- Participants and groups: `@Actor`, `@Boundary`, `@Control`, `@Entity`,
+  `@Database`, `@Collections`, `@Queue`, `@Starter(...)`, `A as "Alias"`, and
+  `group Name { ... }`
+- Interactions: synchronous method calls (`A->B.method(args) { ... }`,
+  `B.method(args) { ... }`, `ret = B.method(args)`), self-calls
+  (`internalMethod(args)`), constructor calls (`p = new Service(args)`),
+  asynchronous messages (`A->B: message`), and return statements (`return value`,
+  `@return A->B: value`)
+- Control flow blocks (`if` / `else if` / `else`, `while` / `forEach` / `for` /
+  `loop`, `opt`, `par`, `try` / `catch` / `finally`) and `// comment` notes
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -362,7 +378,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, block diagrams, architecture diagrams, treemap diagrams, and C4 diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, block diagrams, architecture diagrams, treemap diagrams, C4 diagrams, and ZenUML diagrams.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

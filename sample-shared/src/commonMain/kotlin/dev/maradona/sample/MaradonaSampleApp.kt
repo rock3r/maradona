@@ -384,6 +384,21 @@ private val examples = linkedMapOf(
           Rel(banking, core, "Reads/Writes", "JDBC")
           Rel(banking, mail, "Sends e-mail", "SMTP")
     """.trimIndent(),
+    "ZenUML" to """
+        zenuml
+          title Order Checkout Service
+          @Actor Client
+          @Boundary OrderController
+          @Database OrderDb
+          Client->OrderController.checkout(cartId) {
+            order = OrderDb.saveOrder(cartId)
+            if (order != null) {
+              return order
+            } else {
+              return null
+            }
+          }
+    """.trimIndent(),
 )
 
 private class SampleState(

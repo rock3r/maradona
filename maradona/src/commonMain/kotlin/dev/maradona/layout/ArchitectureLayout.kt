@@ -927,8 +927,8 @@ object ArchitectureLayout {
             val orderEdges = LinkedHashMap<String, MutableSet<String>>()
             for (a in sameDir) {
                 for (m in a.members) {
-                    parent.putIfAbsent(m, m)
-                    orderEdges.putIfAbsent(m, LinkedHashSet())
+                    if (m !in parent) parent[m] = m
+                    orderEdges.getOrPut(m) { LinkedHashSet() }
                 }
                 for (i in 0 until a.members.size - 1) {
                     val u = a.members[i]
