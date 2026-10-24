@@ -100,5 +100,28 @@ class ArchitectureLayoutTest {
         val edge = layout.edges.single()
         assertEquals(4, edge.points.size)
         assertTrue(edge.points[1].x > maxOf(a.iconRect.right, b.iconRect.right))
+
+        // When a grouped node connects to an outside node and the group also has a disconnected member,
+        // the group enclosure still excludes the outside node.
+        val crossCompDiagram = ArchitectureParser.parse(
+            """
+            architecture-beta
+              group g(cloud)[Group]
+              service a(server)[A] in g
+              service b(server)[B] in g
+              service outside(server)[Outside]
+              a:R -- L:outside
+            """.trimIndent(),
+        )
+        val crossCompLayout = ArchitectureLayout.layout(crossCompDiagram)
+        val ccSvcById = crossCompLayout.services.associateBy { it.service.id }
+        val ccOut = ccSvcById.getValue("outside")
+        val ccGrp = crossCompLayout.groups.single().rect
+        assertTrue(
+            ccOut.bounds.x > ccGrp.right ||
+                ccOut.bounds.right < ccGrp.x ||
+                ccOut.bounds.y > ccGrp.bottom ||
+                ccOut.bounds.bottom < ccGrp.y,
+        )
     }
 }

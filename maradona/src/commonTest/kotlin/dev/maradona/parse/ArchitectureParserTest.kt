@@ -85,7 +85,7 @@ class ArchitectureParserTest {
                 Shows AWS services inside a cloud group.
               }
               group api(logos:aws-lambda)[Customer's API]
-              service fn"Lambda"[Function] in api
+              service fn("Lambda")[Function] in api
               service s3(logos:aws-s3)[Bucket] in api
               fn:R --> L:s3
             """.trimIndent(),
@@ -99,6 +99,7 @@ class ArchitectureParserTest {
         assertEquals(14f, diagram.config.fontSize)
         assertEquals(48f, diagram.config.nodeSpacing)
         assertEquals("Customer's API", diagram.groups[0].title)
+        assertEquals(null, diagram.services[0].icon)
         assertEquals("Lambda", diagram.services[0].iconText)
         assertEquals("Function", diagram.services[0].title)
     }

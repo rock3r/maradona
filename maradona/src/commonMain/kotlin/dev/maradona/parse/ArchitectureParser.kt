@@ -458,7 +458,7 @@ object ArchitectureParser {
         var icon: String? = null
         var iconText: String? = null
         if (i < s.length && s[i] == '(') {
-            val closeParen = s.indexOf(')', i + 1)
+            val closeParen = findClosingCharOutsideQuotes(s, i, ')')
             if (closeParen < 0) {
                 throw IllegalArgumentException("Unclosed '(' in icon specification: $stmt")
             }
@@ -466,7 +466,16 @@ object ArchitectureParser {
             if (rawIcon.isEmpty()) {
                 throw IllegalArgumentException("Empty icon specification '()' in: $stmt")
             }
-            icon = rawIcon
+            val isQuotedIconText = rawIcon.length >= 2 &&
+                ((rawIcon.startsWith("\"") && rawIcon.endsWith("\"")) || (rawIcon.startsWith("'") && rawIcon.endsWith("'")))
+            if (isQuotedIconText) {
+                if (!allowIconText) {
+                    throw IllegalArgumentException("Group '$id' does not support quoted iconText in: $stmt")
+                }
+                iconText = normalizeText(rawIcon)
+            } else {
+                icon = rawIcon
+            }
             i = closeParen + 1
             while (i < s.length && s[i].isWhitespace()) i++
         } else if (allowIconText && i < s.length && (s[i] == '"' || s[i] == '\'')) {
@@ -636,7 +645,10 @@ object ArchitectureParser {
         return false
     }
 
-    private fun findClosingBracketOutsideQuotes(s: String, openIdx: Int): Int {
+    private fun findClosingBracketOutsideQuotes(s: String, openIdx: Int): Int =
+        findClosingCharOutsideQuotes(s, openIdx, ']')
+
+    private fun findClosingCharOutsideQuotes(s: String, openIdx: Int, target: Char): Int {
         var activeQuote: Char? = null
         var i = openIdx + 1
         while (i < s.length) {
@@ -645,7 +657,7 @@ object ArchitectureParser {
                 i += 2
                 continue
             }
-            if (activeQuote == null && (c == '"' || (c == '\'' && isQuoteOpeningContext(s, i)))) {
+            if (activeQuote == null && (c == '"' || (c == '\'' && (c == s[openIdx + 1] || isQuoteOpeningContext(s, i))))) {
                 activeQuote = c
                 i++
                 continue
@@ -655,7 +667,7 @@ object ArchitectureParser {
                 i++
                 continue
             }
-            if (activeQuote == null && c == ']') return i
+            if (activeQuote == null && c == target) return i
             i++
         }
         return -1

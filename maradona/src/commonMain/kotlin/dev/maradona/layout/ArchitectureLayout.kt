@@ -601,10 +601,67 @@ object ArchitectureLayout {
             val minX = floatComp.values.minOf { it.first }
             val maxX = floatComp.values.maxOf { it.first }
             val minY = floatComp.values.minOf { it.second }
-            for ((id, pos) in floatComp) {
-                coords[id] = (pos.first - minX + compOffsetX) to (pos.second - minY)
+            val maxY = floatComp.values.maxOf { it.second }
+
+            val compGroups = floatComp.keys.mapNotNull { parentByNode[it] }.distinct()
+            val singleGroup = compGroups.singleOrNull()
+            val existingGroupEntries = if (singleGroup != null) {
+                coords.filter { (existingId, _) -> parentByNode[existingId] == singleGroup }
+            } else {
+                emptyMap()
             }
-            compOffsetX += (maxX - minX) + 2f
+
+            if (existingGroupEntries.isNotEmpty()) {
+                // Pack disconnected member of the same group directly below existing members of that group
+                // so cross-group neighbors in earlier components are never trapped inside the group box.
+                val anchorX = existingGroupEntries.values.minOf { it.first }
+                val nextY = existingGroupEntries.values.maxOf { it.second } + 1f
+                for ((id, pos) in floatComp) {
+                    coords[id] = (pos.first - minX + anchorX) to (pos.second - minY + nextY)
+                }
+                compOffsetX = max(compOffsetX, anchorX + (maxX - minX) + 2f)
+            } else {
+                for ((id, pos) in floatComp) {
+                    coords[id] = (pos.first - minX + compOffsetX) to (pos.second - minY)
+                }
+                compOffsetX += (maxX - minX) + 2f
+            }
+        }
+
+        // Ensure no non-member node sits inside any group's grid bounding box.
+        fun isInsideGroupHierarchy(nodeId: String, groupId: String): Boolean {
+            var cur = parentByNode[nodeId]
+            val seen = HashSet<String>()
+            while (cur != null && seen.add(cur)) {
+                if (cur == groupId) return true
+                cur = parentGroupMap[cur]
+            }
+            return false
+        }
+        for (grp in diagram.groups) {
+            val memberIds = nodeIds.filter { isInsideGroupHierarchy(it, grp.id) }
+            if (memberIds.isEmpty()) continue
+            val gMinX = memberIds.minOf { coords.getValue(it).first }
+            val gMaxX = memberIds.maxOf { coords.getValue(it).first }
+            val gMinY = memberIds.minOf { coords.getValue(it).second }
+            val gMaxY = memberIds.maxOf { coords.getValue(it).second }
+            val intruders = nodeIds.filter { id ->
+                !isInsideGroupHierarchy(id, grp.id) &&
+                    coords.getValue(id).first in (gMinX - 0.1f)..(gMaxX + 0.1f) &&
+                    coords.getValue(id).second in (gMinY - 0.1f)..(gMaxY + 0.1f)
+            }
+            if (intruders.isNotEmpty()) {
+                val minIntruderX = intruders.minOf { coords.getValue(it).first }
+                val pushRight = (gMaxX + 1f) - minIntruderX
+                if (pushRight > 0f) {
+                    for (id in nodeIds) {
+                        if (!isInsideGroupHierarchy(id, grp.id) && coords.getValue(id).first >= minIntruderX - 0.01f) {
+                            val old = coords.getValue(id)
+                            coords[id] = (old.first + pushRight) to old.second
+                        }
+                    }
+                }
+            }
         }
 
         return coords
