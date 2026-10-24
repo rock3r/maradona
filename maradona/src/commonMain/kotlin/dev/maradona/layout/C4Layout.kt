@@ -413,9 +413,12 @@ object C4Layout {
                 val lblW = max(lblSize?.width ?: 0f, pairMaxLblWidth[pairKey] ?: 0f)
                 val loopStep = max(lblW + 24f * d, 42f * d)
                 val anchorX = fromRect.right + 16f * d + lblW / 2f + seenIdx * loopStep
-                val loopRightX = anchorX + lblW / 2f + 12f * d
+                // For a quadratic Bezier from fromRect.right -> controlX -> fromRect.right,
+                // B(0.5).x = fromRect.right + 0.5 * (controlX - fromRect.right), so setting
+                // controlX = fromRect.right + 2f * (anchorX - fromRect.right) places the curve apex at anchorX.
+                val controlX = fromRect.right + 2f * (anchorX - fromRect.right)
                 val pStart = DiagramPoint(fromRect.right, (fromRect.centerY - loopSpread).coerceIn(fromRect.y, fromRect.bottom))
-                val pMid = DiagramPoint(loopRightX, fromRect.centerY)
+                val pMid = DiagramPoint(controlX, fromRect.centerY)
                 val pEnd = DiagramPoint(fromRect.right, (fromRect.centerY + loopSpread).coerceIn(fromRect.y, fromRect.bottom))
                 points = listOf(pStart, pMid, pEnd)
                 midAnchor = DiagramPoint(anchorX, fromRect.centerY)

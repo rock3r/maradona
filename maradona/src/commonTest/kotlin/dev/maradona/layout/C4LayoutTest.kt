@@ -171,6 +171,9 @@ class C4LayoutTest {
         val self0 = mbLayout.relationships[2].labelRect!!
         val self1 = mbLayout.relationships[3].labelRect!!
         assertTrue(!rectsOverlap(self0, self1))
+        val self1Pts = mbLayout.relationships[3].points
+        val self1ApexX = 0.25f * self1Pts[0].x + 0.5f * self1Pts[1].x + 0.25f * self1Pts[2].x
+        assertEquals(self1.centerX, self1ApexX, 0.5f)
 
         // Rel_D(a, b) followed by Rel_R(b, c) places a above a row containing b and c
         val downThenRight = C4Parser.parse(
