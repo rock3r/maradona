@@ -175,6 +175,19 @@ class ZenUmlParserTest {
         val titleCall = titleAssignDiag.statements.single() as ZenUmlStatement.Message
         assertEquals("title", titleCall.returnVar)
         assertEquals("getTitle()", titleCall.text)
+
+        // Return expression containing `->` inside quotes is accepted
+        val arrowReturnDiag = ZenUmlParser.parse(
+            """
+            zenuml
+              A->B.call() {
+                return "A->B"
+              }
+            """.trimIndent(),
+        )
+        val arrowRetMsg = (arrowReturnDiag.statements.single() as ZenUmlStatement.Message).nestedStatements.single() as ZenUmlStatement.Message
+        assertEquals(ZenUmlMessageKind.RETURN, arrowRetMsg.kind)
+        assertEquals("A->B", arrowRetMsg.text)
     }
 
     @Test

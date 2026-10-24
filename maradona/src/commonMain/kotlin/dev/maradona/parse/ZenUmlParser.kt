@@ -459,7 +459,7 @@ object ZenUmlParser {
 
                 // `return expr`
                 val returnMatch = Regex("""^return(?:\s+(.*?))?\s*;?$""").find(tok)
-                if (returnMatch != null && !tok.contains("->") && !tok.startsWith("return(")) {
+                if (returnMatch != null && !tok.startsWith("return(") && !Regex("""^return\s*->""").containsMatchIn(tok)) {
                     val retVal = normalizeText(returnMatch.groupValues[1].trim())
                     val activeFrame = callStack.lastOrNull()
                     val fromParticipant = activeFrame?.calleeId ?: resolveDefaultCaller(null)
