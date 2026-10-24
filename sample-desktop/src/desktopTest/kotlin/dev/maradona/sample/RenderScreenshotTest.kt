@@ -891,4 +891,40 @@ class RenderScreenshotTest {
         assertTrue(primaryBluePixels > 2_000, "Block primary class fill #DBEAFE not rendered ($primaryBluePixels px)")
         assertTrue(dbGreenPixels > 1_000, "Block database class fill #DCFCE7 not rendered ($dbGreenPixels px)")
     }
+
+    @Test
+    fun architectureDiagram() {
+        val png = renderToPng(
+            "architecture",
+            """
+            architecture-beta
+              group api(cloud)[Cloud API]
+              service gateway(internet)[Gateway] in api
+              service app(server)[App Server] in api
+              service db(database)[Primary DB] in api
+              service storage(disk)[Storage] in api
+              gateway:R --> L:app
+              app:R --> L:db
+              app:B --> T:storage
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 780,
+            height = 480,
+        )
+        val img = ImageIO.read(png)
+        var iconTileBluePixels = 0
+        var whiteIconStrokePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x08) <= 4 && abs(g - 0x7E) <= 4 && abs(b - 0xBF) <= 4) iconTileBluePixels++
+                if (r >= 250 && g >= 250 && b >= 250) whiteIconStrokePixels++
+            }
+        }
+        assertTrue(iconTileBluePixels > 4_000, "Architecture icon tile #087EBF not rendered ($iconTileBluePixels px)")
+        assertTrue(whiteIconStrokePixels > 300, "Architecture white vector icons not rendered ($whiteIconStrokePixels px)")
+    }
 }

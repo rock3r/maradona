@@ -347,6 +347,17 @@ private val examples = linkedMapOf(
           class Frontend,Backend primary
           class Cache,Database storage
     """.trimIndent(),
+    "Architecture" to """
+        architecture-beta
+          group api(cloud)[Cloud API]
+          service gateway(internet)[Gateway] in api
+          service app(server)[App Server] in api
+          service db(database)[Primary DB] in api
+          service cache(disk)[Object Store] in api
+          gateway:R --> L:app
+          app:R --> L:db
+          app:B --> T:cache
+    """.trimIndent(),
 )
 
 private class SampleState(
