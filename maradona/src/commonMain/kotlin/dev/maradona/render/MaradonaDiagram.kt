@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.BlockDiagramLayout
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
@@ -146,6 +147,8 @@ fun MaradonaDiagram(
     onPacketLayout: (PacketDiagramLayout) -> Unit = {},
     /** Reports the computed Radar diagram layout (see [MaradonaRadarLayout.onLayout]). */
     onRadarLayout: (RadarDiagramLayout) -> Unit = {},
+    /** Reports the computed Block diagram layout (see [MaradonaBlockLayout.onLayout]). */
+    onBlockLayout: (BlockDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -501,6 +504,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onRadarLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.BlockModel ->
+                            MaradonaBlockLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onBlockLayout,
                                 modifier = contentModifier,
                             )
                     }

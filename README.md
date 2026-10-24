@@ -8,7 +8,7 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.18 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.19 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
@@ -16,8 +16,8 @@ pie charts (`pie`), Git graphs (`gitGraph`), timelines (`timeline`),
 user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
 (`xychart` / `xychart-beta`), Kanban boards (`kanban`), Sankey diagrams
 (`sankey` / `sankey-beta`), requirement diagrams (`requirementDiagram`),
-packet diagrams (`packet` / `packet-beta`), and radar charts
-(`radar` / `radar-beta`).
+packet diagrams (`packet` / `packet-beta`), radar charts
+(`radar` / `radar-beta`), and block diagrams (`block` / `block-beta`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -222,6 +222,19 @@ Supported in radar charts (`radar` / `radar-beta`):
 - Circular and polygonal graticules (`graticule circle | polygon`), smooth
   closed curves, and series legend
 
+Supported in block diagrams (`block` / `block-beta`):
+
+- Headers and directives: `block` and `block-beta`, YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `padding`), `title`, and `accTitle` / `accDescr`
+- Grid layout: `columns <N | auto>`, `space` / `space:<N>`, column spans (`id:N`,
+  `block:group:N`), and nested `block ... end` / `block:id ... end` composite
+  containers
+- All 15 block shapes (`[]`, `()`, `([])`, `[[]]`, `[()]`, `(())`, `((()))`, `>]`,
+  `{}`, `{{}}`, `[/ /]`, `[\ \]`, `[/ \]`, `[\ /]`, and directional block arrows
+  `<["Label"]>(right | left | up | down | x | y)`)
+- Connecting edges (`-->`, `---`, `<-->`, `o--o`, `x--x`, `==>`, `-.->`, `~~~`,
+  `-- "label" -->`, `-->|label|`) and `classDef`, `class`, `:::className`, and `style`
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -303,7 +316,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, and radar charts only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, and block diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

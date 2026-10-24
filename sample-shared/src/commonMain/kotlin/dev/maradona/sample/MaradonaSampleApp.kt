@@ -336,6 +336,17 @@ private val examples = linkedMapOf(
           max 100
           min 0
     """.trimIndent(),
+    "Block" to """
+        block-beta
+          columns 3
+          Frontend["Frontend Web"] arrow1<["HTTPS"]>(right) Backend["API Gateway"]
+          space:2 arrow2<["SQL"]>(down)
+          Cache(["Redis Cache"]) arrow3<["Read"]>(left) Database[("Orders DB")]
+          classDef primary fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+          classDef storage fill:#dcfce7,stroke:#16a34a,color:#14532d
+          class Frontend,Backend primary
+          class Cache,Database storage
+    """.trimIndent(),
 )
 
 private class SampleState(

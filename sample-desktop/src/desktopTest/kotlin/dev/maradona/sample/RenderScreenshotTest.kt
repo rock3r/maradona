@@ -850,4 +850,45 @@ class RenderScreenshotTest {
         assertTrue(blueCurvePixels > 400, "Radar first curve stroke #205EA6 not rendered ($blueCurvePixels px)")
         assertTrue(orangeCurvePixels > 400, "Radar second curve stroke #DA702C not rendered ($orangeCurvePixels px)")
     }
+
+    @Test
+    fun blockDiagram() {
+        val png = renderToPng(
+            "block",
+            """
+            block-beta
+              columns 3
+              Frontend["Frontend Web"] arrow1<["HTTPS"]>(right) Backend["API Gateway"]
+              space:2 arrow2<["SQL"]>(down)
+              block:storage:2
+                columns 2
+                Cache(["Redis Cache"]) Queue[["Event Queue"]]
+              end
+              Database[("Orders DB")]
+              storage --> Database
+              classDef primary fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+              classDef dbStyle fill:#dcfce7,stroke:#16a34a,color:#14532d
+              class Frontend,Backend primary
+              class Database dbStyle
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 780,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var primaryBluePixels = 0
+        var dbGreenPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0xDB) <= 3 && abs(g - 0xEA) <= 3 && abs(b - 0xFE) <= 3) primaryBluePixels++
+                if (abs(r - 0xDC) <= 3 && abs(g - 0xFC) <= 3 && abs(b - 0xE7) <= 3) dbGreenPixels++
+            }
+        }
+        assertTrue(primaryBluePixels > 2_000, "Block primary class fill #DBEAFE not rendered ($primaryBluePixels px)")
+        assertTrue(dbGreenPixels > 1_000, "Block database class fill #DCFCE7 not rendered ($dbGreenPixels px)")
+    }
 }
