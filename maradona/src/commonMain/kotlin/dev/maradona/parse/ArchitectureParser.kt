@@ -634,7 +634,7 @@ object ArchitectureParser {
         while (j >= 0 && (s[j] == ' ' || s[j] == '\t')) {
             j--
         }
-        if (j < 0 || s[j] == '\n' || s[j] == '\r' || s[j] == ':' || s[j] == '[' || s[j] == '{' || s[j] == ',' || s[j] == ';') {
+        if (j < 0 || s[j] == '\n' || s[j] == '\r' || s[j] == ':' || s[j] == '[' || s[j] == '(' || s[j] == '{' || s[j] == ',' || s[j] == ';') {
             return true
         }
         // Also allow quote opening for `service <id>"iconText"` or `service <id>'iconText'` or `title '...'`
@@ -704,6 +704,7 @@ object ArchitectureParser {
         val sb = StringBuilder()
         var activeQuote: Char? = null
         var bracketDepth = 0
+        var parenDepth = 0
         var i = 0
         while (i < s.length) {
             val c = s[i]
@@ -728,7 +729,9 @@ object ArchitectureParser {
                 when (c) {
                     '[' -> bracketDepth++
                     ']' -> if (bracketDepth > 0) bracketDepth--
-                    ';' -> if (bracketDepth == 0) {
+                    '(' -> parenDepth++
+                    ')' -> if (parenDepth > 0) parenDepth--
+                    ';' -> if (bracketDepth == 0 && parenDepth == 0) {
                         out += sb.toString()
                         sb.setLength(0)
                         i++
