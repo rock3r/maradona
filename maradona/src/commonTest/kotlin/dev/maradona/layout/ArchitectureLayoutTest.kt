@@ -263,5 +263,24 @@ class ArchitectureLayoutTest {
         val saEdge = saLayout.edges.single()
         assertEquals(6, saEdge.points.size)
         assertTrue(saEdge.points[2].y > saB.bounds.bottom)
+
+        // Mixed-axis L-bend obstructed by a corner service (`align row a b`, `align column b c`, `a:R --> T:c`)
+        // detours around `b`, and an ungrouped node column-aligned with a group member shifts down instead of breaking column alignment.
+        val cornerAndIntruder = ArchitectureParser.parse(
+            """
+            architecture-beta
+              group g(cloud)[G]
+              service a(server)[A] in g
+              service c(server)[C] in g
+              service b(server)[B]
+              align column a b
+              a:R --> T:c
+            """.trimIndent(),
+        )
+        val ciLayout = ArchitectureLayout.layout(cornerAndIntruder)
+        val ciById = ciLayout.services.associateBy { it.service.id }
+        val ciGrp = ciLayout.groups.single().rect
+        assertEquals(ciById.getValue("a").iconRect.centerX, ciById.getValue("b").iconRect.centerX, 0.5f)
+        assertTrue(ciById.getValue("b").bounds.y > ciGrp.bottom)
     }
 }

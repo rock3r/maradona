@@ -804,7 +804,19 @@ object ArchitectureLayout {
             }
         }
 
-        // Ensure no non-member node sits inside any group's grid bounding box.
+        val globalRowPeers = HashMap<String, List<String>>()
+        val globalColPeers = HashMap<String, List<String>>()
+        for (align in mergedAlignments) {
+            for (m in align.members) {
+                if (align.direction == ArchitectureAlignDir.Row) {
+                    globalRowPeers[m] = align.members
+                } else {
+                    globalColPeers[m] = align.members
+                }
+            }
+        }
+
+        // Ensure no non-member node sits inside any group's grid bounding box while preserving row/column alignments.
         fun isInsideGroupHierarchy(nodeId: String, groupId: String): Boolean {
             var cur = parentByNode[nodeId]
             val seen = HashSet<String>()
@@ -815,23 +827,49 @@ object ArchitectureLayout {
             return false
         }
         for (grp in diagram.groups) {
-            val memberIds = nodeIds.filter { isInsideGroupHierarchy(it, grp.id) }
+            val memberIds = nodeIds.filter { isInsideGroupHierarchy(it, grp.id) }.toSet()
             if (memberIds.isEmpty()) continue
             val gMinX = memberIds.minOf { coords.getValue(it).first }
             val gMaxX = memberIds.maxOf { coords.getValue(it).first }
             val gMinY = memberIds.minOf { coords.getValue(it).second }
             val gMaxY = memberIds.maxOf { coords.getValue(it).second }
             val intruders = nodeIds.filter { id ->
-                !isInsideGroupHierarchy(id, grp.id) &&
+                id !in memberIds &&
                     coords.getValue(id).first in (gMinX - 0.1f)..(gMaxX + 0.1f) &&
                     coords.getValue(id).second in (gMinY - 0.1f)..(gMaxY + 0.1f)
             }
             if (intruders.isNotEmpty()) {
-                val minIntruderX = intruders.minOf { coords.getValue(it).first }
-                val pushRight = (gMaxX + 1f) - minIntruderX
-                if (pushRight > 0f) {
-                    for (id in nodeIds) {
-                        if (!isInsideGroupHierarchy(id, grp.id) && coords.getValue(id).first >= minIntruderX - 0.01f) {
+                val sharesColumnWithGroupMember = intruders.any { intr ->
+                    globalColPeers[intr].orEmpty().any { it in memberIds }
+                }
+                if (sharesColumnWithGroupMember) {
+                    val minIntruderY = intruders.minOf { coords.getValue(it).second }
+                    val pushDown = (gMaxY + 1f) - minIntruderY
+                    if (pushDown > 0f) {
+                        val toShift = HashSet<String>()
+                        for (id in nodeIds) {
+                            if (id !in memberIds && coords.getValue(id).second >= minIntruderY - 0.01f) {
+                                toShift += id
+                                toShift += globalRowPeers[id].orEmpty()
+                            }
+                        }
+                        for (id in toShift) {
+                            val old = coords.getValue(id)
+                            coords[id] = old.first to (old.second + pushDown)
+                        }
+                    }
+                } else {
+                    val minIntruderX = intruders.minOf { coords.getValue(it).first }
+                    val pushRight = (gMaxX + 1f) - minIntruderX
+                    if (pushRight > 0f) {
+                        val toShift = HashSet<String>()
+                        for (id in nodeIds) {
+                            if (id !in memberIds && coords.getValue(id).first >= minIntruderX - 0.01f) {
+                                toShift += id
+                                toShift += globalColPeers[id].orEmpty()
+                            }
+                        }
+                        for (id in toShift) {
                             val old = coords.getValue(id)
                             coords[id] = (old.first + pushRight) to old.second
                         }
@@ -1173,15 +1211,26 @@ object ArchitectureLayout {
                 (startDir == ArchitecturePortDir.L && end.x <= start.x - stub)
             val endOutwardOk = (endDir == ArchitecturePortDir.T && start.y <= end.y - stub) ||
                 (endDir == ArchitecturePortDir.B && start.y >= end.y + stub)
-            if (startOutwardOk && endOutwardOk) {
-                return listOf(start, DiagramPoint(end.x, start.y), end)
+            val directBend = listOf(start, DiagramPoint(end.x, start.y), end)
+            if (startOutwardOk && endOutwardOk && !polylineHitsObstacles(directBend, obstacles)) {
+                return directBend
             }
             val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
             val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
-            return listOf(
+            val viaStubCorner1 = listOf(
                 start,
                 DiagramPoint(sStubX, start.y),
                 DiagramPoint(sStubX, eStubY),
+                DiagramPoint(end.x, eStubY),
+                end,
+            )
+            if (!polylineHitsObstacles(viaStubCorner1, obstacles)) {
+                return viaStubCorner1
+            }
+            return listOf(
+                start,
+                DiagramPoint(sStubX, start.y),
+                DiagramPoint(end.x, start.y),
                 DiagramPoint(end.x, eStubY),
                 end,
             )
@@ -1191,19 +1240,48 @@ object ArchitectureLayout {
                 (startDir == ArchitecturePortDir.T && end.y <= start.y - stub)
             val endOutwardOk = (endDir == ArchitecturePortDir.L && start.x <= end.x - stub) ||
                 (endDir == ArchitecturePortDir.R && start.x >= end.x + stub)
-            if (startOutwardOk && endOutwardOk) {
-                return listOf(start, DiagramPoint(start.x, end.y), end)
+            val directBend = listOf(start, DiagramPoint(start.x, end.y), end)
+            if (startOutwardOk && endOutwardOk && !polylineHitsObstacles(directBend, obstacles)) {
+                return directBend
             }
             val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
             val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
-            return listOf(
+            val viaStubCorner1 = listOf(
                 start,
                 DiagramPoint(start.x, sStubY),
                 DiagramPoint(eStubX, sStubY),
                 DiagramPoint(eStubX, end.y),
                 end,
             )
+            if (!polylineHitsObstacles(viaStubCorner1, obstacles)) {
+                return viaStubCorner1
+            }
+            return listOf(
+                start,
+                DiagramPoint(start.x, sStubY),
+                DiagramPoint(start.x, end.y),
+                DiagramPoint(eStubX, end.y),
+                end,
+            )
         }
+    }
+
+    private fun polylineHitsObstacles(pts: List<DiagramPoint>, obstacles: List<DiagramRect>): Boolean {
+        if (obstacles.isEmpty() || pts.size < 2) return false
+        for (i in 0 until pts.size - 1) {
+            val a = pts[i]
+            val b = pts[i + 1]
+            val minX = min(a.x, b.x)
+            val maxX = max(a.x, b.x)
+            val minY = min(a.y, b.y)
+            val maxY = max(a.y, b.y)
+            for (ob in obstacles) {
+                if (maxX > ob.x + 1f && minX < ob.right - 1f && maxY > ob.y + 1f && minY < ob.bottom - 1f) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private fun computePolylineMidpoint(pts: List<DiagramPoint>): DiagramPoint {
