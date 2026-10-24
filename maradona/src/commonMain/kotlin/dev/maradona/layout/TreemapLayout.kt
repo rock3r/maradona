@@ -444,6 +444,9 @@ object TreemapLayout {
     }
 
     private fun formatTrimmedDecimals(v: Double, useGrouping: Boolean): String {
+        if (v != 0.0 && abs(v) < 1e-3) {
+            return formatLargeDouble(v)
+        }
         val raw = formatFixedDecimals(v, 4, useGrouping)
         if (!raw.contains('.')) return raw
         return raw.trimEnd('0').trimEnd('.')
