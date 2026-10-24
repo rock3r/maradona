@@ -195,7 +195,7 @@ object TreemapLayout {
     private fun buildWeightedTree(node: TreemapNode): WeightedNode {
         if (node.children.isEmpty()) {
             val v = (node.value ?: 0.0).coerceAtLeast(0.0)
-            val w = if (v > 0.0) v.coerceAtMost(1e150) else 1e-3
+            val w = if (v > 0.0) v.coerceAtMost(1e150) else 0.0
             return WeightedNode(node = node, totalValue = v, weight = w, children = emptyList())
         }
         val childWeighted = node.children
@@ -208,11 +208,11 @@ object TreemapLayout {
         } else {
             childWeighted.sumOf { it.totalValue }.coerceAtMost(Double.MAX_VALUE)
         }
-        val maxChildW = childWeighted.maxOfOrNull { it.weight }?.coerceAtLeast(1e-9) ?: 1.0
+        val maxChildW = childWeighted.maxOfOrNull { it.weight } ?: 0.0
         val sumWeight = if (maxChildW > 1e140) {
-            (childWeighted.sumOf { it.weight / maxChildW } * 1e140).coerceAtLeast(1e-3)
+            childWeighted.sumOf { it.weight / maxChildW } * 1e140
         } else {
-            childWeighted.sumOf { it.weight }.coerceIn(1e-3, 1e150)
+            childWeighted.sumOf { it.weight }.coerceIn(0.0, 1e150)
         }
         return WeightedNode(
             node = node,
@@ -232,10 +232,16 @@ object TreemapLayout {
         if (n == 1) return listOf(bounds)
 
         val rawRects = Array(n) { DiagramRect(0f, 0f, 0f, 0f) }
-        val maxWeight = weights.maxOrNull()?.takeIf { it.isFinite() && it > 0.0 } ?: 1.0
+        val maxWeight = weights.maxOrNull()?.takeIf { it.isFinite() && it > 0.0 }
         val normWeights = DoubleArray(n) { i ->
             val w = weights[i]
-            if (w.isFinite() && w > 0.0) (w / maxWeight).coerceAtLeast(1e-9) else 1e-9
+            if (maxWeight == null) {
+                1.0
+            } else if (w.isFinite() && w > 0.0) {
+                (w / maxWeight).coerceAtLeast(1e-9)
+            } else {
+                1e-9
+            }
         }
         val totalWeight = normWeights.sum().coerceAtLeast(1e-9)
         val totalArea = (bounds.width * bounds.height).toDouble()
