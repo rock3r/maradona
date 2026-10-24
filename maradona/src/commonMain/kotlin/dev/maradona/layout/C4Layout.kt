@@ -143,6 +143,7 @@ object C4Layout {
         options: LayoutOptions = LayoutOptions(),
     ): C4DiagramLayout {
         val d = options.density.coerceAtLeast(0.01f)
+        val effectiveDirection = options.directionOverride ?: diagram.direction
         val cfg = diagram.config
         val shapeInRow = cfg.c4ShapeInRow.coerceAtLeast(1)
         val boundaryInRow = cfg.c4BoundaryInRow.coerceAtLeast(1)
@@ -193,6 +194,8 @@ object C4Layout {
             )
             measureBoundaryNode(
                 node = node,
+                relationships = diagram.relationships,
+                direction = effectiveDirection,
                 shapeInRow = shapeInRow,
                 boundaryInRow = boundaryInRow,
                 cardGapX = cardGapX,
@@ -254,7 +257,7 @@ object C4Layout {
         val topBands = mutableListOf<List<LayoutTreeItem>>()
         if (allRootBoundaries.isEmpty()) {
             // Rank root elements by relationship topological depth or chunk by shapeInRow
-            val rankedRows = rankElementsIntoRows(rootElements, diagram.relationships, shapeInRow, diagram.direction)
+            val rankedRows = rankElementsIntoRows(rootElements, diagram.relationships, shapeInRow, effectiveDirection)
             topBands.addAll(rankedRows)
         } else {
             val (leadingEls, trailingEls) = rootElements.partition { !it.element.kind.isExternal }
@@ -269,8 +272,8 @@ object C4Layout {
             }
         }
 
-        val isHorizontal = diagram.direction == Direction.LR || diagram.direction == Direction.RL
-        val orderedBands = if (diagram.direction == Direction.BT || diagram.direction == Direction.RL) {
+        val isHorizontal = effectiveDirection == Direction.LR || effectiveDirection == Direction.RL
+        val orderedBands = if (effectiveDirection == Direction.BT || effectiveDirection == Direction.RL) {
             topBands.asReversed()
         } else {
             topBands
@@ -356,9 +359,17 @@ object C4Layout {
 
         // Route relationships between elements (or boundaries)
         val pairCounts = HashMap<Pair<String, String>, Int>()
-        for (rel in diagram.relationships) {
+        val pairMaxLblWidth = HashMap<Pair<String, String>, Float>()
+        val pairMaxLblHeight = HashMap<Pair<String, String>, Float>()
+        for ((idx, rel) in diagram.relationships.withIndex()) {
             val k = if (rel.from <= rel.to) rel.from to rel.to else rel.to to rel.from
             pairCounts[k] = (pairCounts[k] ?: 0) + 1
+            val hasLabel = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
+            if (hasLabel) {
+                val sz = relLabelSizes[idx] ?: defaultRelLabelSize(rel, d)
+                pairMaxLblWidth[k] = max(pairMaxLblWidth[k] ?: 0f, sz.width)
+                pairMaxLblHeight[k] = max(pairMaxLblHeight[k] ?: 0f, sz.height)
+            }
         }
         val pairSeen = HashMap<Pair<String, String>, Int>()
 
@@ -372,22 +383,26 @@ object C4Layout {
             val seenIdx = pairSeen[pairKey] ?: 0
             pairSeen[pairKey] = seenIdx + 1
 
-            val pairOffset = if (totalForPair > 1) {
-                (seenIdx - (totalForPair - 1) / 2f) * 32f * d
+            val hasLabel = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
+            val lblSize = if (hasLabel) {
+                relLabelSizes[relIdx] ?: defaultRelLabelSize(rel, d)
             } else {
-                0f
+                null
             }
 
             val points: List<DiagramPoint>
             val midAnchor: DiagramPoint
             if (rel.from == rel.to) {
                 val loopSpread = 12f * d
-                val loopReach = (42f + seenIdx * 24f) * d
+                val lblW = lblSize?.width ?: 0f
+                val loopStep = max(lblW + 24f * d, 42f * d)
+                val anchorX = fromRect.right + 16f * d + lblW / 2f + seenIdx * loopStep
+                val loopRightX = anchorX + lblW / 2f + 12f * d
                 val pStart = DiagramPoint(fromRect.right, (fromRect.centerY - loopSpread).coerceIn(fromRect.y, fromRect.bottom))
-                val pMid = DiagramPoint(fromRect.right + loopReach, fromRect.centerY)
+                val pMid = DiagramPoint(loopRightX, fromRect.centerY)
                 val pEnd = DiagramPoint(fromRect.right, (fromRect.centerY + loopSpread).coerceIn(fromRect.y, fromRect.bottom))
                 points = listOf(pStart, pMid, pEnd)
-                midAnchor = DiagramPoint(fromRect.right + loopReach * 0.65f, fromRect.centerY)
+                midAnchor = DiagramPoint(anchorX, fromRect.centerY)
             } else {
                 val pStart = clipLineFromCenter(fromRect, DiagramPoint(toRect.centerX, toRect.centerY))
                 val pEnd = clipLineFromCenter(toRect, DiagramPoint(fromRect.centerX, fromRect.centerY))
@@ -400,6 +415,15 @@ object C4Layout {
                 val len = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
                 val nx = -dy / len
                 val ny = dx / len
+
+                val maxLblW = pairMaxLblWidth[pairKey] ?: (64f * d)
+                val maxLblH = pairMaxLblHeight[pairKey] ?: (28f * d)
+                val pairStep = max(44f * d, abs(nx) * maxLblW + abs(ny) * maxLblH + 16f * d)
+                val pairOffset = if (totalForPair > 1) {
+                    (seenIdx - (totalForPair - 1) / 2f) * pairStep
+                } else {
+                    0f
+                }
 
                 // Check if the straight line segment intersects any intervening element card
                 val lineMidX = (pStart.x + pEnd.x) / 2f
@@ -424,9 +448,9 @@ object C4Layout {
                 }
 
                 val curveDisplacement = if (abs(obstacleCurveDisplacement) > 0.5f) {
-                    obstacleCurveDisplacement + pairOffset * 0.6f
+                    obstacleCurveDisplacement + pairOffset
                 } else {
-                    pairOffset * 0.6f
+                    pairOffset
                 }
 
                 if (abs(curveDisplacement) > 0.5f) {
@@ -445,12 +469,6 @@ object C4Layout {
                 }
             }
 
-            val hasLabel = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
-            val lblSize = if (hasLabel) {
-                relLabelSizes[relIdx] ?: defaultRelLabelSize(rel, d)
-            } else {
-                null
-            }
             val offX = (rel.style?.offsetX ?: 0f) * d
             val offY = (rel.style?.offsetY ?: 0f) * d
             val labelRect = if (lblSize != null) {
@@ -545,6 +563,8 @@ object C4Layout {
 
     private fun measureBoundaryNode(
         node: LayoutTreeItem.BoundaryNode,
+        relationships: List<C4Relationship>,
+        direction: Direction,
         shapeInRow: Int,
         boundaryInRow: Int,
         cardGapX: Float,
@@ -556,7 +576,8 @@ object C4Layout {
         d: Float,
     ) {
         val headerH = max(BOUNDARY_HEADER_HEIGHT * d, node.headerSize.height) + 10f * d
-        val elRows = node.childElements.chunked(shapeInRow)
+        val rawElRows = rankElementsIntoRows(node.childElements, relationships, shapeInRow, direction)
+        val elRows = if (direction == Direction.BT || direction == Direction.RL) rawElRows.asReversed() else rawElRows
         val bndRows = node.childBoundaries.chunked(boundaryInRow)
 
         val elRowSizes = elRows.map { row ->

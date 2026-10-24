@@ -120,6 +120,34 @@ class C4LayoutTest {
         val skipRel = chainLayout.relationships.first { it.relationship.label == "Skip" }
         assertNotNull(skipRel.labelRect)
         assertTrue(!rectsOverlap(skipRel.labelRect, bCard))
+
+        // Parallel relationships without manual offsets do not overlap each other's labels,
+        // self-relationship labels stay outside their source card, and boundary children honor Rel_U.
+        val boundaryRelDiag = C4Parser.parse(
+            """
+            C4Container
+              System_Boundary(b, "Boundary") {
+                Container(a, "A", "Kotlin")
+                Container(b2, "B", "Kotlin")
+              }
+              Rel(a, b2, "Request")
+              Rel(a, b2, "Response")
+              Rel(a, a, "Retries the failed operation")
+              Rel_U(a, b2, "Upward")
+            """.trimIndent(),
+        )
+        val brLayout = C4Layout.layout(
+            boundaryRelDiag,
+            options = LayoutOptions(directionOverride = dev.maradona.model.Direction.TB),
+        )
+        val r0 = brLayout.relationships[0].labelRect!!
+        val r1 = brLayout.relationships[1].labelRect!!
+        val selfLbl = brLayout.relationships[2].labelRect!!
+        val aCard = brLayout.elements.first { it.element.id == "a" }.rect
+        val b2Card = brLayout.elements.first { it.element.id == "b2" }.rect
+        assertTrue(!rectsOverlap(r0, r1))
+        assertTrue(!rectsOverlap(selfLbl, aCard))
+        assertTrue(b2Card.centerY < aCard.centerY)
     }
 
     @Test
