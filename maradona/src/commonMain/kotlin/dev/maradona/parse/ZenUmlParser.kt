@@ -152,7 +152,7 @@ object ZenUmlParser {
                 }
 
                 val titleMatch = Regex("""^title(?:\s+|:)(.*)$""", RegexOption.IGNORE_CASE).find(trimmed)
-                if (titleMatch != null && !Regex("""^title\s*(?:->|[.(])""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+                if (titleMatch != null && !Regex("""^title\s*(?:->|[.(=])""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
                     val after = titleMatch.groupValues[1].trim()
                     if (after.isNotEmpty()) chartTitle = normalizeText(after)
                     continue

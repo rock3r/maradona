@@ -200,6 +200,17 @@ object ZenUmlLayout {
                         }
                     }
                     is ZenUmlStatement.ControlBlock -> {
+                        if (!stmt.comment.isNullOrBlank()) {
+                            val target = diagram.participants.firstOrNull()?.id ?: "_STARTER_"
+                            messages += FlattenedZenUmlMessageSpec(
+                                index = messages.size,
+                                fromId = target,
+                                toId = target,
+                                displayText = "",
+                                kind = ZenUmlMessageKind.ASYNC,
+                                commentText = stmt.comment,
+                            )
+                        }
                         val firstBranch = stmt.branches.firstOrNull()
                         val divLabels = stmt.branches.drop(1).map { b ->
                             if (!b.condition.isNullOrBlank()) "${b.keyword} (${b.condition})" else b.keyword
@@ -492,6 +503,17 @@ object ZenUmlLayout {
                     }
 
                     is ZenUmlStatement.ControlBlock -> {
+                        val blockCommSpec = if (!stmt.comment.isNullOrBlank()) msgSpecs[msgCursor++] else null
+                        val blockCommSize = if (blockCommSpec != null) {
+                            commentSizes[blockCommSpec.index] ?: defaultCommentSize(blockCommSpec.commentText ?: "", d)
+                        } else {
+                            null
+                        }
+                        val blockCommTopY = curY
+                        if (blockCommSize != null) {
+                            curY += blockCommSize.height + 6f * d
+                        }
+
                         val bSpec = blockSpecs[blockCursor++]
                         val blockTopY = curY
                         val measuredTab = blockTabSizes[bSpec.index]
@@ -573,6 +595,24 @@ object ZenUmlLayout {
                         }
                         for (div in dividers) {
                             rightX = max(rightX, leftX + 20f * d + div.labelRect.width)
+                        }
+
+                        if (blockCommSpec != null && blockCommSize != null) {
+                            val cRect = DiagramRect(leftX, blockCommTopY, blockCommSize.width, blockCommSize.height)
+                            positionedMessages += PositionedZenUmlMessage(
+                                messageIndex = blockCommSpec.index,
+                                fromId = blockCommSpec.fromId,
+                                toId = blockCommSpec.toId,
+                                displayText = "",
+                                kind = ZenUmlMessageKind.ASYNC,
+                                y = cRect.centerY,
+                                startX = leftX,
+                                endX = leftX,
+                                selfLoopHeight = 0f,
+                                labelRect = DiagramRect(leftX, cRect.y, 0f, 0f),
+                                commentText = blockCommSpec.commentText,
+                                commentRect = cRect,
+                            )
                         }
 
                         val bRect = DiagramRect(leftX, blockTopY, rightX - leftX, blockBottomY - blockTopY)

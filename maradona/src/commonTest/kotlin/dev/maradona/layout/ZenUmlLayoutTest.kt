@@ -92,6 +92,7 @@ class ZenUmlLayoutTest {
             """
             zenuml
               x = A->B.call() {
+                // check condition
                 if (ok) {
                   return yes
                 } else {
@@ -101,8 +102,10 @@ class ZenUmlLayoutTest {
             """.trimIndent(),
         )
         val branchedLayout = ZenUmlLayout.layout(branched)
-        assertEquals(3, branchedLayout.messages.size)
-        assertEquals(listOf("x = call()", "yes", "no"), branchedLayout.messages.map { it.displayText })
+        assertEquals(4, branchedLayout.messages.size)
+        val blockNote = branchedLayout.messages.first { it.commentText == "check condition" }
+        assertNotNull(blockNote.commentRect)
+        assertEquals(listOf("x = call()", "", "yes", "no"), branchedLayout.messages.map { it.displayText })
     }
 
     @Test

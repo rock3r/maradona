@@ -163,6 +163,18 @@ class ZenUmlParserTest {
         assertEquals("A", asyncReply.to)
         assertEquals("asyncReply", asyncReply.text)
         assertEquals(null, asyncReply.comment)
+
+        // Variable named `title` in assignment is parsed as a call, not consumed as diagram title
+        val titleAssignDiag = ZenUmlParser.parse(
+            """
+            zenuml
+              title = A->B.getTitle()
+            """.trimIndent(),
+        )
+        assertEquals(null, titleAssignDiag.title)
+        val titleCall = titleAssignDiag.statements.single() as ZenUmlStatement.Message
+        assertEquals("title", titleCall.returnVar)
+        assertEquals("getTitle()", titleCall.text)
     }
 
     @Test
