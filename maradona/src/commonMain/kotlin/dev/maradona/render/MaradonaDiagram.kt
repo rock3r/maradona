@@ -58,6 +58,7 @@ import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
 import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.XyChartDiagramLayout
+import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
@@ -158,6 +159,8 @@ fun MaradonaDiagram(
     onTreemapLayout: (TreemapDiagramLayout) -> Unit = {},
     /** Reports the computed C4 diagram layout (see [MaradonaC4Layout.onLayout]). */
     onC4Layout: (C4DiagramLayout) -> Unit = {},
+    /** Reports the computed ZenUML diagram layout (see [MaradonaZenUmlLayout.onLayout]). */
+    onZenUmlLayout: (ZenUmlDiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -545,6 +548,14 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onC4Layout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.ZenUmlModel ->
+                            MaradonaZenUmlLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onZenUmlLayout,
                                 modifier = contentModifier,
                             )
                     }

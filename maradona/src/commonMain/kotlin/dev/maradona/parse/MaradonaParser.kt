@@ -22,6 +22,7 @@ import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
 import dev.maradona.model.TreemapDiagram
 import dev.maradona.model.XyChartDiagram
+import dev.maradona.model.ZenUmlDiagram
 
 /** Parsed representation of any Mermaid diagram type supported by Maradona. */
 sealed interface MaradonaDiagramModel {
@@ -47,6 +48,7 @@ sealed interface MaradonaDiagramModel {
     data class ArchitectureModel(val diagram: ArchitectureDiagram) : MaradonaDiagramModel
     data class TreemapModel(val diagram: TreemapDiagram) : MaradonaDiagramModel
     data class C4Model(val diagram: C4Diagram) : MaradonaDiagramModel
+    data class ZenUmlModel(val diagram: ZenUmlDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -56,7 +58,7 @@ sealed interface MaradonaDiagramModel {
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
  * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
  * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], [ArchitectureParser],
- * [TreemapParser], or [C4Parser].
+ * [TreemapParser], [C4Parser], or [ZenUmlParser].
  */
 object MaradonaParser {
 
@@ -116,6 +118,8 @@ object MaradonaParser {
                 header == "c4dynamic" || header.startsWith("c4dynamic ") || header.startsWith("c4dynamic\t") ||
                 header == "c4deployment" || header.startsWith("c4deployment ") || header.startsWith("c4deployment\t") ->
                 MaradonaDiagramModel.C4Model(C4Parser.parse(source))
+            header == "zenuml" || header.startsWith("zenuml ") || header.startsWith("zenuml\t") ->
+                MaradonaDiagramModel.ZenUmlModel(ZenUmlParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

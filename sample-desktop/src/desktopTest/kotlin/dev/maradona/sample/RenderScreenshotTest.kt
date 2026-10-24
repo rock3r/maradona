@@ -1007,4 +1007,44 @@ class RenderScreenshotTest {
         assertTrue(systemBluePixels > 3_000, "C4 System royal blue fill #1168BD not rendered ($systemBluePixels px)")
         assertTrue(externalGreyPixels > 1_500, "C4 System_Ext grey fill #999999 not rendered ($externalGreyPixels px)")
     }
+
+    @Test
+    fun zenUmlDiagram() {
+        val png = renderToPng(
+            "zenuml",
+            """
+            zenuml
+              title Order Checkout Flow
+              @Actor Client
+              @Boundary OrderController
+              @Database OrderDb
+              Client->OrderController.checkout(cartId) {
+                order = OrderDb.saveOrder(cartId)
+                if (order != null) {
+                  return order
+                } else {
+                  return error
+                }
+              }
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 760,
+            height = 480,
+        )
+        val img = ImageIO.read(png)
+        var activationBluePixels = 0
+        var primaryCardFillPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0xDB) <= 4 && abs(g - 0xEA) <= 4 && abs(b - 0xFE) <= 4) activationBluePixels++
+                if (abs(r - 0xF2) <= 4 && abs(g - 0xF0) <= 4 && abs(b - 0xE5) <= 4) primaryCardFillPixels++
+            }
+        }
+        assertTrue(activationBluePixels > 400, "ZenUML activation bar #DBEAFE not rendered ($activationBluePixels px)")
+        assertTrue(primaryCardFillPixels > 1_500, "ZenUML participant header card fill not rendered ($primaryCardFillPixels px)")
+    }
 }
