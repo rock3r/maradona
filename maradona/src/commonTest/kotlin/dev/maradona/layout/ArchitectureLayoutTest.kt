@@ -349,5 +349,31 @@ class ArchitectureLayoutTest {
         val outsideSvc = thLayout.services.first { it.service.id == "outside" }
         val gBox = thLayout.groups.single()
         assertTrue(outsideSvc.bounds.bottom < gBox.rect.y)
+
+        // Same-side T->T fallback with intervening obstacle does not cross either endpoint's icon.
+        val sameSideEndpointDiag = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a
+              service b
+              service c
+              a:L -- T:c
+              b:T --> T:c
+              a:R -- L:b
+            """.trimIndent(),
+        )
+        val sseLayout = ArchitectureLayout.layout(sameSideEndpointDiag)
+        val bIcon = sseLayout.services.first { it.service.id == "b" }.iconRect
+        val bcEdge = sseLayout.edges[1]
+        for (i in 0 until bcEdge.points.size - 1) {
+            val p0 = bcEdge.points[i]
+            val p1 = bcEdge.points[i + 1]
+            // No interior point of any segment of b:T --> T:c may pass inside b's icon
+            val midX = (p0.x + p1.x) / 2f
+            val midY = (p0.y + p1.y) / 2f
+            val insideB = midX > bIcon.x + 1f && midX < bIcon.right - 1f &&
+                midY > bIcon.y + 1f && midY < bIcon.bottom - 1f
+            assertTrue(!insideB, "Segment ($p0 -> $p1) crossed endpoint b's icon $bIcon")
+        }
     }
 }
