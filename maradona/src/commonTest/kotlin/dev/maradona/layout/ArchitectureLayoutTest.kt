@@ -159,5 +159,39 @@ class ArchitectureLayoutTest {
         val wgOut = wgLayout.services.first { it.service.id == "outside" }
         val wgGrp = wgLayout.groups.single().rect
         assertTrue(wgOut.bounds.x > wgGrp.right)
+
+        // Intersecting `align row a b` and `align column x b` satisfies both simultaneously.
+        val intersecting = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A]
+              service b(server)[B]
+              service x(server)[X]
+              align row a b
+              align column x b
+              a:R -- L:x
+            """.trimIndent(),
+        )
+        val icLayout = ArchitectureLayout.layout(intersecting)
+        val icById = icLayout.services.associateBy { it.service.id }
+        assertEquals(icById.getValue("a").iconRect.centerY, icById.getValue("b").iconRect.centerY, 0.5f)
+        assertEquals(icById.getValue("x").iconRect.centerX, icById.getValue("b").iconRect.centerX, 0.5f)
+
+        // Cyclic backward horizontal edges detour outside the row of icons.
+        val cyclic = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A]
+              service b(server)[B]
+              service c(server)[C]
+              a:R --> L:b
+              b:R --> L:c
+              c:R --> L:a
+            """.trimIndent(),
+        )
+        val cycLayout = ArchitectureLayout.layout(cyclic)
+        val cycById = cycLayout.services.associateBy { it.service.id }
+        val backEdge = cycLayout.edges.first { it.points.size == 6 }
+        assertTrue(backEdge.points[2].y > cycById.getValue("a").iconRect.bottom)
     }
 }

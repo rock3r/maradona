@@ -319,7 +319,14 @@ object ArchitectureLayout {
                 groupById = rawGroupsById,
                 d = d,
             )
-            val pts = routeArchitectureEdgePoints(startPt, edge.lhsDir, endPt, edge.rhsDir, d)
+            val pts = routeArchitectureEdgePoints(
+                start = startPt,
+                startDir = edge.lhsDir,
+                end = endPt,
+                endDir = edge.rhsDir,
+                detourClearance = iconSize * 0.72f + 16f * d,
+                d = d,
+            )
             val midPt = computePolylineMidpoint(pts)
             val lblRect = edge.title?.takeIf { it.isNotBlank() }?.let { lbl ->
                 val sz = edgeLabelSize(lbl)
@@ -563,7 +570,20 @@ object ArchitectureLayout {
             for ((k, v) in compCoords) {
                 floatComp[k] = v.first.toFloat() to v.second.toFloat()
             }
-            repeat(3) {
+            val rowGroupByNode = HashMap<String, List<String>>()
+            val colGroupByNode = HashMap<String, List<String>>()
+            for (align in mergedAlignments) {
+                val present = align.members.filter { it in floatComp }
+                if (present.size < 2) continue
+                for (m in present) {
+                    if (align.direction == ArchitectureAlignDir.Row) {
+                        rowGroupByNode[m] = present
+                    } else {
+                        colGroupByNode[m] = present
+                    }
+                }
+            }
+            repeat(4) {
                 for (align in mergedAlignments) {
                     val present = align.members.filter { it in floatComp }
                     if (present.size < 2) continue
@@ -571,13 +591,35 @@ object ArchitectureLayout {
                         val commonY = present.map { floatComp.getValue(it).second }.average().toFloat()
                         val startX = present.minOf { floatComp.getValue(it).first }
                         for ((idx, mId) in present.withIndex()) {
-                            floatComp[mId] = (startX + idx) to commonY
+                            val old = floatComp.getValue(mId)
+                            val newX = startX + idx
+                            val dxShift = newX - old.first
+                            floatComp[mId] = newX to commonY
+                            if (abs(dxShift) > 1e-4f) {
+                                for (colPeer in colGroupByNode[mId].orEmpty()) {
+                                    if (colPeer != mId) {
+                                        val pOld = floatComp.getValue(colPeer)
+                                        floatComp[colPeer] = (pOld.first + dxShift) to pOld.second
+                                    }
+                                }
+                            }
                         }
                     } else {
                         val commonX = present.map { floatComp.getValue(it).first }.average().toFloat()
                         val startY = present.minOf { floatComp.getValue(it).second }
                         for ((idx, mId) in present.withIndex()) {
-                            floatComp[mId] = commonX to (startY + idx)
+                            val old = floatComp.getValue(mId)
+                            val newY = startY + idx
+                            val dyShift = newY - old.second
+                            floatComp[mId] = commonX to newY
+                            if (abs(dyShift) > 1e-4f) {
+                                for (rowPeer in rowGroupByNode[mId].orEmpty()) {
+                                    if (rowPeer != mId) {
+                                        val pOld = floatComp.getValue(rowPeer)
+                                        floatComp[rowPeer] = pOld.first to (pOld.second + dyShift)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -868,6 +910,7 @@ object ArchitectureLayout {
         startDir: ArchitecturePortDir,
         end: DiagramPoint,
         endDir: ArchitecturePortDir,
+        detourClearance: Float = 56f,
         d: Float = 1f,
     ): List<DiagramPoint> {
         val stub = 20f * d
@@ -897,34 +940,55 @@ object ArchitectureLayout {
         val isXY = startXAxis != endXAxis
 
         if (!isXY) {
-            if (startXAxis && abs(start.y - end.y) < 1f) {
-                val validDir = (startDir == ArchitecturePortDir.R && end.x >= start.x) ||
+            if (startXAxis) {
+                val forward = (startDir == ArchitecturePortDir.R && end.x >= start.x) ||
                     (startDir == ArchitecturePortDir.L && end.x <= start.x)
-                if (validDir) return listOf(start, end)
-            }
-            if (!startXAxis && abs(start.x - end.x) < 1f) {
-                val validDir = (startDir == ArchitecturePortDir.B && end.y >= start.y) ||
-                    (startDir == ArchitecturePortDir.T && end.y <= start.y)
-                if (validDir) return listOf(start, end)
-            }
-        }
-
-        if (isXY) {
-            val bend = if (!startXAxis) {
-                DiagramPoint(start.x, end.y)
+                if (forward) {
+                    if (abs(start.y - end.y) < 1f) return listOf(start, end)
+                    val midX = (start.x + end.x) / 2f
+                    return listOf(start, DiagramPoint(midX, start.y), DiagramPoint(midX, end.y), end)
+                }
+                // Backward horizontal connection (e.g. b:R --> L:c when c is left of b): route via outward stubs and external lane.
+                val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
+                val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
+                val detourY = max(start.y, end.y) + detourClearance
+                return listOf(
+                    start,
+                    DiagramPoint(sStubX, start.y),
+                    DiagramPoint(sStubX, detourY),
+                    DiagramPoint(eStubX, detourY),
+                    DiagramPoint(eStubX, end.y),
+                    end,
+                )
             } else {
-                DiagramPoint(end.x, start.y)
+                val forward = (startDir == ArchitecturePortDir.B && end.y >= start.y) ||
+                    (startDir == ArchitecturePortDir.T && end.y <= start.y)
+                if (forward) {
+                    if (abs(start.x - end.x) < 1f) return listOf(start, end)
+                    val midY = (start.y + end.y) / 2f
+                    return listOf(start, DiagramPoint(start.x, midY), DiagramPoint(end.x, midY), end)
+                }
+                // Backward vertical connection: route via outward stubs and external vertical lane.
+                val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
+                val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
+                val detourX = max(start.x, end.x) + detourClearance
+                return listOf(
+                    start,
+                    DiagramPoint(start.x, sStubY),
+                    DiagramPoint(detourX, sStubY),
+                    DiagramPoint(detourX, eStubY),
+                    DiagramPoint(end.x, eStubY),
+                    end,
+                )
             }
-            return listOf(start, bend, end)
         }
 
-        return if (startXAxis) {
-            val midX = (start.x + end.x) / 2f
-            listOf(start, DiagramPoint(midX, start.y), DiagramPoint(midX, end.y), end)
+        val bend = if (!startXAxis) {
+            DiagramPoint(start.x, end.y)
         } else {
-            val midY = (start.y + end.y) / 2f
-            listOf(start, DiagramPoint(start.x, midY), DiagramPoint(end.x, midY), end)
+            DiagramPoint(end.x, start.y)
         }
+        return listOf(start, bend, end)
     }
 
     private fun computePolylineMidpoint(pts: List<DiagramPoint>): DiagramPoint {
