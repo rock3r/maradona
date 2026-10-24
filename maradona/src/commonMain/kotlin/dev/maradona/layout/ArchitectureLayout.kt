@@ -367,6 +367,10 @@ object ArchitectureLayout {
                         add(s.bounds)
                     } else {
                         val isLhs = s.service.id == edge.lhsId
+                        val useGroup = if (isLhs) edge.lhsGroup else edge.rhsGroup
+                        if (!useGroup) {
+                            add(s.iconRect)
+                        }
                         val dir = if (isLhs) edge.lhsDir else edge.rhsDir
                         if (dir != ArchitecturePortDir.B && s.labelRect != null) {
                             add(s.labelRect)
@@ -1143,20 +1147,41 @@ object ArchitectureLayout {
                         }
                     }
                     val maxObBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: 0f
-                    val detourY = max(max(start.y, end.y) + detourClearance, maxObBottom)
-                    listOf(
-                        start,
-                        DiagramPoint(sStubClearX, start.y),
-                        DiagramPoint(sStubClearX, detourY),
-                        DiagramPoint(eStubClearX, detourY),
-                        DiagramPoint(eStubClearX, end.y),
-                        end,
+                    val minObTop = obstacles.minOfOrNull { it.y - 16f * d } ?: 0f
+                    val maxObRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: outX
+                    val minObLeft = obstacles.minOfOrNull { it.x - 16f * d } ?: outX
+                    val outerX = if (startDir == ArchitecturePortDir.R) max(outX, maxObRight) else min(outX, minObLeft)
+                    val detourBottomY = max(max(start.y, end.y) + detourClearance, maxObBottom)
+                    val detourTopY = min(min(start.y, end.y) - detourClearance, minObTop)
+                    val fallbacks = listOf(
+                        listOf(start, DiagramPoint(outerX, start.y), DiagramPoint(outerX, end.y), end),
+                        listOf(
+                            start,
+                            DiagramPoint(sStubClearX, start.y),
+                            DiagramPoint(sStubClearX, detourBottomY),
+                            DiagramPoint(eStubClearX, detourBottomY),
+                            DiagramPoint(eStubClearX, end.y),
+                            end,
+                        ),
+                        listOf(
+                            start,
+                            DiagramPoint(sStubClearX, start.y),
+                            DiagramPoint(sStubClearX, detourTopY),
+                            DiagramPoint(eStubClearX, detourTopY),
+                            DiagramPoint(eStubClearX, end.y),
+                            end,
+                        ),
                     )
+                    fallbacks.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: fallbacks[1]
                 }
                 ArchitecturePortDir.B, ArchitecturePortDir.T -> {
                     val sign = if (startDir == ArchitecturePortDir.B) 1f else -1f
                     val sStubY = start.y + sign * stub
-                    val eStubY = end.y + sign * stub
+                    val eStubY = if (endDir == ArchitecturePortDir.B && rhsBounds != null) {
+                        max(end.y + stub, rhsBounds.bottom + 12f * d)
+                    } else {
+                        end.y + sign * stub
+                    }
                     val outY = if (startDir == ArchitecturePortDir.B) max(sStubY, eStubY) else min(sStubY, eStubY)
                     val directOut = listOf(start, DiagramPoint(start.x, outY), DiagramPoint(end.x, outY), end)
                     if (abs(start.x - end.x) >= detourClearance && !polylineHitsObstacles(directOut, obstacles)) {
@@ -1177,15 +1202,32 @@ object ArchitectureLayout {
                         }
                     }
                     val maxObRight = obstacles.maxOfOrNull { it.right + 16f * d } ?: 0f
-                    val detourX = max(max(start.x, end.x) + detourClearance, maxObRight)
-                    listOf(
-                        start,
-                        DiagramPoint(start.x, sStubY),
-                        DiagramPoint(detourX, sStubY),
-                        DiagramPoint(detourX, eStubY),
-                        DiagramPoint(end.x, eStubY),
-                        end,
+                    val minObLeft = obstacles.minOfOrNull { it.x - 16f * d } ?: 0f
+                    val maxObBottom = obstacles.maxOfOrNull { it.bottom + 16f * d } ?: outY
+                    val minObTop = obstacles.minOfOrNull { it.y - 16f * d } ?: outY
+                    val outerY = if (startDir == ArchitecturePortDir.B) max(outY, maxObBottom) else min(outY, minObTop)
+                    val detourRightX = max(max(start.x, end.x) + detourClearance, maxObRight)
+                    val detourLeftX = min(min(start.x, end.x) - detourClearance, minObLeft)
+                    val fallbacks = listOf(
+                        listOf(start, DiagramPoint(start.x, outerY), DiagramPoint(end.x, outerY), end),
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, sStubY),
+                            DiagramPoint(detourRightX, sStubY),
+                            DiagramPoint(detourRightX, eStubY),
+                            DiagramPoint(end.x, eStubY),
+                            end,
+                        ),
+                        listOf(
+                            start,
+                            DiagramPoint(start.x, sStubY),
+                            DiagramPoint(detourLeftX, sStubY),
+                            DiagramPoint(detourLeftX, eStubY),
+                            DiagramPoint(end.x, eStubY),
+                            end,
+                        ),
                     )
+                    fallbacks.firstOrNull { !polylineHitsObstacles(it, obstacles) } ?: fallbacks[1]
                 }
             }
         }
