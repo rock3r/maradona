@@ -685,7 +685,7 @@ object ArchitectureLayout {
                     if (allVertical && u !in colAlignedNodes && u !in rowAlignedNodes) {
                         val avgX = neighbors.mapNotNull { floatComp[it.targetId]?.first }.average().toFloat()
                         val conflict = floatComp.any { (otherId, pos) ->
-                            otherId != u && abs(pos.first - avgX) < 0.25f && abs(pos.second - cur.second) < 0.25f
+                            otherId != u && abs(pos.first - avgX) < 0.99f && abs(pos.second - cur.second) < 0.99f
                         }
                         if (!conflict) {
                             floatComp[u] = avgX to cur.second
@@ -693,7 +693,7 @@ object ArchitectureLayout {
                     } else if (allHorizontal && u !in rowAlignedNodes && u !in colAlignedNodes) {
                         val avgY = neighbors.mapNotNull { floatComp[it.targetId]?.second }.average().toFloat()
                         val conflict = floatComp.any { (otherId, pos) ->
-                            otherId != u && abs(pos.first - cur.first) < 0.25f && abs(pos.second - avgY) < 0.25f
+                            otherId != u && abs(pos.first - cur.first) < 0.99f && abs(pos.second - avgY) < 0.99f
                         }
                         if (!conflict) {
                             floatComp[u] = cur.first to avgY

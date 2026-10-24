@@ -221,5 +221,27 @@ class ArchitectureLayoutTest {
         // Mixed-axis edge `outside:R --> T:a` on row-aligned nodes approaches `a`'s top port from above `a.iconRect.y`.
         val mixedEdge = enLayout.edges.last()
         assertTrue(mixedEdge.points[mixedEdge.points.size - 2].y < enA.iconRect.y)
+
+        // Fan-out/fan-in diamond (`a -> b,c,d -> z`) keeps at least one full grid cell between `b`, `c`, and `d`.
+        val fanDiamond = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)
+              service b(server)
+              service c(server)
+              service d(server)
+              service z(server)
+              a:R -- L:b
+              a:R -- L:c
+              a:R -- L:d
+              b:R -- L:z
+              c:R -- L:z
+              d:R -- L:z
+            """.trimIndent(),
+        )
+        val fdLayout = ArchitectureLayout.layout(fanDiamond)
+        val fdById = fdLayout.services.associateBy { it.service.id }
+        assertTrue(fdById.getValue("b").bounds.bottom < fdById.getValue("c").bounds.y)
+        assertTrue(fdById.getValue("c").bounds.bottom < fdById.getValue("d").bounds.y)
     }
 }
