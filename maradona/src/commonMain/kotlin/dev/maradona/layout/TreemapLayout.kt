@@ -383,14 +383,21 @@ object TreemapLayout {
     private fun formatSiValue(v: Double, sigDigits: Int): String {
         val absV = abs(v)
         val (divisor, unit) = when {
+            absV == 0.0 -> 1.0 to ""
             absV >= 1e12 -> 1e12 to "T"
             absV >= 1e9 -> 1e9 to "G"
             absV >= 1e6 -> 1e6 to "M"
             absV >= 1e3 -> 1e3 to "k"
+            absV >= 1.0 -> 1.0 to ""
+            absV >= 1e-3 -> 1e-3 to "m"
+            absV >= 1e-6 -> 1e-6 to "µ"
+            absV >= 1e-9 -> 1e-9 to "n"
             else -> 1.0 to ""
         }
         val scaled = v / divisor
-        if (abs(scaled) >= 1e12) return "${formatLargeDouble(scaled)}$unit"
+        if (abs(scaled) >= 1e12 || (abs(scaled) > 0.0 && abs(scaled) < 1e-4)) {
+            return "${formatLargeDouble(scaled)}$unit"
+        }
         val sig = sigDigits.coerceIn(1, 6)
         val absScaled = abs(scaled)
         val intDigits = when {
@@ -399,7 +406,9 @@ object TreemapLayout {
             absScaled >= 1.0 -> 1
             else -> 0
         }
-        val formatted = if (sig < intDigits) {
+        val formatted = if (absScaled == 0.0) {
+            "0"
+        } else if (sig < intDigits) {
             val step = 10.0.pow(intDigits - sig)
             val rounded = (scaled / step).roundToLong() * step.roundToLong()
             rounded.toString()
