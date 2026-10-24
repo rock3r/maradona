@@ -427,12 +427,19 @@ object BlockLayout {
         val minH = MIN_CELL_HEIGHT * d
         return when (block.shape) {
             BlockShape.Circle -> {
-                val side = maxOf(lbl.width + 22f * d, lbl.height + 22f * d, 48f * d)
+                val diag = hypot(lbl.width, lbl.height)
+                val side = max(diag + 18f * d, 48f * d)
                 DiagramSize(side, side)
             }
             BlockShape.DoubleCircle -> {
-                val side = maxOf(lbl.width + 30f * d, lbl.height + 30f * d, 54f * d)
+                val diag = hypot(lbl.width, lbl.height)
+                val side = max(diag + 27f * d, 56f * d)
                 DiagramSize(side, side)
+            }
+            BlockShape.Stadium -> {
+                val h = max(lbl.height + 18f * d, minH)
+                val w = max(lbl.width + h + 8f * d, minW)
+                DiagramSize(w, h)
             }
             BlockShape.Diamond -> {
                 val w = max(lbl.width * 2f + 24f * d, minW)

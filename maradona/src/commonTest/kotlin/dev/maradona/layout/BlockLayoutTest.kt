@@ -112,6 +112,8 @@ class BlockLayoutTest {
             """
             block
               d{"Line one is quite long<br/>Line two is also long<br/>Line three is long"}
+              c(("Line 1<br/>Line 2<br/>Line 3<br/>Line 4<br/>Line 5"))
+              dc((("Line 1<br/>Line 2<br/>Line 3<br/>Line 4<br/>Line 5")))
               arrH<["Line 1<br/>Line 2<br/>Line 3"]>(right)
               arrV<["Wide Vertical Arrow Label"]>(down)
             """.trimIndent(),
@@ -121,6 +123,14 @@ class BlockLayoutTest {
         val dBlock = sbById.getValue("d")
         val dLbl = dBlock.labelRect!!
         assertTrue(dLbl.width / dBlock.rect.width + dLbl.height / dBlock.rect.height < 1f)
+
+        val cBlock = sbById.getValue("c")
+        val cLbl = cBlock.labelRect!!
+        assertTrue( kotlin.math.hypot(cLbl.width / 2f, cLbl.height / 2f) < cBlock.rect.width / 2f )
+
+        val dcBlock = sbById.getValue("dc")
+        val dcLbl = dcBlock.labelRect!!
+        assertTrue( kotlin.math.hypot(dcLbl.width / 2f, dcLbl.height / 2f) < dcBlock.rect.width / 2f - 4.5f )
 
         val arrH = sbById.getValue("arrH")
         assertTrue(arrH.rect.height * 0.56f >= arrH.labelRect!!.height)
