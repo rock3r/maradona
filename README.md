@@ -8,7 +8,7 @@ rendering that follows your theme), built for Compose instead of the browser.
 
 ## Status
 
-Version 0.21 supports flowcharts (`graph` / `flowchart`), sequence diagrams
+Version 0.22 supports flowcharts (`graph` / `flowchart`), sequence diagrams
 (`sequenceDiagram`), class diagrams (`classDiagram` / `classDiagram-v2`),
 state diagrams (`stateDiagram` / `stateDiagram-v2`), entity-relationship
 diagrams (`erDiagram`), mindmaps (`mindmap`), Gantt charts (`gantt`),
@@ -18,8 +18,9 @@ user journeys (`journey`), quadrant charts (`quadrantChart`), XY charts
 (`sankey` / `sankey-beta`), requirement diagrams (`requirementDiagram`),
 packet diagrams (`packet` / `packet-beta`), radar charts
 (`radar` / `radar-beta`), block diagrams (`block` / `block-beta`),
-architecture diagrams (`architecture` / `architecture-beta`), and treemap
-diagrams (`treemap` / `treemap-beta`).
+architecture diagrams (`architecture` / `architecture-beta`), treemap
+diagrams (`treemap` / `treemap-beta`), and C4 diagrams (`C4Context`,
+`C4Container`, `C4Component`, `C4Dynamic`, `C4Deployment`).
 Other Mermaid diagram types are not supported yet.
 
 Supported in flowcharts:
@@ -260,6 +261,26 @@ Supported in treemap diagrams (`treemap` / `treemap-beta`):
 - Inline `:::className` decorators and `classDef` (`fill`, `stroke`, `color`,
   `stroke-width`, `font-weight`)
 
+Supported in C4 diagrams (`C4Context`, `C4Container`, `C4Component`, `C4Dynamic`, `C4Deployment`):
+
+- Headers and directives: `C4Context`, `C4Container`, `C4Component`, `C4Dynamic`,
+  and `C4Deployment`, `direction TB|TD|BT|LR|RL`, YAML frontmatter and
+  `%%{init}%%` configuration (`title`, `c4ShapeInRow`, `c4BoundaryInRow`,
+  `diagramMarginX`, `diagramMarginY`), `title`, and `accTitle` / `accDescr`
+- Elements: `Person`, `Person_Ext`, `System`, `System_Ext`, `SystemDb`,
+  `SystemDb_Ext`, `SystemQueue`, `SystemQueue_Ext`, `Container`, `Container_Ext`,
+  `ContainerDb`, `ContainerDb_Ext`, `ContainerQueue`, `ContainerQueue_Ext`,
+  `Component`, `Component_Ext`, `ComponentDb`, `ComponentDb_Ext`,
+  `ComponentQueue`, and `ComponentQueue_Ext` (positional and `$key="value"`
+  named arguments)
+- Boundaries and deployment nodes (`{ ... }`): `Boundary`, `Enterprise_Boundary`,
+  `System_Boundary`, `Container_Boundary`, `Deployment_Node`, `Node`, `Node_L`,
+  and `Node_R`
+- Relationships and style/layout overrides: `Rel`, `BiRel`, `Rel_Back`,
+  `Rel_U`/`Rel_Up`, `Rel_D`/`Rel_Down`, `Rel_L`/`Rel_Left`, `Rel_R`/`Rel_Right`,
+  `RelIndex`, `UpdateElementStyle`, `UpdateBoundaryStyle`, `UpdateRelStyle`, and
+  `UpdateLayoutConfig`
+
 ## How it works
 
 Three layers, each usable on its own:
@@ -341,7 +362,7 @@ The sample tests render diagrams offscreen to
 
 ## Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, block diagrams, architecture diagrams, and treemap diagrams only. Other types come later.
+- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, block diagrams, architecture diagrams, treemap diagrams, and C4 diagrams only. Other types come later.
 - Subgraphs are bounding boxes. The layout engine does not lay out a
   subgraph as its own cluster yet, so members may not stay together in
   large graphs.

@@ -1,0 +1,128 @@
+package dev.maradona.layout
+
+import dev.maradona.parse.C4Parser
+import kotlin.math.abs
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class C4LayoutTest {
+
+    @Test
+    fun enclosesNestedBoundariesAndElementsWithoutOverlap() {
+        val diagram = C4Parser.parse(
+            """
+            C4Context
+              title Internet Banking Context
+              Person(customer, "Banking Customer", "A customer of the bank")
+              Enterprise_Boundary(bank, "BigBank plc") {
+                System(banking, "Internet Banking", "Online banking portal")
+                System_Boundary(backoffice, "Backoffice") {
+                  SystemDb(core, "Mainframe", "Core accounts")
+                  SystemQueue(events, "Event Bus", "Kafka")
+                }
+              }
+              System_Ext(mail, "E-mail System", "Exchange")
+              Rel(customer, banking, "Uses", "HTTPS")
+              BiRel(banking, core, "Reads/Writes", "JDBC")
+              Rel_Back(mail, banking, "Sends e-mail", "SMTP")
+            """.trimIndent(),
+        )
+
+        val layout = C4Layout.layout(diagram)
+        assertNotNull(layout.titleRect)
+        assertEquals(5, layout.elements.size)
+        assertEquals(2, layout.boundaries.size)
+        assertEquals(3, layout.relationships.size)
+
+        val bankBnd = layout.boundaries.first { it.boundary.id == "bank" }
+        val backofficeBnd = layout.boundaries.first { it.boundary.id == "backoffice" }
+
+        // Nested boundary is strictly inside outer boundary and below outer boundary header
+        assertTrue(backofficeBnd.rect.x >= bankBnd.rect.x && backofficeBnd.rect.right <= bankBnd.rect.right)
+        assertTrue(backofficeBnd.rect.y >= bankBnd.headerRect.bottom && backofficeBnd.rect.bottom <= bankBnd.rect.bottom)
+
+        // Child elements are contained inside their parent boundary and below its header
+        val coreEl = layout.elements.first { it.element.id == "core" }
+        val eventsEl = layout.elements.first { it.element.id == "events" }
+        assertTrue(coreEl.rect.x >= backofficeBnd.rect.x && coreEl.rect.right <= backofficeBnd.rect.right)
+        assertTrue(coreEl.rect.y >= backofficeBnd.headerRect.bottom && coreEl.rect.bottom <= backofficeBnd.rect.bottom)
+        assertTrue(!rectsOverlap(coreEl.rect, eventsEl.rect))
+
+        // Relationships have proper arrow flags
+        val usesRel = layout.relationships[0]
+        assertEquals(false, usesRel.startArrow)
+        assertEquals(true, usesRel.endArrow)
+
+        val biRel = layout.relationships[1]
+        assertEquals(true, biRel.startArrow)
+        assertEquals(true, biRel.endArrow)
+
+        val backRel = layout.relationships[2]
+        assertEquals(true, backRel.startArrow)
+        assertEquals(false, backRel.endArrow)
+    }
+
+    @Test
+    fun separatesOppositeDirectionParallelEdgesSelfLoopsAndDirectionalHints() {
+        val diagram = C4Parser.parse(
+            """
+            C4Dynamic
+              Container(a, "Service A", "Kotlin")
+              Container(b, "Service B", "Kotlin")
+              Container(c, "Service C", "Kotlin")
+              Rel(a, b, "Request")
+              Rel(b, a, "Response")
+              Rel(a, a, "Self Retry")
+              Rel_U(b, c, "Notifies Above")
+              UpdateRelStyle(a, b, ${'$'}offsetX="280")
+            """.trimIndent(),
+        )
+        val layout = C4Layout.layout(diagram)
+        val req = layout.relationships[0]
+        val resp = layout.relationships[1]
+        val selfRel = layout.relationships[2]
+
+        // Opposite-direction parallel relationships do not share the same midpoint/label position
+        assertNotNull(req.labelRect)
+        assertNotNull(resp.labelRect)
+        assertTrue(!rectsOverlap(req.labelRect, resp.labelRect))
+
+        // Self-relationship has 3 distinct loop points extending outside the card
+        assertEquals(3, selfRel.points.size)
+        val aRect = layout.elements.first { it.element.id == "a" }.rect
+        assertTrue(selfRel.points[1].x > aRect.right)
+
+        // Rel_U(b, c) places c in an earlier row above b
+        val bRect = layout.elements.first { it.element.id == "b" }.rect
+        val cRect = layout.elements.first { it.element.id == "c" }.rect
+        assertTrue(cRect.centerY < bRect.centerY)
+
+        // Offset relationship label is unioned into overall diagram bounds
+        assertTrue(req.labelRect.x >= 0f && req.labelRect.right <= layout.width)
+        assertTrue(req.labelRect.y >= 0f && req.labelRect.bottom <= layout.height)
+    }
+
+    @Test
+    fun scalesWithDensity() {
+        val diagram = C4Parser.parse(
+            """
+            C4Container
+              Person(u, "User")
+              Container(app, "App", "Kotlin")
+              Rel(u, app, "Uses")
+            """.trimIndent(),
+        )
+        val l1 = C4Layout.layout(diagram, options = LayoutOptions(density = 1f))
+        val l2 = C4Layout.layout(diagram, options = LayoutOptions(density = 2f))
+        assertTrue(abs(l2.width - l1.width * 2f) < 1f)
+        assertTrue(abs(l2.height - l1.height * 2f) < 1f)
+    }
+
+    private fun rectsOverlap(a: DiagramRect, b: DiagramRect): Boolean {
+        val eps = 0.5f
+        return a.x + eps < b.right && a.right - eps > b.x &&
+            a.y + eps < b.bottom && a.bottom - eps > b.y
+    }
+}
