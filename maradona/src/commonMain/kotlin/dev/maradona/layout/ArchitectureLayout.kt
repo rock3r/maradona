@@ -143,15 +143,28 @@ object ArchitectureLayout {
         }
         val maxGroupDepth = diagram.groups.maxOfOrNull { groupDepth(it.id) } ?: 0
         val extraGroupGapX = maxGroupDepth * (groupPad * 2.2f + 18f * d)
-        val extraGroupGapY = maxGroupDepth * (groupPad * 2.2f + 32f * d)
         var maxGroupHeaderW = 0f
+        val groupHeaderHById = HashMap<String, Float>()
         for (grp in diagram.groups) {
             val lblText = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
             val lblSz = groupLabelSize(grp.id, lblText)
             val hasIcon = !grp.icon.isNullOrBlank()
             val headerW = (if (hasIcon) 24f * d else 0f) + lblSz.width + 16f * d
             maxGroupHeaderW = max(maxGroupHeaderW, headerW)
+            groupHeaderHById[grp.id] = max(GROUP_HEADER_HEIGHT * d, lblSz.height + 6f * d)
         }
+        fun groupAncestorVerticalOverhead(gId: String): Float {
+            var total = 0f
+            var cur: String? = gId
+            val seen = HashSet<String>()
+            while (cur != null && seen.add(cur)) {
+                val hH = groupHeaderHById[cur] ?: (GROUP_HEADER_HEIGHT * d)
+                total += hH + groupPad * 2.2f + 10f * d
+                cur = parentGroupMap[cur]
+            }
+            return total
+        }
+        val extraGroupGapY = diagram.groups.maxOfOrNull { groupAncestorVerticalOverhead(it.id) } ?: 0f
 
         val pitchX = maxOf(
             maxServiceW + nodeSpacing + extraGroupGapX,
@@ -927,8 +940,8 @@ object ArchitectureLayout {
             val orderEdges = LinkedHashMap<String, MutableSet<String>>()
             for (a in sameDir) {
                 for (m in a.members) {
-                    parent.putIfAbsent(m, m)
-                    orderEdges.putIfAbsent(m, LinkedHashSet())
+                    if (m !in parent) parent[m] = m
+                    orderEdges.getOrPut(m) { LinkedHashSet() }
                 }
                 for (i in 0 until a.members.size - 1) {
                     val u = a.members[i]

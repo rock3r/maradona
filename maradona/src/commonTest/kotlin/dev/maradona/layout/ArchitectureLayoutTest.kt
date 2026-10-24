@@ -331,5 +331,23 @@ class ArchitectureLayoutTest {
         val wlA = wlLayout.services.first { it.service.id == "a" }
         val wlEdge = wlLayout.edges.single()
         assertTrue(wlEdge.points[1].x > wlA.labelRect!!.right)
+
+        // Tall measured group header height reserves vertical pitch so group box does not overlap service above it.
+        val tallHeaderDiag = ArchitectureParser.parse(
+            """
+            architecture-beta
+              group g[G]
+              service a in g
+              service outside
+              outside:B -- T:a
+            """.trimIndent(),
+        )
+        val thLayout = ArchitectureLayout.layout(
+            diagram = tallHeaderDiag,
+            groupLabelSizes = mapOf("g" to DiagramSize(100f, 200f)),
+        )
+        val outsideSvc = thLayout.services.first { it.service.id == "outside" }
+        val gBox = thLayout.groups.single()
+        assertTrue(outsideSvc.bounds.bottom < gBox.rect.y)
     }
 }
