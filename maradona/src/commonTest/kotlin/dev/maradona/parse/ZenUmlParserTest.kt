@@ -180,11 +180,13 @@ class ZenUmlParserTest {
         val arrowReturnDiag = ZenUmlParser.parse(
             """
             zenuml
+              A as "Client (web): API"
               A->B.call() {
                 return "A->B"
               }
             """.trimIndent(),
         )
+        assertEquals("Client (web): API", arrowReturnDiag.participants.first { it.id == "A" }.label)
         val arrowRetMsg = (arrowReturnDiag.statements.single() as ZenUmlStatement.Message).nestedStatements.single() as ZenUmlStatement.Message
         assertEquals(ZenUmlMessageKind.RETURN, arrowRetMsg.kind)
         assertEquals("A->B", arrowRetMsg.text)

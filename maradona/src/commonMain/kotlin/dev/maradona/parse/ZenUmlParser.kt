@@ -480,7 +480,7 @@ object ZenUmlParser {
                 val aliasMatch = Regex(
                     """^("[^"]+"|'[^']+'|[A-Za-z0-9_.-]+)\s+as\s+("[^"]+"|'[^']+'|[A-Za-z0-9_.\s-]+?)\s*;?$""",
                 ).find(tok)
-                if (aliasMatch != null && !tok.contains("(") && !tok.contains("->") && !tok.contains(":")) {
+                if (aliasMatch != null) {
                     val rawFirst = aliasMatch.groupValues[1].trim()
                     val rawSecond = aliasMatch.groupValues[2].trim()
                     ensureParticipant(
