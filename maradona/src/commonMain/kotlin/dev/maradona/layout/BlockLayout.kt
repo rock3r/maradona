@@ -435,8 +435,8 @@ object BlockLayout {
                 DiagramSize(side, side)
             }
             BlockShape.Diamond -> {
-                val w = max(lbl.width * 1.45f + 28f * d, minW)
-                val h = max(lbl.height * 1.45f + 22f * d, minH + 8f * d)
+                val w = max(lbl.width * 2f + 24f * d, minW)
+                val h = max(lbl.height * 2f + 20f * d, minH + 8f * d)
                 DiagramSize(w, h)
             }
             BlockShape.Hexagon,
@@ -464,9 +464,18 @@ object BlockLayout {
                 )
             }
             BlockShape.BlockArrow -> {
+                val dirs = block.arrowDirections.ifEmpty { listOf(dev.maradona.model.BlockArrowDir.Right) }
+                val hasRight = dev.maradona.model.BlockArrowDir.Right in dirs || dev.maradona.model.BlockArrowDir.X in dirs
+                val hasLeft = dev.maradona.model.BlockArrowDir.Left in dirs || dev.maradona.model.BlockArrowDir.X in dirs
+                val hasUp = dev.maradona.model.BlockArrowDir.Up in dirs || dev.maradona.model.BlockArrowDir.Y in dirs
+                val hasDown = dev.maradona.model.BlockArrowDir.Down in dirs || dev.maradona.model.BlockArrowDir.Y in dirs
+                val headPadW = (if (hasLeft) 16f * d else 0f) + (if (hasRight) 16f * d else 0f)
+                val headPadH = (if (hasUp) 14f * d else 0f) + (if (hasDown) 14f * d else 0f)
+                val neededBodyW = if (hasUp || hasDown) (lbl.width + 12f * d) / 0.54f else lbl.width + 16f * d
+                val neededBodyH = if (hasLeft || hasRight) (lbl.height + 10f * d) / 0.54f else lbl.height + 14f * d
                 DiagramSize(
-                    width = max(lbl.width + 32f * d, 56f * d),
-                    height = max(lbl.height + 20f * d, minH),
+                    width = max(neededBodyW + headPadW, 56f * d),
+                    height = max(neededBodyH + headPadH, minH),
                 )
             }
             else -> {

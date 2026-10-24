@@ -106,5 +106,26 @@ class BlockLayoutTest {
         val wideEdgeLbl = wideLayout.edges.single().labelRect!!
         assertTrue(wideEdgeLbl.x >= 0f)
         assertTrue(wideEdgeLbl.right <= wideLayout.width)
+
+        // Multiline diamond and block arrow sizes fully contain their label rectangles within the shape outline/shaft.
+        val shapeBoundsDiagram = BlockParser.parse(
+            """
+            block
+              d{"Line one is quite long<br/>Line two is also long<br/>Line three is long"}
+              arrH<["Line 1<br/>Line 2<br/>Line 3"]>(right)
+              arrV<["Wide Vertical Arrow Label"]>(down)
+            """.trimIndent(),
+        )
+        val shapeBoundsLayout = BlockLayout.layout(shapeBoundsDiagram)
+        val sbById = shapeBoundsLayout.blocks.associateBy { it.item.id }
+        val dBlock = sbById.getValue("d")
+        val dLbl = dBlock.labelRect!!
+        assertTrue(dLbl.width / dBlock.rect.width + dLbl.height / dBlock.rect.height < 1f)
+
+        val arrH = sbById.getValue("arrH")
+        assertTrue(arrH.rect.height * 0.56f >= arrH.labelRect!!.height)
+
+        val arrV = sbById.getValue("arrV")
+        assertTrue(arrV.rect.width * 0.56f >= arrV.labelRect!!.width)
     }
 }
