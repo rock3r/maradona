@@ -344,7 +344,7 @@ class ArchitectureLayoutTest {
         )
         val thLayout = ArchitectureLayout.layout(
             diagram = tallHeaderDiag,
-            groupLabelSizes = mapOf("g" to DiagramSize(100f, 200f)),
+            groupLabelSize = { _, _ -> DiagramSize(100f, 200f) },
         )
         val outsideSvc = thLayout.services.first { it.service.id == "outside" }
         val gBox = thLayout.groups.single()
