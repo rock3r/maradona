@@ -914,7 +914,10 @@ object BlockParser {
             val start = pos
             while (pos < text.length) {
                 val c = text[pos]
-                if (c.isWhitespace() || c == ';' || c == ':' || c == '-' || c == '=' || c == '~') break
+                if (c.isWhitespace() || c == ';' || c == ':' || c == '~') break
+                if ((c == '-' || c == '=' || c == 'o' || c == 'x' || c == '<') && peekEdgeOpAt(pos) != null) {
+                    break
+                }
                 pos++
             }
             return text.substring(start, pos)

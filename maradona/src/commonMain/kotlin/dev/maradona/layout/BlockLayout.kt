@@ -206,10 +206,55 @@ object BlockLayout {
         placeChildren(rootContainer, rootRect, rootMetrics, isRoot = true)
 
         val positionedEdges = mutableListOf<PositionedBlockEdge>()
+        val selfLoopCounts = HashMap<String, Int>()
+        var maxEdgeRight = 0f
+        var maxEdgeBottom = 0f
         for (edge in diagram.edges) {
             if (edge.pattern == BlockEdgePattern.Invisible) continue
             val src = byId[edge.from] ?: continue
             val dst = byId[edge.to] ?: continue
+            if (src.item.id == dst.item.id) {
+                val loopIdx = selfLoopCounts[src.item.id] ?: 0
+                selfLoopCounts[src.item.id] = loopIdx + 1
+                val loopOut = (18f + loopIdx * 12f) * d
+                val yOffset = min(10f * d, src.rect.height * 0.25f).coerceAtLeast(4f * d)
+                val topTarget = DiagramPoint(src.rect.right + loopOut, src.rect.centerY - yOffset)
+                val botTarget = DiagramPoint(src.rect.right + loopOut, src.rect.centerY + yOffset)
+                val startPt = clipToBlockOutline(src.item, src.rect, topTarget, d)
+                val endPt = clipToBlockOutline(src.item, src.rect, botTarget, d)
+                val loopRight = maxOf(src.rect.right, startPt.x, endPt.x) + loopOut
+                val pts = listOf(
+                    startPt,
+                    DiagramPoint(loopRight, startPt.y),
+                    DiagramPoint(loopRight, endPt.y),
+                    endPt,
+                )
+                val lblRect = edge.label?.takeIf { it.isNotEmpty() }?.let { lbl ->
+                    val sz = edgeLabelSize(lbl)
+                    val padX = 8f * d
+                    val padY = 4f * d
+                    DiagramRect(
+                        x = loopRight + 6f * d,
+                        y = (startPt.y + endPt.y) / 2f - (sz.height + padY) / 2f,
+                        width = sz.width + padX,
+                        height = sz.height + padY,
+                    )
+                }
+                for (p in pts) {
+                    if (p.x > maxEdgeRight) maxEdgeRight = p.x
+                    if (p.y > maxEdgeBottom) maxEdgeBottom = p.y
+                }
+                if (lblRect != null) {
+                    if (lblRect.right > maxEdgeRight) maxEdgeRight = lblRect.right
+                    if (lblRect.bottom > maxEdgeBottom) maxEdgeBottom = lblRect.bottom
+                }
+                positionedEdges += PositionedBlockEdge(
+                    edge = edge,
+                    points = pts,
+                    labelRect = lblRect,
+                )
+                continue
+            }
             val srcCenter = DiagramPoint(src.rect.centerX, src.rect.centerY)
             val dstCenter = DiagramPoint(dst.rect.centerX, dst.rect.centerY)
             val startPt = clipToBlockOutline(src.item, src.rect, dstCenter, d)
@@ -226,6 +271,10 @@ object BlockLayout {
                     height = sz.height + padY,
                 )
             }
+            if (lblRect != null) {
+                if (lblRect.right > maxEdgeRight) maxEdgeRight = lblRect.right
+                if (lblRect.bottom > maxEdgeBottom) maxEdgeBottom = lblRect.bottom
+            }
             positionedEdges += PositionedBlockEdge(
                 edge = edge,
                 points = listOf(startPt, midPt, endPt),
@@ -233,9 +282,12 @@ object BlockLayout {
             )
         }
 
+        val finalWidth = max(totalWidth, maxEdgeRight + margin)
+        val finalHeight = max(totalHeight, maxEdgeBottom + margin)
+
         return BlockDiagramLayout(
-            width = totalWidth,
-            height = totalHeight,
+            width = finalWidth,
+            height = finalHeight,
             blocks = positionedBlocks,
             edges = positionedEdges,
             titleRect = titleRect,

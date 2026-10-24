@@ -585,13 +585,21 @@ private fun DrawScope.drawBlockEdge(
 
     val startPt = pts.first()
     val endPt = pts.last()
-    drawLine(
+    val path = Path().apply {
+        moveTo(startPt.x, startPt.y)
+        for (i in 1 until pts.size) {
+            lineTo(pts[i].x, pts[i].y)
+        }
+    }
+    drawPath(
+        path = path,
         color = theme.edge,
-        start = Offset(startPt.x, startPt.y),
-        end = Offset(endPt.x, endPt.y),
-        strokeWidth = strokeW,
-        cap = StrokeCap.Round,
-        pathEffect = dash,
+        style = Stroke(
+            width = strokeW,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+            pathEffect = dash,
+        ),
     )
 
     if (edge.endHead != BlockArrowHead.None) {

@@ -67,6 +67,7 @@ class BlockLayoutTest {
               columns 2
               A[/"LeanRight"/] B["A considerably longer label in clamped span"]:2
               A --> B
+              B -- "retry" --> B
             """.trimIndent(),
         )
         val layout = BlockLayout.layout(diagram)
@@ -80,8 +81,15 @@ class BlockLayoutTest {
         assertTrue(b.rect.width >= bLabelRect.width)
 
         // Horizontal edge leaving LeanRight (A) starts inset from A.rect.right (on the slanted right edge).
-        val edge = layout.edges.single()
+        val edge = layout.edges[0]
         assertTrue(edge.points.first().x < a.rect.right - 1f)
         assertTrue(edge.points.first().x > a.rect.centerX)
+
+        // Self-edge on B routes outside B's right border and stays within layout.width.
+        val selfEdge = layout.edges[1]
+        assertEquals(4, selfEdge.points.size)
+        assertTrue(selfEdge.points[1].x > b.rect.right)
+        assertTrue(selfEdge.labelRect!!.x > b.rect.right)
+        assertTrue(selfEdge.labelRect.right <= layout.width)
     }
 }

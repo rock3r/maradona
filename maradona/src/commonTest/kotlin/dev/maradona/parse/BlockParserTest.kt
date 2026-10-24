@@ -146,7 +146,8 @@ class BlockParserTest {
               block:2
                 inner1 inner2
               end
-              style root fill:#dbeafe; afterStyle["After Style"]
+              style root fill:#dbeafe; afterStyle["After Style"]:::my-class
+              classDef my-class stroke:#2563eb
               class root hot; root --> afterStyle
             """.trimIndent(),
         )
@@ -166,6 +167,8 @@ class BlockParserTest {
         val afterStyle = diagram.children[2]
         assertEquals("afterStyle", afterStyle.id)
         assertEquals("After Style", afterStyle.label)
+        assertEquals(listOf("default", "my-class"), afterStyle.classes)
+        assertEquals("#2563eb", afterStyle.style?.stroke)
 
         val edge = diagram.edges.single()
         assertEquals("root", edge.from)
