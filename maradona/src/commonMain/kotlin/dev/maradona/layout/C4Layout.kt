@@ -654,9 +654,31 @@ object C4Layout {
             adj[el.id] = mutableListOf()
             sameBandOrder[el.id] = idx * 10
         }
+        val explicitDirPairs = relationships
+            .filter {
+                it.from != it.to && (
+                    it.kind == C4RelKind.REL_UP ||
+                        it.kind == C4RelKind.REL_DOWN ||
+                        it.kind == C4RelKind.REL_LEFT ||
+                        it.kind == C4RelKind.REL_RIGHT ||
+                        it.kind == C4RelKind.REL_BACK
+                    )
+            }
+            .map { if (it.from <= it.to) it.from to it.to else it.to to it.from }
+            .toSet()
+
+        val seenDirectedEdges = HashSet<Pair<String, String>>()
         val sameBandPairs = mutableListOf<Triple<String, String, C4RelKind>>()
         for (rel in relationships) {
             if (rel.from == rel.to || rel.from !in byId || rel.to !in byId) continue
+            val unordered = if (rel.from <= rel.to) rel.from to rel.to else rel.to to rel.from
+            val isExplicitDir = rel.kind == C4RelKind.REL_UP ||
+                rel.kind == C4RelKind.REL_DOWN ||
+                rel.kind == C4RelKind.REL_LEFT ||
+                rel.kind == C4RelKind.REL_RIGHT ||
+                rel.kind == C4RelKind.REL_BACK
+            if (!isExplicitDir && unordered in explicitDirPairs) continue
+
             val isCrossBandHint = if (!isHorizontal) {
                 rel.kind == C4RelKind.REL_LEFT || rel.kind == C4RelKind.REL_RIGHT
             } else {
@@ -676,6 +698,8 @@ object C4Layout {
             }
             val src = if (reverseFlow) rel.to else rel.from
             val dst = if (reverseFlow) rel.from else rel.to
+            if ((dst to src) in seenDirectedEdges || (src to dst) in seenDirectedEdges) continue
+            seenDirectedEdges += (src to dst)
             adj.getValue(src) += dst
             inDegree[dst] = (inDegree[dst] ?: 0) + 1
         }
