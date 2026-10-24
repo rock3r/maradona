@@ -1,5 +1,6 @@
 package dev.maradona.parse
 
+import dev.maradona.model.ArchitectureDiagram
 import dev.maradona.model.BlockDiagram
 import dev.maradona.model.ClassDiagram
 import dev.maradona.model.ErDiagram
@@ -41,6 +42,7 @@ sealed interface MaradonaDiagramModel {
     data class PacketModel(val diagram: PacketDiagram) : MaradonaDiagramModel
     data class RadarModel(val diagram: RadarDiagram) : MaradonaDiagramModel
     data class BlockModel(val diagram: BlockDiagram) : MaradonaDiagramModel
+    data class ArchitectureModel(val diagram: ArchitectureDiagram) : MaradonaDiagramModel
 }
 
 /**
@@ -49,7 +51,7 @@ sealed interface MaradonaDiagramModel {
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
  * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
- * [RequirementParser], [PacketParser], [RadarParser], or [BlockParser].
+ * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], or [ArchitectureParser].
  */
 object MaradonaParser {
 
@@ -97,6 +99,9 @@ object MaradonaParser {
             header == "block" || header.startsWith("block ") || header.startsWith("block\t") ||
                 header == "block-beta" || header.startsWith("block-beta ") || header.startsWith("block-beta\t") ->
                 MaradonaDiagramModel.BlockModel(BlockParser.parse(source))
+            header == "architecture" || header.startsWith("architecture ") || header.startsWith("architecture\t") ||
+                header == "architecture-beta" || header.startsWith("architecture-beta ") || header.startsWith("architecture-beta\t") ->
+                MaradonaDiagramModel.ArchitectureModel(ArchitectureParser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }
