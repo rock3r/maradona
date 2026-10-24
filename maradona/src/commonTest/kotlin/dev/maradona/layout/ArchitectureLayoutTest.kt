@@ -167,15 +167,18 @@ class ArchitectureLayoutTest {
               service a(server)[A]
               service b(server)[B]
               service x(server)[X]
+              service y(server)[Y]
               align row a b
               align column x b
               a:R -- L:x
+              a:B -- T:y
             """.trimIndent(),
         )
         val icLayout = ArchitectureLayout.layout(intersecting)
         val icById = icLayout.services.associateBy { it.service.id }
         assertEquals(icById.getValue("a").iconRect.centerY, icById.getValue("b").iconRect.centerY, 0.5f)
         assertEquals(icById.getValue("x").iconRect.centerX, icById.getValue("b").iconRect.centerX, 0.5f)
+        assertTrue(icById.getValue("y").iconRect.y > icById.getValue("a").iconRect.bottom)
 
         // Cyclic backward horizontal edges detour outside the row of icons.
         val cyclic = ArchitectureParser.parse(

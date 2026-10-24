@@ -670,6 +670,74 @@ object ArchitectureLayout {
                 }
             }
 
+            // Resolve any post-alignment cell collisions while preserving row and column alignment groups.
+            fun shiftNodePreservingAlignments(nodeId: String, dx: Float, dy: Float) {
+                val old = floatComp.getValue(nodeId)
+                floatComp[nodeId] = (old.first + dx) to (old.second + dy)
+                if (abs(dx) > 1e-4f) {
+                    for (colPeer in colGroupByNode[nodeId].orEmpty()) {
+                        if (colPeer != nodeId) {
+                            val pOld = floatComp.getValue(colPeer)
+                            floatComp[colPeer] = (pOld.first + dx) to pOld.second
+                        }
+                    }
+                }
+                if (abs(dy) > 1e-4f) {
+                    for (rowPeer in rowGroupByNode[nodeId].orEmpty()) {
+                        if (rowPeer != nodeId) {
+                            val pOld = floatComp.getValue(rowPeer)
+                            floatComp[rowPeer] = pOld.first to (pOld.second + dy)
+                        }
+                    }
+                }
+            }
+
+            val compIds = floatComp.keys.toList()
+            var collisionPass = 0
+            while (collisionPass < 16) {
+                var changed = false
+                for (i in compIds.indices) {
+                    for (j in i + 1 until compIds.size) {
+                        val u = compIds[i]
+                        val v = compIds[j]
+                        val pu = floatComp.getValue(u)
+                        val pv = floatComp.getValue(v)
+                        if (abs(pu.first - pv.first) < 0.99f && abs(pu.second - pv.second) < 0.99f) {
+                            // Prefer moving the node that has fewer alignment constraints, along the edge step between u and v if any.
+                            val stepUV = adj[u].orEmpty().firstOrNull { it.targetId == v }
+                            val uConstrained = (u in rowGroupByNode) || (u in colGroupByNode)
+                            val vConstrained = (v in rowGroupByNode) || (v in colGroupByNode)
+                            val moveV = !vConstrained || uConstrained
+                            if (moveV) {
+                                val sameRowGroup = rowGroupByNode[u]?.contains(v) == true
+                                val sameColGroup = colGroupByNode[u]?.contains(v) == true
+                                val dx = when {
+                                    sameRowGroup -> 1f
+                                    sameColGroup -> 0f
+                                    stepUV != null && stepUV.dx != 0 && v !in colGroupByNode -> stepUV.dx.toFloat()
+                                    v !in rowGroupByNode -> 0f
+                                    else -> 1f
+                                }
+                                val dy = when {
+                                    dx != 0f -> 0f
+                                    stepUV != null && stepUV.dy != 0 -> stepUV.dy.toFloat()
+                                    else -> 1f
+                                }
+                                shiftNodePreservingAlignments(v, dx, dy)
+                            } else {
+                                val stepVU = adj[v].orEmpty().firstOrNull { it.targetId == u }
+                                val dx = if (stepVU != null && stepVU.dx != 0 && u !in colGroupByNode) stepVU.dx.toFloat() else 0f
+                                val dy = if (dx != 0f) 0f else if (stepVU != null && stepVU.dy != 0) stepVU.dy.toFloat() else 1f
+                                shiftNodePreservingAlignments(u, dx, dy)
+                            }
+                            changed = true
+                        }
+                    }
+                }
+                if (!changed) break
+                collisionPass++
+            }
+
             val rowAlignedNodes = mergedAlignments
                 .filter { it.direction == ArchitectureAlignDir.Row }
                 .flatMap { it.members }
