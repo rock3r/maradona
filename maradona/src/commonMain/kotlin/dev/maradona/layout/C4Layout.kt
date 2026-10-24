@@ -281,9 +281,19 @@ object C4Layout {
             topBands.addAll(rankedRows)
         } else {
             val (leadingEls, trailingEls) = rootElements.partition { !it.element.kind.isExternal }
-            topBands.addAll(rankItemsIntoRows(leadingEls, diagram.relationships, shapeInRow, effectiveDirection))
-            topBands.addAll(rankItemsIntoRows(allRootBoundaries, diagram.relationships, boundaryInRow, effectiveDirection))
-            topBands.addAll(rankItemsIntoRows(trailingEls, diagram.relationships, shapeInRow, effectiveDirection))
+            val rootElIds = rootElements.map { it.id }.toSet()
+            val rootBndIds = allRootBoundaries.map { it.id }.toSet()
+            val hasMixedRootRel = diagram.relationships.any { r ->
+                (r.from in rootElIds && r.to in rootBndIds) || (r.from in rootBndIds && r.to in rootElIds)
+            }
+            if (hasMixedRootRel) {
+                val combined = leadingEls + allRootBoundaries + trailingEls
+                topBands.addAll(rankItemsIntoRows(combined, diagram.relationships, shapeInRow, effectiveDirection))
+            } else {
+                topBands.addAll(rankItemsIntoRows(leadingEls, diagram.relationships, shapeInRow, effectiveDirection))
+                topBands.addAll(rankItemsIntoRows(allRootBoundaries, diagram.relationships, boundaryInRow, effectiveDirection))
+                topBands.addAll(rankItemsIntoRows(trailingEls, diagram.relationships, shapeInRow, effectiveDirection))
+            }
         }
 
         val isHorizontal = effectiveDirection == Direction.LR || effectiveDirection == Direction.RL

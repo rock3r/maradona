@@ -235,6 +235,20 @@ class C4LayoutTest {
         val nbRect = nlrLayout.boundaries.first { it.boundary.id == "b" }.rect
         assertTrue(naRect.centerX < nbRect.centerX)
         assertTrue(nlrLayout.width > 0f && nlrLayout.height > 0f)
+
+        // Root element and root boundary connected by Rel_U(a, b) place boundary b above element a
+        val mixedRootDiag = C4Parser.parse(
+            """
+            C4Context
+              System(a, "A")
+              System_Boundary(b, "B") {}
+              Rel_U(a, b, "Above")
+            """.trimIndent(),
+        )
+        val mrLayout = C4Layout.layout(mixedRootDiag)
+        val mrA = mrLayout.elements.single().rect
+        val mrB = mrLayout.boundaries.single().rect
+        assertTrue(mrB.centerY < mrA.centerY)
     }
 
     @Test
