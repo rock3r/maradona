@@ -63,6 +63,7 @@ class TreemapLayoutTest {
         assertEquals("120k", TreemapLayout.formatValue(123_456.7, ".2s"))
         assertEquals("123.5k", TreemapLayout.formatValue(123_456.7, ".4s"))
         assertEquals("1.2m", TreemapLayout.formatValue(0.0012, ".2s"))
+        assertTrue(TreemapLayout.formatValue(0.00001, ",") != "0")
         assertTrue(TreemapLayout.formatValue(1e20, ",").isNotEmpty())
     }
 

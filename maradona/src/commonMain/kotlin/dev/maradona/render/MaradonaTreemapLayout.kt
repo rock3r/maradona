@@ -371,7 +371,7 @@ private fun DrawScope.drawTreemapUnderlay(
         val customStroke = parseCssColor(sec.node.style?.stroke)
         val fillColor = customFill?.copy(alpha = 0.25f) ?: baseColor.copy(alpha = if (isDark) 0.22f else 0.16f)
         val strokeColor = customStroke ?: baseColor.copy(alpha = 0.65f)
-        val strokeW = (sec.node.style?.strokeWidth ?: max(1f, baseBorderW)) * density
+        val strokeW = (sec.node.style?.strokeWidth ?: baseBorderW) * density
         val cr = CornerRadius(4f * density, 4f * density)
 
         drawRoundRect(
@@ -399,7 +399,8 @@ private fun DrawScope.drawTreemapUnderlay(
         val customStroke = parseCssColor(leaf.node.style?.stroke)
         val fillColor = customFill?.copy(alpha = 0.42f) ?: baseColor.copy(alpha = if (isDark) 0.42f else 0.32f)
         val strokeColor = customStroke ?: baseColor
-        val strokeW = (leaf.node.style?.strokeWidth ?: max(1f, baseBorderW * 1.2f)) * density
+        val defaultLeafBorderW = if (baseBorderW <= 0f) 0f else max(1f, baseBorderW * 1.2f)
+        val strokeW = (leaf.node.style?.strokeWidth ?: defaultLeafBorderW) * density
         val cr = CornerRadius(3f * density, 3f * density)
 
         drawRoundRect(
