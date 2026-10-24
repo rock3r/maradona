@@ -231,6 +231,7 @@ class C4LayoutTest {
         val naRect = nlrLayout.boundaries.first { it.boundary.id == "a" }.rect
         val nbRect = nlrLayout.boundaries.first { it.boundary.id == "b" }.rect
         assertTrue(naRect.centerX < nbRect.centerX)
+        assertTrue(nlrLayout.width > 0f && nlrLayout.height > 0f)
     }
 
     @Test
