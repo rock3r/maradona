@@ -195,8 +195,7 @@ object TreemapLayout {
     private fun buildWeightedTree(node: TreemapNode): WeightedNode {
         if (node.children.isEmpty()) {
             val v = (node.value ?: 0.0).coerceAtLeast(0.0)
-            val w = if (v > 0.0) v.coerceAtMost(1e150) else 0.0
-            return WeightedNode(node = node, totalValue = v, weight = w, children = emptyList())
+            return WeightedNode(node = node, totalValue = v, weight = v, children = emptyList())
         }
         val childWeighted = node.children
             .map { buildWeightedTree(it) }
@@ -208,16 +207,10 @@ object TreemapLayout {
         } else {
             childWeighted.sumOf { it.totalValue }.coerceAtMost(Double.MAX_VALUE)
         }
-        val maxChildW = childWeighted.maxOfOrNull { it.weight } ?: 0.0
-        val sumWeight = if (maxChildW > 1e140) {
-            childWeighted.sumOf { it.weight / maxChildW } * 1e140
-        } else {
-            childWeighted.sumOf { it.weight }.coerceIn(0.0, 1e150)
-        }
         return WeightedNode(
             node = node,
             totalValue = sumVal,
-            weight = sumWeight,
+            weight = sumVal,
             children = childWeighted,
         )
     }
@@ -398,8 +391,24 @@ object TreemapLayout {
         }
         val scaled = v / divisor
         if (abs(scaled) >= 1e12) return "${formatLargeDouble(scaled)}$unit"
-        val dec = (sigDigits - 1).coerceIn(0, 4)
-        return "${formatTrimmedDecimals(scaled, false).let { if (dec == 0) scaled.roundToLong().toString() else it }}$unit"
+        val sig = sigDigits.coerceIn(1, 6)
+        val absScaled = abs(scaled)
+        val intDigits = when {
+            absScaled >= 100.0 -> 3
+            absScaled >= 10.0 -> 2
+            absScaled >= 1.0 -> 1
+            else -> 0
+        }
+        val formatted = if (sig < intDigits) {
+            val step = 10.0.pow(intDigits - sig)
+            val rounded = (scaled / step).roundToLong() * step.roundToLong()
+            rounded.toString()
+        } else {
+            val dec = (sig - intDigits).coerceIn(0, 6)
+            val raw = formatFixedDecimals(scaled, dec, false)
+            if (raw.contains('.')) raw.trimEnd('0').trimEnd('.') else raw
+        }
+        return "$formatted$unit"
     }
 
     private fun formatLargeDouble(v: Double): String {
