@@ -358,6 +358,32 @@ private val examples = linkedMapOf(
           app:R --> L:db
           app:B --> T:cache
     """.trimIndent(),
+    "Treemap" to """
+        treemap-beta
+        "Engineering"
+          "Platform"
+            "Compute": 45
+            "Storage": 28
+          "Product"
+            "Web App": 36
+            "Mobile": 24
+        "Operations"
+          "Security": 22
+          "Support": 15
+    """.trimIndent(),
+    "C4" to """
+        C4Context
+          title Internet Banking System
+          Person(customer, "Banking Customer", "A customer of the bank")
+          Enterprise_Boundary(bank, "BigBank plc") {
+            System(banking, "Internet Banking", "Provides account balances and payments")
+            SystemDb(core, "Mainframe Banking", "Core customer and account store")
+          }
+          System_Ext(mail, "E-mail System", "Microsoft Exchange")
+          Rel(customer, banking, "Views balances", "HTTPS")
+          Rel(banking, core, "Reads/Writes", "JDBC")
+          Rel(banking, mail, "Sends e-mail", "SMTP")
+    """.trimIndent(),
 )
 
 private class SampleState(

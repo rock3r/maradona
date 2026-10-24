@@ -927,4 +927,84 @@ class RenderScreenshotTest {
         assertTrue(iconTileBluePixels > 4_000, "Architecture icon tile #087EBF not rendered ($iconTileBluePixels px)")
         assertTrue(whiteIconStrokePixels > 300, "Architecture white vector icons not rendered ($whiteIconStrokePixels px)")
     }
+
+    @Test
+    fun treemapDiagram() {
+        val png = renderToPng(
+            "treemap",
+            """
+            treemap-beta
+            title Engineering Budget Allocation
+            "Engineering"
+              "Platform"
+                "Compute": 45
+                "Storage": 28
+              "Product"
+                "Web App": 36
+                "Mobile": 24
+            "Operations"
+              "Security": 22
+              "Support": 15
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 760,
+            height = 460,
+        )
+        val img = ImageIO.read(png)
+        var sectionBlueBorderPixels = 0
+        var sectionOrangeBorderPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x4E) <= 8 && abs(g - 0x79) <= 8 && abs(b - 0xA7) <= 8) sectionBlueBorderPixels++
+                if (abs(r - 0xF2) <= 8 && abs(g - 0x8E) <= 8 && abs(b - 0x2B) <= 8) sectionOrangeBorderPixels++
+            }
+        }
+        assertTrue(sectionBlueBorderPixels > 200, "Treemap blue section border #4E79A7 not rendered ($sectionBlueBorderPixels px)")
+        assertTrue(sectionOrangeBorderPixels > 100, "Treemap orange section border #F28E2B not rendered ($sectionOrangeBorderPixels px)")
+    }
+
+    @Test
+    fun c4Diagram() {
+        val png = renderToPng(
+            "c4",
+            """
+            C4Context
+              title Internet Banking System Context
+              Person(customer, "Banking Customer", "A customer of the bank")
+              Enterprise_Boundary(bank, "BigBank plc") {
+                System(banking, "Internet Banking", "Provides account balances and payments")
+                SystemDb(core, "Mainframe Banking", "Stores core customer accounts")
+              }
+              System_Ext(mail, "E-mail System", "Microsoft Exchange")
+              Rel(customer, banking, "Views balances", "HTTPS")
+              Rel(banking, core, "Reads/Writes", "JDBC")
+              Rel(banking, mail, "Sends e-mail", "SMTP")
+            """.trimIndent(),
+            MaradonaTheme.light(),
+            width = 860,
+            height = 560,
+        )
+        val img = ImageIO.read(png)
+        var personNavyPixels = 0
+        var systemBluePixels = 0
+        var externalGreyPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x08) <= 4 && abs(g - 0x42) <= 4 && abs(b - 0x7B) <= 4) personNavyPixels++
+                if (abs(r - 0x11) <= 4 && abs(g - 0x68) <= 4 && abs(b - 0xBD) <= 4) systemBluePixels++
+                if (abs(r - 0x99) <= 4 && abs(g - 0x99) <= 4 && abs(b - 0x99) <= 4) externalGreyPixels++
+            }
+        }
+        assertTrue(personNavyPixels > 1_500, "C4 Person navy fill #08427B not rendered ($personNavyPixels px)")
+        assertTrue(systemBluePixels > 3_000, "C4 System royal blue fill #1168BD not rendered ($systemBluePixels px)")
+        assertTrue(externalGreyPixels > 1_500, "C4 System_Ext grey fill #999999 not rendered ($externalGreyPixels px)")
+    }
 }

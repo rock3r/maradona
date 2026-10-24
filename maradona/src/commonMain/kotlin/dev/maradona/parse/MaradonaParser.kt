@@ -2,6 +2,7 @@ package dev.maradona.parse
 
 import dev.maradona.model.ArchitectureDiagram
 import dev.maradona.model.BlockDiagram
+import dev.maradona.model.C4Diagram
 import dev.maradona.model.ClassDiagram
 import dev.maradona.model.ErDiagram
 import dev.maradona.model.Flowchart
@@ -19,6 +20,7 @@ import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.TimelineDiagram
+import dev.maradona.model.TreemapDiagram
 import dev.maradona.model.XyChartDiagram
 
 /** Parsed representation of any Mermaid diagram type supported by Maradona. */
@@ -43,6 +45,8 @@ sealed interface MaradonaDiagramModel {
     data class RadarModel(val diagram: RadarDiagram) : MaradonaDiagramModel
     data class BlockModel(val diagram: BlockDiagram) : MaradonaDiagramModel
     data class ArchitectureModel(val diagram: ArchitectureDiagram) : MaradonaDiagramModel
+    data class TreemapModel(val diagram: TreemapDiagram) : MaradonaDiagramModel
+    data class C4Model(val diagram: C4Diagram) : MaradonaDiagramModel
 }
 
 /**
@@ -51,7 +55,8 @@ sealed interface MaradonaDiagramModel {
  * and dispatches to [FlowchartParser], [SequenceParser], [ClassParser], [StateParser],
  * [ErParser], [MindmapParser], [GanttParser], [PieParser], [GitGraphParser], [TimelineParser],
  * [JourneyParser], [QuadrantParser], [XyChartParser], [KanbanParser], [SankeyParser],
- * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], or [ArchitectureParser].
+ * [RequirementParser], [PacketParser], [RadarParser], [BlockParser], [ArchitectureParser],
+ * [TreemapParser], or [C4Parser].
  */
 object MaradonaParser {
 
@@ -102,6 +107,15 @@ object MaradonaParser {
             header == "architecture" || header.startsWith("architecture ") || header.startsWith("architecture\t") ||
                 header == "architecture-beta" || header.startsWith("architecture-beta ") || header.startsWith("architecture-beta\t") ->
                 MaradonaDiagramModel.ArchitectureModel(ArchitectureParser.parse(source))
+            header == "treemap" || header.startsWith("treemap ") || header.startsWith("treemap\t") ||
+                header == "treemap-beta" || header.startsWith("treemap-beta ") || header.startsWith("treemap-beta\t") ->
+                MaradonaDiagramModel.TreemapModel(TreemapParser.parse(source))
+            header == "c4context" || header.startsWith("c4context ") || header.startsWith("c4context\t") ||
+                header == "c4container" || header.startsWith("c4container ") || header.startsWith("c4container\t") ||
+                header == "c4component" || header.startsWith("c4component ") || header.startsWith("c4component\t") ||
+                header == "c4dynamic" || header.startsWith("c4dynamic ") || header.startsWith("c4dynamic\t") ||
+                header == "c4deployment" || header.startsWith("c4deployment ") || header.startsWith("c4deployment\t") ->
+                MaradonaDiagramModel.C4Model(C4Parser.parse(source))
             else ->
                 MaradonaDiagramModel.FlowchartModel(FlowchartParser.parse(source))
         }

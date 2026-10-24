@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.BlockDiagramLayout
+import dev.maradona.layout.C4DiagramLayout
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
@@ -55,6 +56,7 @@ import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.TimelineDiagramLayout
+import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.XyChartDiagramLayout
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
@@ -152,6 +154,10 @@ fun MaradonaDiagram(
     onBlockLayout: (BlockDiagramLayout) -> Unit = {},
     /** Reports the computed Architecture diagram layout (see [MaradonaArchitectureLayout.onLayout]). */
     onArchitectureLayout: (ArchitectureDiagramLayout) -> Unit = {},
+    /** Reports the computed Treemap diagram layout (see [MaradonaTreemapLayout.onLayout]). */
+    onTreemapLayout: (TreemapDiagramLayout) -> Unit = {},
+    /** Reports the computed C4 diagram layout (see [MaradonaC4Layout.onLayout]). */
+    onC4Layout: (C4DiagramLayout) -> Unit = {},
 ) {
     val parsed = remember(source) { runCatching { MaradonaParser.parse(source) } }
     var lastGood by remember { mutableStateOf<MaradonaDiagramModel?>(null) }
@@ -523,6 +529,22 @@ fun MaradonaDiagram(
                                 theme = theme,
                                 layoutOptions = layoutOptions,
                                 onLayout = onArchitectureLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.TreemapModel ->
+                            MaradonaTreemapLayout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onTreemapLayout,
+                                modifier = contentModifier,
+                            )
+                        is MaradonaDiagramModel.C4Model ->
+                            MaradonaC4Layout(
+                                diagram = model.diagram,
+                                theme = theme,
+                                layoutOptions = layoutOptions,
+                                onLayout = onC4Layout,
                                 modifier = contentModifier,
                             )
                     }
