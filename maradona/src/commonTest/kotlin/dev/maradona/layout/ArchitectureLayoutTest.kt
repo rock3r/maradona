@@ -243,5 +243,22 @@ class ArchitectureLayoutTest {
         val fdById = fdLayout.services.associateBy { it.service.id }
         assertTrue(fdById.getValue("b").bounds.bottom < fdById.getValue("c").bounds.y)
         assertTrue(fdById.getValue("c").bounds.bottom < fdById.getValue("d").bounds.y)
+
+        // Forward edge skipping an intervening aligned service (`align row a b c` and `a:R --> L:c`) detours below `b`.
+        val skipAligned = ArchitectureParser.parse(
+            """
+            architecture-beta
+              service a(server)[A]
+              service b(server)[B]
+              service c(server)[C]
+              align row a b c
+              a:R --> L:c
+            """.trimIndent(),
+        )
+        val saLayout = ArchitectureLayout.layout(skipAligned)
+        val saB = saLayout.services.first { it.service.id == "b" }
+        val saEdge = saLayout.edges.single()
+        assertEquals(6, saEdge.points.size)
+        assertTrue(saEdge.points[2].y > saB.bounds.bottom)
     }
 }

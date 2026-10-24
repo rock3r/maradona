@@ -348,11 +348,15 @@ object ArchitectureLayout {
                 groupById = rawGroupsById,
                 d = d,
             )
+            val obstacles = rawServices
+                .filter { it.service.id != edge.lhsId && it.service.id != edge.rhsId }
+                .map { it.bounds }
             val pts = routeArchitectureEdgePoints(
                 start = startPt,
                 startDir = edge.lhsDir,
                 end = endPt,
                 endDir = edge.rhsDir,
+                obstacles = obstacles,
                 detourClearance = iconSize * 0.72f + 16f * d,
                 d = d,
             )
@@ -951,6 +955,7 @@ object ArchitectureLayout {
         startDir: ArchitecturePortDir,
         end: DiagramPoint,
         endDir: ArchitecturePortDir,
+        obstacles: List<DiagramRect> = emptyList(),
         detourClearance: Float = 56f,
         d: Float = 1f,
     ): List<DiagramPoint> {
@@ -1040,15 +1045,22 @@ object ArchitectureLayout {
             if (startXAxis) {
                 val forward = (startDir == ArchitecturePortDir.R && end.x >= start.x) ||
                     (startDir == ArchitecturePortDir.L && end.x <= start.x)
-                if (forward) {
+                val minSegX = min(start.x, end.x) + 1f
+                val maxSegX = max(start.x, end.x) - 1f
+                val blocking = obstacles.filter { ob ->
+                    ob.x < maxSegX && ob.right > minSegX &&
+                        start.y >= ob.y - 2f && start.y <= ob.bottom + 2f
+                }
+                if (forward && blocking.isEmpty()) {
                     if (abs(start.y - end.y) < 1f) return listOf(start, end)
                     val midX = (start.x + end.x) / 2f
                     return listOf(start, DiagramPoint(midX, start.y), DiagramPoint(midX, end.y), end)
                 }
-                // Backward horizontal connection (e.g. b:R --> L:c when c is left of b): route via outward stubs and external lane.
+                // Backward or obstructed horizontal connection: route via outward stubs and external lane.
                 val sStubX = start.x + if (startDir == ArchitecturePortDir.R) stub else -stub
                 val eStubX = end.x + if (endDir == ArchitecturePortDir.R) stub else -stub
-                val detourY = max(start.y, end.y) + detourClearance
+                val blockingBottom = blocking.maxOfOrNull { it.bottom + 16f * d } ?: 0f
+                val detourY = max(max(start.y, end.y) + detourClearance, blockingBottom)
                 return listOf(
                     start,
                     DiagramPoint(sStubX, start.y),
@@ -1060,15 +1072,22 @@ object ArchitectureLayout {
             } else {
                 val forward = (startDir == ArchitecturePortDir.B && end.y >= start.y) ||
                     (startDir == ArchitecturePortDir.T && end.y <= start.y)
-                if (forward) {
+                val minSegY = min(start.y, end.y) + 1f
+                val maxSegY = max(start.y, end.y) - 1f
+                val blocking = obstacles.filter { ob ->
+                    ob.y < maxSegY && ob.bottom > minSegY &&
+                        start.x >= ob.x - 2f && start.x <= ob.right + 2f
+                }
+                if (forward && blocking.isEmpty()) {
                     if (abs(start.x - end.x) < 1f) return listOf(start, end)
                     val midY = (start.y + end.y) / 2f
                     return listOf(start, DiagramPoint(start.x, midY), DiagramPoint(end.x, midY), end)
                 }
-                // Backward vertical connection: route via outward stubs and external vertical lane.
+                // Backward or obstructed vertical connection: route via outward stubs and external vertical lane.
                 val sStubY = start.y + if (startDir == ArchitecturePortDir.B) stub else -stub
                 val eStubY = end.y + if (endDir == ArchitecturePortDir.B) stub else -stub
-                val detourX = max(start.x, end.x) + detourClearance
+                val blockingRight = blocking.maxOfOrNull { it.right + 16f * d } ?: 0f
+                val detourX = max(max(start.x, end.x) + detourClearance, blockingRight)
                 return listOf(
                     start,
                     DiagramPoint(start.x, sStubY),
