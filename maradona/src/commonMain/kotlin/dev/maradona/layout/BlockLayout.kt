@@ -212,8 +212,8 @@ object BlockLayout {
             val dst = byId[edge.to] ?: continue
             val srcCenter = DiagramPoint(src.rect.centerX, src.rect.centerY)
             val dstCenter = DiagramPoint(dst.rect.centerX, dst.rect.centerY)
-            val startPt = clipToBlockOutline(src.item.shape, src.rect, dstCenter, d)
-            val endPt = clipToBlockOutline(dst.item.shape, dst.rect, srcCenter, d)
+            val startPt = clipToBlockOutline(src.item, src.rect, dstCenter, d)
+            val endPt = clipToBlockOutline(dst.item, dst.rect, srcCenter, d)
             val midPt = DiagramPoint((startPt.x + endPt.x) / 2f, (startPt.y + endPt.y) / 2f)
             val lblRect = edge.label?.takeIf { it.isNotEmpty() }?.let { lbl ->
                 val sz = edgeLabelSize(lbl)
@@ -387,11 +387,12 @@ object BlockLayout {
     }
 
     private fun clipToBlockOutline(
-        shape: BlockShape,
+        item: BlockItem,
         rect: DiagramRect,
         towards: DiagramPoint,
         d: Float = 1f,
     ): DiagramPoint {
+        val shape = item.shape
         val cx = rect.centerX
         val cy = rect.centerY
         val dx = towards.x - cx
@@ -471,6 +472,7 @@ object BlockLayout {
                     DiagramPoint(rect.x + notch, cy),
                 )
             }
+            BlockShape.BlockArrow -> computeBlockArrowVertices(rect, item.arrowDirections, d)
             else -> null
         }
 
@@ -509,5 +511,90 @@ object BlockLayout {
             }
         }
         return if (bestT < Float.MAX_VALUE) DiagramPoint(cx + dx * bestT, cy + dy * bestT) else null
+    }
+
+    internal fun computeBlockArrowVertices(
+        rect: DiagramRect,
+        dirs: List<dev.maradona.model.BlockArrowDir>,
+        density: Float,
+    ): List<DiagramPoint> {
+        val effectiveDirs = if (dirs.isEmpty()) listOf(dev.maradona.model.BlockArrowDir.Right) else dirs
+        val hasRight = dev.maradona.model.BlockArrowDir.Right in effectiveDirs || dev.maradona.model.BlockArrowDir.X in effectiveDirs
+        val hasLeft = dev.maradona.model.BlockArrowDir.Left in effectiveDirs || dev.maradona.model.BlockArrowDir.X in effectiveDirs
+        val hasUp = dev.maradona.model.BlockArrowDir.Up in effectiveDirs || dev.maradona.model.BlockArrowDir.Y in effectiveDirs
+        val hasDown = dev.maradona.model.BlockArrowDir.Down in effectiveDirs || dev.maradona.model.BlockArrowDir.Y in effectiveDirs
+
+        val headW = min(15f * density, rect.width * 0.28f)
+        val headH = min(13f * density, rect.height * 0.28f)
+        val insetY = rect.height * 0.22f
+        val insetX = rect.width * 0.22f
+
+        val bodyLeft = if (hasLeft) rect.x + headW else rect.x
+        val bodyRight = if (hasRight) rect.right - headW else rect.right
+        val bodyTop = if (hasUp) rect.y + headH else rect.y
+        val bodyBottom = if (hasDown) rect.bottom - headH else rect.bottom
+
+        val hBandTop = if (hasLeft || hasRight) {
+            bodyTop + if (hasUp || hasDown) insetY * 0.65f else insetY
+        } else {
+            bodyTop
+        }
+        val hBandBottom = if (hasLeft || hasRight) {
+            bodyBottom - if (hasUp || hasDown) insetY * 0.65f else insetY
+        } else {
+            bodyBottom
+        }
+        val vBandLeft = if (hasUp || hasDown) {
+            bodyLeft + if (hasLeft || hasRight) insetX * 0.65f else insetX
+        } else {
+            bodyLeft
+        }
+        val vBandRight = if (hasUp || hasDown) {
+            bodyRight - if (hasLeft || hasRight) insetX * 0.65f else insetX
+        } else {
+            bodyRight
+        }
+
+        val wingPadX = if (hasLeft || hasRight) insetX * 0.2f else 0f
+        val wingPadY = if (hasUp || hasDown) insetY * 0.2f else 0f
+
+        val pts = mutableListOf<DiagramPoint>()
+        pts += DiagramPoint(vBandLeft, hBandTop)
+        if (hasUp) {
+            pts += DiagramPoint(vBandLeft, bodyTop)
+            pts += DiagramPoint(rect.x + wingPadX, bodyTop)
+            pts += DiagramPoint(rect.centerX, rect.y)
+            pts += DiagramPoint(rect.right - wingPadX, bodyTop)
+            pts += DiagramPoint(vBandRight, bodyTop)
+        }
+        pts += DiagramPoint(vBandRight, hBandTop)
+
+        if (hasRight) {
+            pts += DiagramPoint(bodyRight, hBandTop)
+            pts += DiagramPoint(bodyRight, rect.y + wingPadY)
+            pts += DiagramPoint(rect.right, rect.centerY)
+            pts += DiagramPoint(bodyRight, rect.bottom - wingPadY)
+            pts += DiagramPoint(bodyRight, hBandBottom)
+        }
+        pts += DiagramPoint(vBandRight, hBandBottom)
+
+        if (hasDown) {
+            pts += DiagramPoint(vBandRight, bodyBottom)
+            pts += DiagramPoint(rect.right - wingPadX, bodyBottom)
+            pts += DiagramPoint(rect.centerX, rect.bottom)
+            pts += DiagramPoint(rect.x + wingPadX, bodyBottom)
+            pts += DiagramPoint(vBandLeft, bodyBottom)
+        }
+        pts += DiagramPoint(vBandLeft, hBandBottom)
+
+        if (hasLeft) {
+            pts += DiagramPoint(bodyLeft, hBandBottom)
+            pts += DiagramPoint(bodyLeft, rect.bottom - wingPadY)
+            pts += DiagramPoint(rect.x, rect.centerY)
+            pts += DiagramPoint(bodyLeft, rect.y + wingPadY)
+            pts += DiagramPoint(bodyLeft, hBandTop)
+        }
+
+        return pts
     }
 }

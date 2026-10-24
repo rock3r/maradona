@@ -549,77 +549,12 @@ private fun DrawScope.drawSingleBlock(
     }
 }
 
-internal fun computeBlockArrowVertices(
-    rect: DiagramRect,
-    dirs: List<BlockArrowDir>,
-    density: Float,
-): List<DiagramPoint> {
-    val effectiveDirs = if (dirs.isEmpty()) listOf(BlockArrowDir.Right) else dirs
-    val hasRight = BlockArrowDir.Right in effectiveDirs || BlockArrowDir.X in effectiveDirs
-    val hasLeft = BlockArrowDir.Left in effectiveDirs || BlockArrowDir.X in effectiveDirs
-    val hasUp = BlockArrowDir.Up in effectiveDirs || BlockArrowDir.Y in effectiveDirs
-    val hasDown = BlockArrowDir.Down in effectiveDirs || BlockArrowDir.Y in effectiveDirs
-
-    val headW = min(15f * density, rect.width * 0.28f)
-    val headH = min(13f * density, rect.height * 0.28f)
-    val insetY = rect.height * 0.22f
-    val insetX = rect.width * 0.22f
-
-    val bodyLeft = if (hasLeft) rect.x + headW else rect.x
-    val bodyRight = if (hasRight) rect.right - headW else rect.right
-    val bodyTop = if (hasUp) rect.y + headH else rect.y
-    val bodyBottom = if (hasDown) rect.bottom - headH else rect.bottom
-
-    val pts = mutableListOf<DiagramPoint>()
-    // Top edge (left to right)
-    pts += DiagramPoint(bodyLeft, bodyTop + if (hasLeft || hasRight) insetY else 0f)
-    if (hasUp) {
-        pts += DiagramPoint(rect.x + insetX, bodyTop + if (hasLeft || hasRight) insetY else 0f)
-        pts += DiagramPoint(rect.x + insetX, bodyTop)
-        pts += DiagramPoint(rect.x, bodyTop)
-        pts += DiagramPoint(rect.centerX, rect.y)
-        pts += DiagramPoint(rect.right, bodyTop)
-        pts += DiagramPoint(rect.right - insetX, bodyTop)
-        pts += DiagramPoint(rect.right - insetX, bodyTop + if (hasLeft || hasRight) insetY else 0f)
-    }
-    pts += DiagramPoint(bodyRight, bodyTop + if (hasLeft || hasRight) insetY else 0f)
-
-    // Right edge (top to bottom)
-    if (hasRight) {
-        pts += DiagramPoint(bodyRight, rect.y)
-        pts += DiagramPoint(rect.right, rect.centerY)
-        pts += DiagramPoint(bodyRight, rect.bottom)
-    }
-    pts += DiagramPoint(bodyRight, bodyBottom - if (hasLeft || hasRight) insetY else 0f)
-
-    // Bottom edge (right to left)
-    if (hasDown) {
-        pts += DiagramPoint(rect.right - insetX, bodyBottom - if (hasLeft || hasRight) insetY else 0f)
-        pts += DiagramPoint(rect.right - insetX, bodyBottom)
-        pts += DiagramPoint(rect.right, bodyBottom)
-        pts += DiagramPoint(rect.centerX, rect.bottom)
-        pts += DiagramPoint(rect.x, bodyBottom)
-        pts += DiagramPoint(rect.x + insetX, bodyBottom)
-        pts += DiagramPoint(rect.x + insetX, bodyBottom - if (hasLeft || hasRight) insetY else 0f)
-    }
-    pts += DiagramPoint(bodyLeft, bodyBottom - if (hasLeft || hasRight) insetY else 0f)
-
-    // Left edge (bottom to top)
-    if (hasLeft) {
-        pts += DiagramPoint(bodyLeft, rect.bottom)
-        pts += DiagramPoint(rect.x, rect.centerY)
-        pts += DiagramPoint(bodyLeft, rect.y)
-    }
-
-    return pts
-}
-
 private fun buildBlockArrowPath(
     rect: DiagramRect,
     dirs: List<BlockArrowDir>,
     density: Float,
 ): Path {
-    val pts = computeBlockArrowVertices(rect, dirs, density)
+    val pts = BlockLayout.computeBlockArrowVertices(rect, dirs, density)
     return Path().apply {
         if (pts.isNotEmpty()) {
             moveTo(pts[0].x, pts[0].y)
