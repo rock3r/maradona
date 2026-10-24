@@ -144,5 +144,20 @@ class ArchitectureLayoutTest {
             foById.getValue("b").iconRect.centerY,
             0.5f,
         )
+
+        // A group with a very wide title does not expand over neighboring ungrouped services.
+        val wideGroupTitle = ArchitectureParser.parse(
+            """
+            architecture-beta
+              group g(cloud)[This Is A Very Long Forty Character Group Header Title]
+              service a(server) in g
+              service outside(server)[Outside]
+              a:R -- L:outside
+            """.trimIndent(),
+        )
+        val wgLayout = ArchitectureLayout.layout(wideGroupTitle)
+        val wgOut = wgLayout.services.first { it.service.id == "outside" }
+        val wgGrp = wgLayout.groups.single().rect
+        assertTrue(wgOut.bounds.x > wgGrp.right)
     }
 }

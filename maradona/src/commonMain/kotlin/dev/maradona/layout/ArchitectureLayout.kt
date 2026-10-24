@@ -126,13 +126,25 @@ object ArchitectureLayout {
             }
         }
 
-        // Add extra spacing when edges carry labels or cross group boundaries.
+        // Add extra spacing when edges carry labels or cross group boundaries, or when group headers are wide.
         val maxEdgeLblW = diagram.edges.mapNotNull { it.title?.takeIf { t -> t.isNotBlank() } }
             .maxOfOrNull { edgeLabelSize(it).width + 24f * d } ?: 0f
         val hasGroups = diagram.groups.isNotEmpty()
         val extraGroupGap = if (hasGroups) groupPad * 2.2f + 22f * d else 0f
+        var maxGroupHeaderW = 0f
+        for (grp in diagram.groups) {
+            val lblText = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
+            val lblSz = groupLabelSize(grp.id, lblText)
+            val hasIcon = !grp.icon.isNullOrBlank()
+            val headerW = (if (hasIcon) 24f * d else 0f) + lblSz.width + 16f * d
+            maxGroupHeaderW = max(maxGroupHeaderW, headerW)
+        }
 
-        val pitchX = max(maxServiceW + nodeSpacing + extraGroupGap, iconSize + maxEdgeLblW)
+        val pitchX = maxOf(
+            maxServiceW + nodeSpacing + extraGroupGap,
+            iconSize + maxEdgeLblW,
+            if (hasGroups) maxGroupHeaderW + nodeSpacing + extraGroupGap else 0f,
+        )
         val pitchY = maxServiceH + nodeSpacing + extraGroupGap
 
         // Compute initial unshifted node centers from grid coordinates.
