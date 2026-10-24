@@ -612,10 +612,16 @@ object C4Layout {
                 DiagramSize(w, h)
             }
         }
-        val bndRowSizes = bndRows.map { row ->
-            val w = row.sumOf { allocW(it).toDouble() }.toFloat() + max(0, row.size - 1) * bndGapX
-            val h = row.maxOfOrNull { it.height } ?: 0f
-            DiagramSize(w, h)
+        val bndBandSizes = bndRows.map { band ->
+            if (!isHorizontal) {
+                val w = band.sumOf { allocW(it).toDouble() }.toFloat() + max(0, band.size - 1) * bndGapX
+                val h = band.maxOfOrNull { it.height } ?: 0f
+                DiagramSize(w, h)
+            } else {
+                val w = band.maxOfOrNull { allocW(it) } ?: 0f
+                val h = band.sumOf { it.height.toDouble() }.toFloat() + max(0, band.size - 1) * bndGapY
+                DiagramSize(w, h)
+            }
         }
 
         val elTotalW = if (!isHorizontal) {
@@ -629,10 +635,18 @@ object C4Layout {
             elBandSizes.maxOfOrNull { it.height } ?: 0f
         }
 
-        val maxRowW = max(
-            elTotalW,
-            bndRowSizes.maxOfOrNull { it.width } ?: 0f,
-        )
+        val bndTotalW = if (!isHorizontal) {
+            bndBandSizes.maxOfOrNull { it.width } ?: 0f
+        } else {
+            bndBandSizes.sumOf { it.width.toDouble() }.toFloat() + max(0, bndBandSizes.size - 1) * bndGapX
+        }
+        val bndTotalH = if (!isHorizontal) {
+            bndBandSizes.sumOf { it.height.toDouble() }.toFloat() + max(0, bndBandSizes.size - 1) * bndGapY
+        } else {
+            bndBandSizes.maxOfOrNull { it.height } ?: 0f
+        }
+
+        val maxRowW = max(elTotalW, bndTotalW)
         val innerW = max(maxRowW, node.headerSize.width + 16f * d)
         val totalW = max(200f * d, innerW + bndPadX * 2f)
 
@@ -667,15 +681,32 @@ object C4Layout {
             }
         }
 
-        for ((rIdx, row) in bndRows.withIndex()) {
-            val rSize = bndRowSizes[rIdx]
-            var curX = bndPadX + (innerW - rSize.width) / 2f
-            for (childB in row) {
-                val bY = curY + (rSize.height - childB.height) / 2f
-                offsets[childB.id] = DiagramPoint(curX, bY)
-                curX += allocW(childB) + bndGapX
+        if (bndRows.isNotEmpty()) {
+            if (!isHorizontal) {
+                for ((rIdx, row) in bndRows.withIndex()) {
+                    val rSize = bndBandSizes[rIdx]
+                    var curX = bndPadX + (innerW - rSize.width) / 2f
+                    for (childB in row) {
+                        val bY = curY + (rSize.height - childB.height) / 2f
+                        offsets[childB.id] = DiagramPoint(curX, bY)
+                        curX += allocW(childB) + bndGapX
+                    }
+                    curY += rSize.height + bndGapY
+                }
+            } else {
+                var curX = bndPadX + (innerW - bndTotalW) / 2f
+                for ((rIdx, band) in bndRows.withIndex()) {
+                    val bSize = bndBandSizes[rIdx]
+                    var itemY = curY + (bndTotalH - bSize.height) / 2f
+                    for (childB in band) {
+                        val bX = curX + (bSize.width - allocW(childB)) / 2f
+                        offsets[childB.id] = DiagramPoint(bX, itemY)
+                        itemY += childB.height + bndGapY
+                    }
+                    curX += bSize.width + bndGapX
+                }
+                curY += bndTotalH + bndGapY
             }
-            curY += rSize.height + bndGapY
         }
 
         val contentBottom = if (elBands.isEmpty() && bndRows.isEmpty()) {

@@ -210,6 +210,27 @@ class C4LayoutTest {
         val b1Rect = bndRelLayout.boundaries.first { it.boundary.id == "b1" }.rect
         val b2Rect = bndRelLayout.boundaries.first { it.boundary.id == "b2" }.rect
         assertTrue(b1Rect.centerY < b2Rect.centerY)
+
+        // Nested boundaries under direction LR with Rel_R(a, b) place b to the right of a
+        val nestedLrDiag = C4Parser.parse(
+            """
+            C4Deployment
+              direction LR
+              Deployment_Node(outer, "Outer") {
+                Deployment_Node(a, "Node A") {
+                  Container(c1, "C1")
+                }
+                Deployment_Node(b, "Node B") {
+                  Container(c2, "C2")
+                }
+              }
+              Rel_R(a, b, "Calls")
+            """.trimIndent(),
+        )
+        val nlrLayout = C4Layout.layout(nestedLrDiag)
+        val naRect = nlrLayout.boundaries.first { it.boundary.id == "a" }.rect
+        val nbRect = nlrLayout.boundaries.first { it.boundary.id == "b" }.rect
+        assertTrue(naRect.centerX < nbRect.centerX)
     }
 
     @Test
