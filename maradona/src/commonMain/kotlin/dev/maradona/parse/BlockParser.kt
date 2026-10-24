@@ -749,7 +749,7 @@ object BlockParser {
                     break
                 }
                 // Stop if an edge operator starts at `pos` (`-->`, `---`, `==>`, `===`, `-.->`, `-.-`, `-- `, `== `, `-. `)
-                if ((c == '-' || c == '=' || c == 'o' || c == 'x') && peekEdgeOpAt(pos) != null) {
+                if ((c == '-' || c == '=' || c == '<') && peekEdgeOpAt(pos) != null) {
                     if (pos > start) break
                 }
                 pos++
@@ -915,7 +915,7 @@ object BlockParser {
             while (pos < text.length) {
                 val c = text[pos]
                 if (c.isWhitespace() || c == ';' || c == ':' || c == '~') break
-                if ((c == '-' || c == '=' || c == 'o' || c == 'x' || c == '<') && peekEdgeOpAt(pos) != null) {
+                if ((c == '-' || c == '=' || c == '<') && peekEdgeOpAt(pos) != null) {
                     break
                 }
                 pos++

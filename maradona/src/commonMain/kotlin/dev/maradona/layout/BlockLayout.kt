@@ -207,6 +207,8 @@ object BlockLayout {
 
         val positionedEdges = mutableListOf<PositionedBlockEdge>()
         val selfLoopCounts = HashMap<String, Int>()
+        var minEdgeX = Float.POSITIVE_INFINITY
+        var minEdgeY = Float.POSITIVE_INFINITY
         var maxEdgeRight = 0f
         var maxEdgeBottom = 0f
         for (edge in diagram.edges) {
@@ -241,10 +243,14 @@ object BlockLayout {
                     )
                 }
                 for (p in pts) {
+                    if (p.x < minEdgeX) minEdgeX = p.x
+                    if (p.y < minEdgeY) minEdgeY = p.y
                     if (p.x > maxEdgeRight) maxEdgeRight = p.x
                     if (p.y > maxEdgeBottom) maxEdgeBottom = p.y
                 }
                 if (lblRect != null) {
+                    if (lblRect.x < minEdgeX) minEdgeX = lblRect.x
+                    if (lblRect.y < minEdgeY) minEdgeY = lblRect.y
                     if (lblRect.right > maxEdgeRight) maxEdgeRight = lblRect.right
                     if (lblRect.bottom > maxEdgeBottom) maxEdgeBottom = lblRect.bottom
                 }
@@ -272,6 +278,8 @@ object BlockLayout {
                 )
             }
             if (lblRect != null) {
+                if (lblRect.x < minEdgeX) minEdgeX = lblRect.x
+                if (lblRect.y < minEdgeY) minEdgeY = lblRect.y
                 if (lblRect.right > maxEdgeRight) maxEdgeRight = lblRect.right
                 if (lblRect.bottom > maxEdgeBottom) maxEdgeBottom = lblRect.bottom
             }
@@ -282,15 +290,47 @@ object BlockLayout {
             )
         }
 
-        val finalWidth = max(totalWidth, maxEdgeRight + margin)
-        val finalHeight = max(totalHeight, maxEdgeBottom + margin)
+        val shiftX = if (minEdgeX.isFinite() && minEdgeX < margin) margin - minEdgeX else 0f
+        val shiftY = if (minEdgeY.isFinite() && minEdgeY < margin) margin - minEdgeY else 0f
+
+        val shiftedBlocks = if (shiftX == 0f && shiftY == 0f) {
+            positionedBlocks
+        } else {
+            positionedBlocks.map { pb ->
+                pb.copy(
+                    rect = pb.rect.copy(x = pb.rect.x + shiftX, y = pb.rect.y + shiftY),
+                    labelRect = pb.labelRect?.let { lr -> lr.copy(x = lr.x + shiftX, y = lr.y + shiftY) },
+                )
+            }
+        }
+        val shiftedEdges = if (shiftX == 0f && shiftY == 0f) {
+            positionedEdges
+        } else {
+            positionedEdges.map { pe ->
+                pe.copy(
+                    points = pe.points.map { pt -> DiagramPoint(pt.x + shiftX, pt.y + shiftY) },
+                    labelRect = pe.labelRect?.let { lr -> lr.copy(x = lr.x + shiftX, y = lr.y + shiftY) },
+                )
+            }
+        }
+
+        val finalWidth = max(totalWidth + shiftX, maxEdgeRight + shiftX + margin)
+        val finalHeight = max(totalHeight + shiftY, maxEdgeBottom + shiftY + margin)
+        val shiftedTitleRect = titleRect?.let { tr ->
+            DiagramRect(
+                x = (finalWidth - tr.width) / 2f,
+                y = tr.y,
+                width = tr.width,
+                height = tr.height,
+            )
+        }
 
         return BlockDiagramLayout(
             width = finalWidth,
             height = finalHeight,
-            blocks = positionedBlocks,
-            edges = positionedEdges,
-            titleRect = titleRect,
+            blocks = shiftedBlocks,
+            edges = shiftedEdges,
+            titleRect = shiftedTitleRect,
         )
     }
 

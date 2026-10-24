@@ -91,5 +91,20 @@ class BlockLayoutTest {
         assertTrue(selfEdge.points[1].x > b.rect.right)
         assertTrue(selfEdge.labelRect!!.x > b.rect.right)
         assertTrue(selfEdge.labelRect.right <= layout.width)
+
+        // Wide edge label on a vertical connection shifts content right so labelRect.x >= 0 and labelRect.right <= width.
+        val wideEdgeDiagram = BlockParser.parse(
+            """
+            block
+              columns 1
+              A
+              B
+              A -- "This is a very long edge label that should not leave the canvas" --> B
+            """.trimIndent(),
+        )
+        val wideLayout = BlockLayout.layout(wideEdgeDiagram)
+        val wideEdgeLbl = wideLayout.edges.single().labelRect!!
+        assertTrue(wideEdgeLbl.x >= 0f)
+        assertTrue(wideEdgeLbl.right <= wideLayout.width)
     }
 }

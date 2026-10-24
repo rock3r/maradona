@@ -148,11 +148,11 @@ class BlockParserTest {
               end
               style root fill:#dbeafe; afterStyle["After Style"]:::my-class
               classDef my-class stroke:#2563eb
-              class root hot; root --> afterStyle
+              class root hot; foo-->afterStyle
             """.trimIndent(),
         )
 
-        assertEquals(3, diagram.children.size)
+        assertEquals(4, diagram.children.size)
         val rootNode = diagram.children[0]
         assertEquals("root", rootNode.id)
         assertEquals("Root Node", rootNode.label)
@@ -170,9 +170,13 @@ class BlockParserTest {
         assertEquals(listOf("default", "my-class"), afterStyle.classes)
         assertEquals("#2563eb", afterStyle.style?.stroke)
 
+        val fooNode = diagram.children[3]
+        assertEquals("foo", fooNode.id)
+
         val edge = diagram.edges.single()
-        assertEquals("root", edge.from)
+        assertEquals("foo", edge.from)
         assertEquals("afterStyle", edge.to)
+        assertEquals(dev.maradona.model.BlockArrowHead.None, edge.startHead)
     }
 
     @Test
