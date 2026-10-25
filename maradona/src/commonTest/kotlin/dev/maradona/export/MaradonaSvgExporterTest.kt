@@ -67,8 +67,195 @@ class MaradonaSvgExporterTest {
         assertTrue(textTagCount >= 3, "Expected long flowchart label with oversized second token to wrap into at least 3 <text> lines, got $textTagCount")
 
         assertFailsWith<UnsupportedOperationException> {
-            MaradonaSvgExporter.exportToSvg("sequenceDiagram\n    Alice->>Bob: Hi")
+            MaradonaSvgExporter.exportToSvg("pie\n    \"A\" : 50")
         }
+    }
+
+    @Test
+    fun exportsSequenceClassStateErRequirementC4ArchitectureAndZenUmlToSvg() {
+        // 1. Sequence
+        val seqSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            sequenceDiagram
+                autonumber
+                box rgb(224, 242, 254) Client Tier
+                    actor User
+                    participant Web as Web App
+                end
+                participant API as Auth API
+                links Web: {"Dashboard": "https://app.example.com"}
+                rect rgb(241, 245, 249)
+                    User->>+Web: Open Login<br/>Page
+                    Web->>Web: Validate input
+                end
+                alt Valid credentials
+                    Web->>+API: POST /login
+                    API-->>-Web: 200 OK (JWT)
+                else Invalid credentials
+                    API--xWeb: 401 Unauthorized
+                end
+                Note over User,Web: Session established
+            """.trimIndent(),
+        )
+        assertTrue(seqSvg.contains("Client Tier"), "Expected sequence box group label")
+        assertTrue(seqSvg.contains("class=\"participant\" data-id=\"User\""), "Expected Actor User in SVG")
+        assertTrue(seqSvg.contains("<a href=\"https://app.example.com\">"), "Expected participant link in SVG")
+        assertTrue(seqSvg.contains(">alt</text>"), "Expected alt block pentagon tag")
+        assertTrue(seqSvg.contains("[Valid credentials]"), "Expected alt condition")
+        assertTrue(seqSvg.contains("[Invalid credentials]"), "Expected else divider condition")
+        assertTrue(seqSvg.contains(">1. Open Login</text>") && seqSvg.contains(">Page</text>"), "Expected multiline message label")
+        assertTrue(seqSvg.contains("data-marker=\"cross\""), "Expected -x cross marker")
+        assertTrue(seqSvg.contains("Session established"), "Expected sequence note")
+
+        // 2. Class
+        val classSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            classDiagram
+                namespace Domain {
+                    class Order {
+                        <<Aggregate>>
+                        +String id$
+                        +process()* void
+                    }
+                    class LineItem {
+                        +int qty
+                    }
+                }
+                Order "1" *-- "many" LineItem : contains
+                Order <|-- PriorityOrder
+                note for Order "Core root"
+                link Order "https://example.com/order" "Order docs" _blank
+            """.trimIndent(),
+        )
+        assertTrue(classSvg.contains("Domain"), "Expected namespace label")
+        assertTrue(classSvg.contains("«Aggregate»"), "Expected class stereotype")
+        assertTrue(classSvg.contains("text-decoration=\"underline\""), "Expected static member underline")
+        assertTrue(classSvg.contains("font-style=\"italic\""), "Expected abstract member italics")
+        assertTrue(classSvg.contains("data-marker=\"filled-diamond\""), "Expected composition marker")
+        assertTrue(classSvg.contains("data-marker=\"hollow-triangle\""), "Expected inheritance marker")
+        assertTrue(classSvg.contains("<a href=\"https://example.com/order\" target=\"_blank\">"), "Expected class link")
+        assertTrue(classSvg.contains("Core root"), "Expected class note")
+
+        // 3. State
+        val stateSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            stateDiagram-v2
+                [*] --> Active
+                state Active {
+                    [*] --> Running
+                    --
+                    [*] --> Monitoring
+                }
+                state Check <<choice>>
+                Active --> Check : verify
+                Check --> [*]
+            """.trimIndent(),
+        )
+        assertTrue(stateSvg.contains("class=\"composite-state\" data-id=\"Active\""), "Expected composite state")
+        assertTrue(stateSvg.contains("class=\"region-divider\""), "Expected concurrent region divider")
+        assertTrue(stateSvg.contains("data-kind=\"start\""), "Expected start pseudostate")
+        assertTrue(stateSvg.contains("data-kind=\"end\""), "Expected end pseudostate")
+        assertTrue(stateSvg.contains("data-kind=\"choice\""), "Expected choice diamond pseudostate")
+
+        // 4. ER
+        val erSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            erDiagram
+                CUSTOMER ||--o{ ORDER : places
+                CUSTOMER {
+                    string id PK "UUID"
+                    string email UK
+                }
+                ORDER {
+                    string id PK
+                }
+            """.trimIndent(),
+        )
+        assertTrue(erSvg.contains("class=\"er-entity\" data-id=\"CUSTOMER\""), "Expected CUSTOMER entity")
+        assertTrue(erSvg.contains("string id PK &quot;UUID&quot;"), "Expected CUSTOMER attribute row")
+        assertTrue(erSvg.contains("data-marker=\"er-exactly-one\""), "Expected || cardinality marker")
+        assertTrue(erSvg.contains("data-marker=\"er-zero-or-more\""), "Expected o{ cardinality marker")
+
+        // 5. Requirement
+        val reqSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            requirementDiagram
+                requirement auth_req {
+                    id: REQ-1
+                    text: Users must authenticate.
+                    risk: high
+                    verifymethod: test
+                }
+                element auth_svc {
+                    type: service
+                    docRef: https://docs.example.com/auth
+                }
+                auth_req - contains -> auth_svc
+            """.trimIndent(),
+        )
+        assertTrue(reqSvg.contains("&lt;&lt;Requirement&gt;&gt;"), "Expected Requirement stereotype")
+        assertTrue(reqSvg.contains("data-marker=\"contains-circle-cross\""), "Expected contains source marker")
+        assertTrue(reqSvg.contains("<a href=\"https://docs.example.com/auth\">"), "Expected Element docRef link")
+
+        // 6. C4
+        val c4Svg = MaradonaSvgExporter.exportToSvg(
+            """
+            C4Dynamic
+                title Checkout Dynamic Flow
+                Person(user, "Customer", "Web buyer")
+                System_Boundary(b1, "Commerce") {
+                    Container(web, "Storefront", "Kotlin/Compose", "UI", ${'$'}link="https://shop.example.com")
+                    ContainerDb(db, "Orders DB", "PostgreSQL", "Stores orders")
+                }
+                System_Ext(pay, "Stripe", "Payments")
+                RelIndex(1, user, web, "Submits order", "HTTPS")
+                RelIndex(2, web, db, "Writes row", "JDBC")
+                RelIndex(3, web, pay, "Charges card", "REST")
+            """.trimIndent(),
+        )
+        assertTrue(c4Svg.contains("data-kind=\"person\""), "Expected C4 person element")
+        assertTrue(c4Svg.contains("data-kind=\"container_db\""), "Expected C4 database element")
+        assertTrue(c4Svg.contains("data-kind=\"system_ext\""), "Expected C4 external system element")
+        assertTrue(c4Svg.contains("1: Submits order"), "Expected RelIndex prefix in C4 SVG")
+        assertTrue(c4Svg.contains("<a href=\"https://shop.example.com\">"), "Expected C4 element link")
+
+        // 7. Architecture
+        val archSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            architecture-beta
+                group cloud(cloud)[Production Cloud]
+                service gw(internet)[API Gateway] in cloud
+                service db(database)[Orders DB] in cloud
+                junction j1 in cloud
+                gw:R --> L:j1
+                j1:R --> L:db
+            """.trimIndent(),
+        )
+        assertTrue(archSvg.contains("class=\"arch-group\""), "Expected architecture group")
+        assertTrue(archSvg.contains("class=\"arch-service\" data-id=\"gw\""), "Expected architecture service")
+        assertTrue(archSvg.contains("class=\"arch-junction\""), "Expected architecture junction")
+
+        // 8. ZenUML
+        val zenSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            zenuml
+                title Order Service
+                @Actor Client
+                @Database OrderDb
+                // Validate incoming request
+                Client->OrderDb.findOrder(id) {
+                    if (found) {
+                        return order
+                    } else {
+                        return null
+                    }
+                }
+            """.trimIndent(),
+        )
+        assertTrue(zenSvg.contains("«Actor»"), "Expected ZenUML Actor stereotype")
+        assertTrue(zenSvg.contains("«Database»"), "Expected ZenUML Database stereotype")
+        assertTrue(zenSvg.contains("Validate incoming request"), "Expected ZenUML comment note")
+        assertTrue(zenSvg.contains("findOrder(id)"), "Expected ZenUML message")
     }
 
     @Test
