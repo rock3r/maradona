@@ -173,6 +173,32 @@ class MaradonaSvgExporterTest {
         )
         assertTrue(quadrantSvg.contains("class=\"quadrant-point\""), "Expected quadrant data point circle in SVG")
 
+        val ganttSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            gantt
+                title Release Plan
+                dateFormat YYYY-MM-DD
+                section Phase 1
+                Design :a1, 2026-01-01, 2d
+                Ship :milestone, m1, 2026-01-03, 0d
+            """.trimIndent(),
+        )
+        assertTrue(ganttSvg.contains("Phase 1") && ganttSvg.contains("Design") && ganttSvg.contains("Ship"), "Expected Gantt section and task labels in SVG")
+
+        val gitHiddenLabelsSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            ---
+            config:
+              gitGraph:
+                showCommitLabel: false
+            ---
+            gitGraph
+                commit id: "secret-sha" tag: "v1.0"
+            """.trimIndent(),
+        )
+        assertFalse(gitHiddenLabelsSvg.contains("secret-sha"), "Expected showCommitLabel: false to omit commit ID in SVG")
+        assertTrue(gitHiddenLabelsSvg.contains("v1.0"), "Expected commit tag v1.0 in SVG")
+
         val xySvg = MaradonaSvgExporter.exportToSvg(
             """
             xychart-beta

@@ -347,19 +347,32 @@ object MaradonaSvgExporter {
                     theme = theme,
                     title = d.title to layout.titleRect,
                     containers = layout.sections.map { s ->
-                        SvgBox(s.rect, s.name, theme.seriesFill(s.sectionIndex.coerceAtLeast(0)), theme.subgraphBorder, theme.nodeText)
+                        SvgBox(s.rect, "", theme.seriesFill(s.sectionIndex.coerceAtLeast(0)), theme.subgraphBorder, theme.nodeText)
                     },
-                    boxes = layout.tasks.map { pt ->
+                    boxes = layout.sections.map { s ->
+                        SvgBox(s.labelRect, s.name, Color.Transparent, Color.Transparent, theme.nodeText)
+                    } + layout.tasks.flatMap { pt ->
                         val idx = pt.sectionIndex.coerceAtLeast(0)
-                        SvgBox(
+                        val barBox = SvgBox(
                             rect = pt.barRect,
-                            label = pt.task.label,
+                            label = "",
                             fill = theme.seriesFill(idx),
                             stroke = theme.seriesColor(idx),
                             textColor = theme.nodeText,
                             url = pt.task.action?.url,
                             tooltip = pt.task.action?.tooltip,
+                            shape = if (pt.task.isMilestone) NodeShape.Diamond else NodeShape.RoundedRect,
                         )
+                        val lblBox = SvgBox(
+                            rect = pt.labelRect,
+                            label = pt.task.label,
+                            fill = Color.Transparent,
+                            stroke = Color.Transparent,
+                            textColor = theme.nodeText,
+                            url = pt.task.action?.url,
+                            tooltip = pt.task.action?.tooltip,
+                        )
+                        listOf(barBox, lblBox)
                     } + layout.ticks.map { t ->
                         SvgBox(t.bottomLabelRect, t.label, Color.Transparent, Color.Transparent, theme.edgeLabelText)
                     } + layout.verticalMarkers.map { vm ->
@@ -418,8 +431,11 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.legendItems.map { li ->
-                        SvgBox(li.labelRect, li.displayText, theme.seriesFill(li.index), theme.seriesColor(li.index), theme.nodeText)
+                    boxes = layout.legendItems.flatMap { li ->
+                        listOf(
+                            SvgBox(li.swatchRect, "", theme.seriesColor(li.index), theme.seriesColor(li.index), theme.nodeText),
+                            SvgBox(li.labelRect, li.displayText, Color.Transparent, Color.Transparent, theme.nodeText),
+                        )
                     },
                     extraSvgElements = customElements,
                 )
@@ -436,7 +452,10 @@ object MaradonaSvgExporter {
                         b.labelRect?.let { SvgBox(it, b.branch.name, theme.seriesFill(b.laneIndex), theme.seriesColor(b.laneIndex), theme.nodeText) }
                     } + layout.commits.flatMap { pc ->
                         listOfNotNull(
-                            SvgBox(pc.nodeRect, pc.commit.id, theme.seriesFill(pc.laneIndex), theme.seriesColor(pc.laneIndex), theme.nodeText),
+                            SvgBox(pc.nodeRect, "", theme.seriesFill(pc.laneIndex), theme.seriesColor(pc.laneIndex), theme.nodeText, shape = NodeShape.Circle),
+                            pc.commitLabelRect?.let { lr ->
+                                SvgBox(lr, pc.commit.id, theme.subgraphFill, Color.Transparent, theme.nodeText, rotationDeg = pc.commitLabelAngleDeg)
+                            },
                             pc.tagRect?.let { tr -> SvgBox(tr, pc.commit.tag.orEmpty(), theme.noteFill, theme.noteBorder, theme.noteText) },
                         )
                     },
@@ -607,8 +626,13 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.nodes.map { pn ->
-                        SvgBox(pn.rect, pn.labelText, theme.seriesColor(pn.nodeIndex), theme.nodeBorder, theme.nodeText)
+                    boxes = layout.nodes.flatMap { pn ->
+                        listOfNotNull(
+                            SvgBox(pn.rect, "", theme.seriesColor(pn.nodeIndex), theme.nodeBorder, theme.nodeText, shape = NodeShape.Rect),
+                            pn.labelText.takeIf { it.isNotBlank() }?.let { lbl ->
+                                SvgBox(pn.labelRect, lbl, Color.Transparent, Color.Transparent, theme.nodeText)
+                            },
+                        )
                     },
                     extraSvgElements = linkElements,
                 )
@@ -717,8 +741,17 @@ object MaradonaSvgExporter {
                     containers = layout.groups.map { pg ->
                         SvgBox(pg.rect, pg.group.title ?: pg.group.id, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
                     },
-                    boxes = layout.services.map { ps ->
-                        SvgBox(ps.iconRect, ps.service.title ?: ps.service.id, theme.accentBorder, theme.accentBorder, theme.accentText)
+                    boxes = layout.services.flatMap { ps ->
+                        val iconBadge = ps.service.iconText ?: ps.service.icon ?: ""
+                        val titleText = ps.service.title ?: ps.service.id
+                        listOfNotNull(
+                            SvgBox(ps.iconRect, iconBadge, theme.accentBorder, theme.accentBorder, theme.accentText),
+                            ps.labelRect?.let { lr ->
+                                SvgBox(lr, titleText, Color.Transparent, Color.Transparent, theme.nodeText)
+                            } ?: SvgBox(ps.iconRect, titleText, theme.accentBorder, theme.accentBorder, theme.accentText),
+                        )
+                    } + layout.junctions.map { pj ->
+                        SvgBox(pj.rect, "", theme.edge, theme.edge, theme.nodeText, shape = NodeShape.Circle)
                     },
                     lines = layout.edges.map { pe ->
                         SvgLine(
