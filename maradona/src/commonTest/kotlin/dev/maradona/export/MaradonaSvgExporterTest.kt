@@ -142,12 +142,18 @@ class MaradonaSvgExporterTest {
             stateDiagram-v2
                 state Check <<choice>>
                 [*] --> Check
-                Check --> Idle
-                Idle --> [*]
+                Check --> Active
+                state Active {
+                    [*] --> LaneA
+                    --
+                    [*] --> LaneB
+                }
+                Active --> [*]
             """.trimIndent(),
         )
         assertTrue(stateSvg.contains("<circle "), "Expected start/end circle pseudonodes in state SVG")
         assertTrue(stateSvg.contains("<polygon "), "Expected choice diamond polygon in state SVG")
+        assertTrue(stateSvg.contains("stroke-dasharray=\"5,4\""), "Expected concurrent region dashed divider in state SVG")
 
         val erSvg = MaradonaSvgExporter.exportToSvg(
             """

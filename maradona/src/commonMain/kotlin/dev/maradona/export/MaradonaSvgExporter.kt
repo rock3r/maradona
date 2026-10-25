@@ -197,7 +197,9 @@ object MaradonaSvgExporter {
                     } + layout.notes.map { n ->
                         SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
-                    lines = layout.relations.map { r ->
+                    lines = layout.notes.filter { it.connectorPoints.size >= 2 }.map { n ->
+                        SvgLine(n.connectorPoints, theme.noteBorder, true, null to null)
+                    } + layout.relations.map { r ->
                         SvgLine(
                             points = r.points,
                             color = theme.edge,
@@ -260,7 +262,18 @@ object MaradonaSvgExporter {
                     } + layout.notes.map { n ->
                         SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
-                    lines = layout.transitions.map { tr ->
+                    lines = layout.states.flatMap { cs ->
+                        cs.regionDividers.map { (start, end) ->
+                            SvgLine(
+                                points = listOf(start, end),
+                                color = theme.subgraphBorder,
+                                dashed = true,
+                                label = null to null,
+                            )
+                        }
+                    } + layout.notes.filter { it.connectorPoints.size >= 2 }.map { n ->
+                        SvgLine(n.connectorPoints, theme.noteBorder, true, null to null)
+                    } + layout.transitions.map { tr ->
                         SvgLine(
                             points = tr.points,
                             color = theme.edge,
