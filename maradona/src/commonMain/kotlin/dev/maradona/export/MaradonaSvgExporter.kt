@@ -589,7 +589,11 @@ object MaradonaSvgExporter {
                 sb.append("""    <line x1="${fmt(cx - span)}" y1="${fmt(armY)}" x2="${fmt(cx + span)}" y2="${fmt(armY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx - span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx + span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
-                appendMultilineText(sb, "    ", r.centerX, r.bottom - 8f, plainTextLabel(p.label).split('\n'), textHex, theme.nodeFontSize.value)
+                val actorLines = plainTextLabel(p.label).split('\n')
+                val actorFont = theme.nodeFontSize.value
+                val actorLineH = actorFont * 1.35f
+                val actorCenterY = r.bottom - 4f - actorFont * 0.35f - ((actorLines.size - 1) * actorLineH) / 2f
+                appendMultilineText(sb, "    ", r.centerX, actorCenterY, actorLines, textHex, actorFont)
             } else {
                 sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
                 appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(p.label).split('\n'), textHex, theme.nodeFontSize.value)
@@ -1527,7 +1531,10 @@ object MaradonaSvgExporter {
             }
             SvgMarker.Circle, SvgMarker.Lollipop -> {
                 val tag = if (marker == SvgMarker.Lollipop) "lollipop" else "circle"
-                sb.append("""  <circle class="edge-marker" data-marker="$tag" cx="${fmt(tip.x)}" cy="${fmt(tip.y)}" r="4.5" fill="$bgColor" stroke="$color" stroke-width="1.5"/>""").append('\n')
+                val rad = if (marker == SvgMarker.Lollipop) 6f else 4.5f
+                val cx = if (marker == SvgMarker.Lollipop) tip.x - cos(angle).toFloat() * rad else tip.x
+                val cy = if (marker == SvgMarker.Lollipop) tip.y - sin(angle).toFloat() * rad else tip.y
+                sb.append("""  <circle class="edge-marker" data-marker="$tag" cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad)}" fill="$bgColor" stroke="$color" stroke-width="1.5"/>""").append('\n')
             }
             SvgMarker.ContainsCircleCross -> {
                 val ux = -cos(angle).toFloat()

@@ -123,6 +123,7 @@ class MaradonaSvgExporterTest {
                 }
                 Order "1" *-- "many" LineItem : contains
                 Order <|-- PriorityOrder
+                Order ()-- OrderApi
                 note for Order "Core root"
                 link Order "https://example.com/order" "Order docs" _blank
             """.trimIndent(),
@@ -133,6 +134,7 @@ class MaradonaSvgExporterTest {
         assertTrue(classSvg.contains("font-style=\"italic\""), "Expected abstract member italics")
         assertTrue(classSvg.contains("data-marker=\"filled-diamond\""), "Expected composition marker")
         assertTrue(classSvg.contains("data-marker=\"hollow-triangle\""), "Expected inheritance marker")
+        assertTrue(classSvg.contains("data-marker=\"lollipop\""), "Expected lollipop marker")
         assertTrue(classSvg.contains("<a href=\"https://example.com/order\" target=\"_blank\">"), "Expected class link")
         assertTrue(classSvg.contains("Core root"), "Expected class note")
 
