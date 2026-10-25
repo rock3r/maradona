@@ -627,7 +627,12 @@ internal object NodeRefReader {
                 .replace(Regex("""(?i)</(u|ins|s|del|strike|sub|sup|code)\s*>""")) { "</${it.groupValues[1].lowercase()}>" }
                 .replace(Regex("""(?i)</?(?:span|div|p|font|small|mark)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "")
         }
+        val escapedTagGuard = "&\u200Blt;"
         text = text
+            .replace(
+                Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
+                escapedTagGuard,
+            )
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
             .replace("&lt;", "<").replace("#lt;", "<")

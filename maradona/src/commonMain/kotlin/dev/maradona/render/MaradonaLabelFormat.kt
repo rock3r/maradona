@@ -178,8 +178,8 @@ fun extractInlineImages(label: String): List<InlineImageSpec> =
 
 private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? {
     val attrMap = parseHtmlAttributes(match.groupValues[1])
-    val url = attrMap["src"]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val alt = attrMap["alt"]?.trim()?.takeIf { it.isNotEmpty() }
+    val url = attrMap["src"]?.replace("&\u200Blt;", "<")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val alt = attrMap["alt"]?.replace("&\u200Blt;", "<")?.trim()?.takeIf { it.isNotEmpty() }
         ?: url.substringAfterLast('/').substringBefore('?').ifEmpty { "image" }
     val w = attrMap["width"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 24f
     val h = attrMap["height"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: w
@@ -391,7 +391,7 @@ fun annotatedLabel(
 
     fun flush() {
         if (plain.isEmpty()) return
-        val text = plain.toString()
+        val text = plain.toString().replace("&\u200Blt;", "<")
         plain.clear()
         val st = currentStyle()
         if (st != null) {

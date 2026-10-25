@@ -129,8 +129,12 @@ class MaradonaLabelFormatTest {
             """
             flowchart TD
               A["<code title='x > 0'>cmd</code>"]
+              B["&lt;sub&gt;2&lt;/sub&gt; and &lt;img src='x.png'/&gt;"]
             """.trimIndent(),
         )
-        assertEquals("cmd", plainTextLabel(codeAttrChart.nodes.single().label))
+        assertEquals("cmd", plainTextLabel(codeAttrChart.nodes.first { it.id == "A" }.label))
+        val nodeBAnnotated = annotatedLabel(codeAttrChart.nodes.first { it.id == "B" }.label)
+        assertEquals("<sub>2</sub> and <img src='x.png'/>", nodeBAnnotated.text)
+        assertTrue(nodeBAnnotated.spanStyles.isEmpty())
     }
 }
