@@ -140,5 +140,8 @@ class MaradonaLabelFormatTest {
         val nodeCImgs = extractInlineImages(codeAttrChart.nodes.first { it.id == "C" }.label)
         assertEquals(1, nodeCImgs.size)
         assertEquals("It's ready", nodeCImgs[0].alt)
+
+        // Intraword double underscores like +__init__() stay literal while word-bounded __bold__ formats as bold.
+        assertEquals("+__init__() and bold", annotatedLabel("+__init__() and __bold__").text)
     }
 }

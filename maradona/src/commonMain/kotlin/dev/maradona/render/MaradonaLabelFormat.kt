@@ -459,7 +459,10 @@ fun annotatedLabel(
             prepared.startsWith("**", i) && (boldStar || prepared.indexOf("**", i + 2) >= 0) -> {
                 flush(); boldStar = !boldStar; i += 2
             }
-            prepared.startsWith("__", i) && (boldUnderscore || prepared.indexOf("__", i + 2) >= 0) -> {
+            prepared.startsWith("__", i) && (
+                (boldUnderscore && isClosingDoubleUnderscore(prepared, i)) ||
+                    (!boldUnderscore && isOpeningDoubleUnderscore(prepared, i))
+                ) -> {
                 flush(); boldUnderscore = !boldUnderscore; i += 2
             }
             prepared.startsWith("~~", i) && (strike || prepared.indexOf("~~", i + 2) >= 0) -> {
@@ -593,6 +596,23 @@ private fun transformOutsideCodeSpans(s: String, transform: (String) -> String):
     }
     flushNonCode()
     return out.toString()
+}
+
+private fun isOpeningDoubleUnderscore(s: String, at: Int): Boolean {
+    if (at + 2 >= s.length || s[at + 2].isWhitespace() || s[at + 2] == '_') return false
+    if (at > 0 && (s[at - 1].isLetterOrDigit() || s[at - 1] == '_' || s[at - 1] in "+-#~")) return false
+    var j = at + 2
+    while (j <= s.length - 2) {
+        if (s.startsWith("__", j) && isClosingDoubleUnderscore(s, j)) return true
+        j++
+    }
+    return false
+}
+
+private fun isClosingDoubleUnderscore(s: String, at: Int): Boolean {
+    if (at <= 0 || s[at - 1].isWhitespace() || s[at - 1] == '_') return false
+    if (at + 2 < s.length && (s[at + 2].isLetterOrDigit() || s[at + 2] == '_' || s[at + 2] == '(')) return false
+    return true
 }
 
 private fun hasClosingSingleStar(s: String, from: Int): Boolean {

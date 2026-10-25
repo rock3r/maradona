@@ -116,7 +116,7 @@ fun MaradonaClassLayout(
                 ) {
                     for (ann in c.annotations) {
                         BasicText(
-                            text = annotatedLabel("«$ann»", theme.monospaceFontFamily),
+                            text = "«$ann»",
                             style = TextStyle(
                                 color = textColor,
                                 fontFamily = theme.fontFamily,
@@ -222,7 +222,7 @@ fun MaradonaClassLayout(
                 }
                 if (!rel.fromCardinality.isNullOrBlank()) {
                     BasicText(
-                        text = annotatedLabel(rel.fromCardinality, theme.monospaceFontFamily),
+                        text = rel.fromCardinality,
                         modifier = Modifier
                             .layoutId("relfrom:$idx")
                             .padding(horizontal = 2.dp),
@@ -235,7 +235,7 @@ fun MaradonaClassLayout(
                 }
                 if (!rel.toCardinality.isNullOrBlank()) {
                     BasicText(
-                        text = annotatedLabel(rel.toCardinality, theme.monospaceFontFamily),
+                        text = rel.toCardinality,
                         modifier = Modifier
                             .layoutId("relto:$idx")
                             .padding(horizontal = 2.dp),
@@ -455,7 +455,7 @@ private fun MemberLine(
     theme: MaradonaTheme,
 ) {
     BasicText(
-        text = annotatedLabel(member.displayText, theme.monospaceFontFamily),
+        text = member.displayText,
         style = TextStyle(
             color = textColor,
             fontFamily = theme.fontFamily,
