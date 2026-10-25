@@ -45,8 +45,12 @@ import kotlin.math.roundToInt
 
 private class LayoutHolder {
     var layout: DiagramLayout? = null
+    var nodeSizes: Map<String, DiagramSize> = emptyMap()
+    var edgeLabelSizes: List<DiagramSize?> = emptyList()
     var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
     var lastAdaptedVertical: Boolean = false
+    var lastBoundedWidthPx: Int = Int.MAX_VALUE
     var visibleViewport: DiagramRect? = null
 }
 
@@ -137,22 +141,28 @@ fun MaradonaLayout(
     val textMeasurer = rememberTextMeasurer()
     val densityObj = LocalDensity.current
     val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
     val imageResolver = LocalMaradonaImageResolver.current
     val uriHandler = LocalUriHandler.current
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, holder.lastBoundedWidthPx)
 
-    // Pre-compute or reuse the layout at the current renderDensity so viewport-lazy
+    // Pre-compute or reuse the layout at the current renderDensity/fontScale so viewport-lazy
     // composition knows every node, edge label, and subgraph bounding box before
     // emitting child composables, and panning across a zoomed diagram does not
     // re-run Sugiyama/Dagre layout.
     val precomputedLayout = run {
         val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
         val cached = holder.layout
-        if (cached != null && abs(holder.lastDensity - renderDensity) < 1e-4f) {
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f
+        ) {
             val wantVertical = autoDirection &&
                 (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
                 layoutOptions.directionOverride == null &&
-                availableWidthPx in 1 until breakpointPx &&
-                cached.width > availableWidthPx
+                effectiveAvailableWidthPx in 1 until breakpointPx &&
+                cached.width > effectiveAvailableWidthPx
             if (wantVertical == holder.lastAdaptedVertical) {
                 cached
             } else {
@@ -161,15 +171,18 @@ fun MaradonaLayout(
                     theme = theme,
                     layoutOptions = layoutOptions,
                     autoDirection = autoDirection,
-                    availableWidthPx = availableWidthPx,
+                    availableWidthPx = effectiveAvailableWidthPx,
                     densityObj = densityObj,
                     textMeasurer = textMeasurer,
                     hasImageResolver = imageResolver != null,
-                ).also { (lyt, adapted) ->
-                    holder.layout = lyt
+                ).also { pre ->
+                    holder.layout = pre.layout
+                    holder.nodeSizes = pre.nodeSizes
+                    holder.edgeLabelSizes = pre.edgeLabelSizes
                     holder.lastDensity = renderDensity
-                    holder.lastAdaptedVertical = adapted
-                }.first
+                    holder.lastFontScale = renderFontScale
+                    holder.lastAdaptedVertical = pre.adaptedVertical
+                }.layout
             }
         } else {
             computePremeasuredFlowchartLayout(
@@ -177,15 +190,18 @@ fun MaradonaLayout(
                 theme = theme,
                 layoutOptions = layoutOptions,
                 autoDirection = autoDirection,
-                availableWidthPx = availableWidthPx,
+                availableWidthPx = effectiveAvailableWidthPx,
                 densityObj = densityObj,
                 textMeasurer = textMeasurer,
                 hasImageResolver = imageResolver != null,
-            ).also { (lyt, adapted) ->
-                holder.layout = lyt
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.nodeSizes = pre.nodeSizes
+                holder.edgeLabelSizes = pre.edgeLabelSizes
                 holder.lastDensity = renderDensity
-                holder.lastAdaptedVertical = adapted
-            }.first
+                holder.lastFontScale = renderFontScale
+                holder.lastAdaptedVertical = pre.adaptedVertical
+            }.layout
         }
     }
     val effectiveViewport = visibleViewport
@@ -299,7 +315,7 @@ fun MaradonaLayout(
                 )
             }
         },
-    ) { measurables, _ ->
+    ) { measurables, constraints ->
         val maxNodeWidth = 240.dp.roundToPx()
         val nodeConstraints = Constraints(maxWidth = maxNodeWidth)
         val nodePlaceables = HashMap<String, androidx.compose.ui.layout.Placeable>()
@@ -319,7 +335,38 @@ fun MaradonaLayout(
             }
         }
 
-        val result = precomputedLayout
+        val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        holder.lastBoundedWidthPx = boundedWidth
+        val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
+        val breakpoint = 640.dp.roundToPx()
+        var result = precomputedLayout
+        if (
+            autoDirection &&
+            (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
+            layoutOptions.directionOverride == null &&
+            !holder.lastAdaptedVertical &&
+            effectiveMaxWidth in 1 until breakpoint &&
+            result.width > effectiveMaxWidth
+        ) {
+            val scaledOptions = with(layoutOptions) {
+                copy(
+                    nodeGap = nodeGap * density,
+                    layerGap = layerGap * density,
+                    padding = padding * density,
+                    subgraphPaddingX = subgraphPaddingX * density,
+                    subgraphPaddingY = subgraphPaddingY * density,
+                    density = density,
+                    directionOverride = Direction.TB,
+                )
+            }
+            result = FlowchartLayout.layout(
+                chart = chart,
+                nodeSize = { holder.nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
+                edgeLabelSize = { edge -> holder.edgeLabelSizes[chart.edges.indexOf(edge)] },
+                options = scaledOptions,
+            )
+            holder.lastAdaptedVertical = true
+        }
         holder.layout = result
         onLayout(result)
 
@@ -379,6 +426,13 @@ fun MaradonaLayout(
     }
 }
 
+private data class PremeasuredFlowchartResult(
+    val layout: DiagramLayout,
+    val nodeSizes: Map<String, DiagramSize>,
+    val edgeLabelSizes: List<DiagramSize?>,
+    val adaptedVertical: Boolean,
+)
+
 private fun computePremeasuredFlowchartLayout(
     chart: Flowchart,
     theme: MaradonaTheme,
@@ -388,7 +442,7 @@ private fun computePremeasuredFlowchartLayout(
     densityObj: Density,
     textMeasurer: TextMeasurer,
     hasImageResolver: Boolean,
-): Pair<DiagramLayout, Boolean> {
+): PremeasuredFlowchartResult {
     val renderDensity = densityObj.density
     val wrapPx = with(densityObj) { NodeSizing.WRAPPING_WIDTH.dp.roundToPx() }
     val maxNodeWidthPx = with(densityObj) { 240.dp.roundToPx() }
@@ -495,7 +549,12 @@ private fun computePremeasuredFlowchartLayout(
         )
         adaptedVertical = true
     }
-    return result to adaptedVertical
+    return PremeasuredFlowchartResult(
+        layout = result,
+        nodeSizes = nodeSizes,
+        edgeLabelSizes = edgeLabelSizes,
+        adaptedVertical = adaptedVertical,
+    )
 }
 
 private fun plainLabel(chart: Flowchart, id: String): String =
