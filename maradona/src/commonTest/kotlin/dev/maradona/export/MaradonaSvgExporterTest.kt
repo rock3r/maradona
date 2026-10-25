@@ -113,7 +113,7 @@ class MaradonaSvgExporterTest {
             classDiagram
                 namespace Domain {
                     class Order {
-                        <<Aggregate>>
+                        <<AggregateRootApplicationService>>
                         +String id$
                         +process()* void
                     }
@@ -128,7 +128,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(classSvg.contains("Domain"), "Expected namespace label")
-        assertTrue(classSvg.contains("«Aggregate»"), "Expected class stereotype")
+        assertTrue(classSvg.contains("«AggregateRootApplicationService»"), "Expected class stereotype")
         assertTrue(classSvg.contains("text-decoration=\"underline\""), "Expected static member underline")
         assertTrue(classSvg.contains("font-style=\"italic\""), "Expected abstract member italics")
         assertTrue(classSvg.contains("data-marker=\"filled-diamond\""), "Expected composition marker")
@@ -202,7 +202,7 @@ class MaradonaSvgExporterTest {
             """
             C4Dynamic
                 title Checkout Dynamic Flow
-                Person(user, "Customer", "Web buyer")
+                Person(user, "Customer", "Web buyer who browses the catalog and submits orders")
                 System_Boundary(b1, "Commerce") {
                     Container(web, "Storefront", "Kotlin/Compose", "UI", ${'$'}link="https://shop.example.com")
                     ContainerDb(db, "Orders DB", "PostgreSQL", "Stores orders")
@@ -214,6 +214,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(c4Svg.contains("data-kind=\"person\""), "Expected C4 person element")
+        assertFalse(c4Svg.contains(">Web buyer who browses the catalog and submits orders</text>"), "Expected long C4 description to wrap across multiple SVG text lines")
         assertTrue(c4Svg.contains("data-kind=\"container_db\""), "Expected C4 database element")
         assertTrue(c4Svg.contains("data-kind=\"system_ext\""), "Expected C4 external system element")
         assertTrue(c4Svg.contains("1: Submits order"), "Expected RelIndex prefix in C4 SVG")

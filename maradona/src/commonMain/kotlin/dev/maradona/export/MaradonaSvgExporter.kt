@@ -128,8 +128,13 @@ object MaradonaSvgExporter {
                 val layout = ClassLayout.layout(
                     diagram = d,
                     classBoxSize = { c ->
-                        val stereoLines = c.annotations.size
-                        val titleSize = defaultTextSize(c.displayTitle, theme.nodeFontSize.value)
+                        val hdrLines = buildList {
+                            for (ann in c.annotations) {
+                                if (ann.isNotBlank()) add("«${plainTextLabel(ann)}»")
+                            }
+                            addAll(plainTextLabel(c.displayTitle).split('\n'))
+                        }
+                        val hdrSize = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
                         val memberWidths = (c.attributes + c.methods).map {
                             defaultTextSize(it.displayText, theme.edgeLabelFontSize.value).width
                         }
@@ -137,8 +142,8 @@ object MaradonaSvgExporter {
                         val showCompartments = !d.hideEmptyMembersBox || c.attributes.isNotEmpty() || c.methods.isNotEmpty()
                         val attrH = if (!showCompartments) 0f else if (c.attributes.isEmpty()) 8f else c.attributes.size * memberLineH + 12f
                         val methH = if (!showCompartments) 0f else if (c.methods.isEmpty()) 8f else c.methods.size * memberLineH + 12f
-                        val hdrH = max(32f, titleSize.height + stereoLines * (theme.nodeFontSize.value * 1.35f) + 16f)
-                        val totalW = max(110f, max(titleSize.width, maxMemberW) + 24f)
+                        val hdrH = max(32f, hdrSize.height + 16f)
+                        val totalW = max(110f, max(hdrSize.width, maxMemberW) + 24f)
                         ClassBoxMetrics(totalW, hdrH + attrH + methH, hdrH, attrH, methH)
                     },
                     relationLabelSize = { _, r -> r.label?.let { defaultTextSize(it, theme.edgeLabelFontSize.value) } },
@@ -182,8 +187,22 @@ object MaradonaSvgExporter {
             }
             is MaradonaDiagramModel.C4Model -> {
                 val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
+                val fontSize = theme.nodeFontSize.value
+                val elementSizes = d.elements.associate { el ->
+                    val defaultSz = C4Layout.defaultElementSize(el, dens)
+                    val wrapW = (defaultSz.width - 28f * dens).coerceAtLeast(140f)
+                    val wrappedLines = c4WrappedCardLines(el, fontSize, wrapW)
+                    val maxLineCols = wrappedLines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                    val neededW = max(defaultSz.width, (maxLineCols * fontSize * 0.62f + 32f * dens).coerceAtMost(280f * dens))
+                    val personExtra = if (el.kind.isPerson) 22f * dens else 0f
+                    val dbExtra = if (el.kind.isDatabase) 12f * dens else 0f
+                    val neededH = max(defaultSz.height, wrappedLines.size * fontSize * 1.38f + 28f * dens + personExtra + dbExtra)
+                    el.id to DiagramSize(neededW, neededH)
+                }
                 val layout = C4Layout.layout(
                     diagram = d,
+                    elementSizes = elementSizes,
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -982,19 +1001,10 @@ object MaradonaSvgExporter {
                 }
             }
 
-            val displayLabel = if (!el.sprite.isNullOrBlank()) {
-                "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
-            } else {
-                el.label
-            }
-            val cardLines = buildList {
-                add(el.typeHeaderText)
-                addAll(plainTextLabel(displayLabel).split('\n'))
-                if (!el.description.isNullOrBlank()) {
-                    addAll(plainTextLabel(el.description).split('\n'))
-                }
-            }
-            appendMultilineText(sb, "    ", r.centerX, r.centerY, cardLines, textHex, theme.nodeFontSize.value)
+            val fontSize = theme.nodeFontSize.value
+            val wrapW = (r.width - 28f).coerceAtLeast(120f)
+            val cardLines = c4WrappedCardLines(el, fontSize, wrapW)
+            appendMultilineText(sb, "    ", r.centerX, r.centerY, cardLines, textHex, fontSize)
             sb.append("""  </g>""").append('\n')
             if (url != null) sb.append("""  </a>""").append('\n')
         }
@@ -1235,6 +1245,25 @@ object MaradonaSvgExporter {
 
         sb.append("</svg>")
         return sb.toString()
+    }
+
+    private fun c4WrappedCardLines(
+        el: dev.maradona.model.C4Element,
+        fontSize: Float,
+        maxWidth: Float,
+    ): List<String> {
+        val displayLabel = if (!el.sprite.isNullOrBlank()) {
+            "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
+        } else {
+            el.label
+        }
+        return buildList {
+            addAll(wrapSvgLines(el.typeHeaderText, fontSize, maxWidth))
+            addAll(wrapSvgLines(plainTextLabel(displayLabel), fontSize, maxWidth))
+            if (!el.description.isNullOrBlank()) {
+                addAll(wrapSvgLines(plainTextLabel(el.description), fontSize, maxWidth))
+            }
+        }
     }
 
     private fun startSvgDocument(
