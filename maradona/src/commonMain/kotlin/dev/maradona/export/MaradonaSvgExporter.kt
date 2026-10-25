@@ -589,7 +589,7 @@ object MaradonaSvgExporter {
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
-                exportBlockToSvg(d, layout, theme)
+                exportBlockToSvg(d, layout, theme, options.density)
             }
             is MaradonaDiagramModel.TreemapModel -> {
                 val d = model.diagram
@@ -2297,7 +2297,9 @@ object MaradonaSvgExporter {
         diagram: BlockDiagram,
         layout: BlockDiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
+        density: Float = 1f,
     ): String {
+        val dens = density.coerceAtLeast(0.01f)
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
         val bgHex = theme.background.toSvgHex()
         val edgeHex = theme.edge.toSvgHex()
@@ -2327,9 +2329,11 @@ object MaradonaSvgExporter {
 
             sb.append("""  <g class="block-node" data-id="${escapeXml(pb.item.id)}">""").append('\n')
             if (pb.item.shape == BlockShape.BlockArrow) {
-                val dir = pb.item.arrowDirections.firstOrNull() ?: BlockArrowDir.Right
-                val pts = buildBlockArrowPoints(r, dir)
-                sb.append("""    <polygon class="block-arrow" data-dir="${dir.name.lowercase()}" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
+                val effectiveDirs = pb.item.arrowDirections.ifEmpty { listOf(BlockArrowDir.Right) }
+                val dirAttr = effectiveDirs.joinToString(",") { it.name.lowercase() }
+                val pts = BlockLayout.computeBlockArrowVertices(r, effectiveDirs, dens)
+                    .joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" }
+                sb.append("""    <polygon class="block-arrow" data-dir="$dirAttr" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
             } else {
                 appendSvgNodeShape(sb, mapBlockNodeShape(pb.item.shape), r, fillHex, strokeHex, strokeW)
             }
@@ -2370,6 +2374,12 @@ object MaradonaSvgExporter {
         theme: MaradonaTheme = MaradonaTheme.light(),
     ): String {
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        fun fitTreemapLine(text: String, availW: Float, fontSp: Float): String {
+            val maxChars = ((availW - 8f) / (fontSp * 0.62f)).toInt()
+            if (maxChars <= 0) return ""
+            if (text.length <= maxChars) return text
+            return if (maxChars <= 1) text.take(1) else text.take(maxChars - 1) + "…"
+        }
         for (sec in layout.sections) {
             val r = sec.rect
             val baseCol = theme.seriesColor(sec.colorIndex)
@@ -2377,8 +2387,14 @@ object MaradonaSvgExporter {
             val strokeHex = (parseCssColor(sec.node.style?.stroke) ?: baseCol.copy(alpha = 0.65f)).toSvgHex()
             val textHex = (parseCssColor(sec.node.style?.textColor) ?: theme.nodeText).toSvgHex()
             sb.append("""  <rect class="treemap-section" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="4" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
-            val hdrText = if (layout.showValues && sec.formattedValue.isNotBlank()) "${sec.node.name} (${sec.formattedValue})" else sec.node.name
-            appendMultilineText(sb, "  ", sec.headerRect.centerX, sec.headerRect.centerY, plainTextLabel(hdrText).split('\n'), textHex, theme.subgraphFontSize.value)
+            val hdrFont = theme.subgraphFontSize.value
+            if (sec.headerRect.height >= hdrFont && sec.headerRect.width >= 20f) {
+                val rawHdr = if (layout.showValues && sec.formattedValue.isNotBlank()) "${sec.node.name} (${sec.formattedValue})" else sec.node.name
+                val fittedHdr = fitTreemapLine(plainTextLabel(rawHdr).replace('\n', ' '), sec.headerRect.width, hdrFont)
+                if (fittedHdr.isNotEmpty()) {
+                    appendMultilineText(sb, "  ", sec.headerRect.centerX, sec.headerRect.centerY, listOf(fittedHdr), textHex, hdrFont)
+                }
+            }
         }
         for (lf in layout.leaves) {
             val r = lf.rect
@@ -2387,12 +2403,23 @@ object MaradonaSvgExporter {
             val strokeHex = (parseCssColor(lf.node.style?.stroke) ?: baseCol).toSvgHex()
             val textHex = (parseCssColor(lf.node.style?.textColor) ?: theme.nodeText).toSvgHex()
             sb.append("""  <rect class="treemap-leaf" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="3" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
-            val leafLines = if (layout.showValues && lf.formattedValue.isNotBlank()) {
-                plainTextLabel(lf.node.name).split('\n') + listOf(lf.formattedValue)
-            } else {
-                plainTextLabel(lf.node.name).split('\n')
+            val plainName = plainTextLabel(lf.node.name).replace('\n', ' ')
+            val nameLen = plainName.length.coerceAtLeast(1)
+            val maxSpByW = ((r.width - 10f) / (nameLen * 0.62f)).coerceIn(8f, 18f)
+            val maxSpByH = (r.height * 0.34f).coerceIn(8f, 18f)
+            val lblSp = minOf(max(theme.nodeFontSize.value, 14f), maxSpByW, maxSpByH).coerceIn(8f, 18f)
+            if (r.height >= lblSp + 4f && r.width >= 16f) {
+                val fittedName = fitTreemapLine(plainName, r.width, lblSp)
+                if (fittedName.isNotEmpty()) {
+                    val lineH = lblSp * 1.35f
+                    val valFits = layout.showValues &&
+                        lf.formattedValue.isNotBlank() &&
+                        r.height >= lineH * 2f + 6f &&
+                        lf.formattedValue.length * lblSp * 0.55f <= r.width - 8f
+                    val leafLines = if (valFits) listOf(fittedName, lf.formattedValue) else listOf(fittedName)
+                    appendMultilineText(sb, "  ", r.centerX, r.centerY, leafLines, textHex, lblSp)
+                }
             }
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, leafLines, textHex, theme.nodeFontSize.value)
         }
         sb.append("</svg>")
         return sb.toString()
@@ -2413,31 +2440,6 @@ object MaradonaSvgExporter {
         BlockShape.LeanLeft -> NodeShape.ParallelogramAlt
         BlockShape.Trapezoid -> NodeShape.Trapezoid
         BlockShape.InvTrapezoid -> NodeShape.TrapezoidAlt
-    }
-
-    private fun buildBlockArrowPoints(r: DiagramRect, dir: BlockArrowDir): String {
-        val x = r.x
-        val y = r.y
-        val right = r.right
-        val bottom = r.bottom
-        val cx = r.centerX
-        val cy = r.centerY
-        val sw = r.width * 0.22f
-        val sh = r.height * 0.22f
-        return when (dir) {
-            BlockArrowDir.Right ->
-                "${fmt(x)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(x)},${fmt(bottom - sh)}"
-            BlockArrowDir.Left ->
-                "${fmt(right)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y)} ${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)}"
-            BlockArrowDir.Down ->
-                "${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x + sw)},${fmt(bottom - sh)}"
-            BlockArrowDir.Up ->
-                "${fmt(x + sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right)},${fmt(y + sh)} ${fmt(cx)},${fmt(y)} ${fmt(x)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)}"
-            BlockArrowDir.X ->
-                "${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom)}"
-            BlockArrowDir.Y ->
-                "${fmt(cx)},${fmt(y)} ${fmt(right)},${fmt(y + sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x)},${fmt(y + sh)}"
-        }
     }
 
     private fun mapBlockEndMarker(head: BlockArrowHead): SvgMarker = when (head) {

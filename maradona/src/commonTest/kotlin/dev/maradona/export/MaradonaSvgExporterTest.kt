@@ -243,27 +243,31 @@ class MaradonaSvgExporterTest {
         )
         assertTrue(radarSvg.contains("class=\"radar-curve\""), "Expected radar curve polygon")
 
-        // 21. Block (with composite container, diamond, and directional block arrow)
+        // 21. Block (with composite container, diamond, and multidirectional block arrow)
         val blockSvg = MaradonaSvgExporter.exportToSvg(
             """
             block-beta
               columns 3
-              A{"Decision"} arr<["Go"]>(right) B("Action")
+              A{"Decision"} arr<["Go"]>(x, down) B("Action")
             """.trimIndent(),
         )
-        assertTrue(blockSvg.contains("class=\"block-arrow\" data-dir=\"right\""), "Expected directional block arrow")
+        assertTrue(blockSvg.contains("class=\"block-arrow\" data-dir=\"x,down\""), "Expected multidirectional block arrow")
 
-        // 22. Treemap
+        // 22. Treemap (including small leaf with long name that gets constrained to tile bounds)
         val treemapSvg = MaradonaSvgExporter.exportToSvg(
             """
             treemap-beta
             "Engineering"
-                "Frontend": 40
-                "Backend": 60
+                "Frontend": 99
+                "VeryLongTinyMicroserviceLeafNameThatMustBeClippedOrSuppressed": 1
             """.trimIndent(),
         )
         assertTrue(treemapSvg.contains("class=\"treemap-section\""), "Expected treemap section")
         assertTrue(treemapSvg.contains("class=\"treemap-leaf\""), "Expected treemap leaf")
+        assertFalse(
+            treemapSvg.contains(">VeryLongTinyMicroserviceLeafNameThatMustBeClippedOrSuppressed</text>"),
+            "Expected tiny treemap leaf label to be constrained to tile bounds",
+        )
     }
 
     @Test
