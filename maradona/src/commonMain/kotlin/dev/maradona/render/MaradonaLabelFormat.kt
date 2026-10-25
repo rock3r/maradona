@@ -204,10 +204,17 @@ private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? 
     )
 }
 
+private val FORMATTING_OPEN_TAG_ATTRS_REGEX =
+    Regex("""(?i)<(u|ins|s|del|strike|sub|sup)\s[^>]*>""")
+private val FORMATTING_CLOSE_TAG_WS_REGEX =
+    Regex("""(?i)</(u|ins|s|del|strike|sub|sup)\s+>""")
+
 private fun prepareLabelWithImagesAndIcons(label: String): Pair<String, List<InlineImageSpec>> {
     val images = ArrayList<InlineImageSpec>()
     val prepared = transformOutsideCodeSpans(label) { segment ->
         var s = segment
+            .replace(FORMATTING_OPEN_TAG_ATTRS_REGEX) { "<${it.groupValues[1].lowercase()}>" }
+            .replace(FORMATTING_CLOSE_TAG_WS_REGEX) { "</${it.groupValues[1].lowercase()}>" }
         if ("<img" in s.lowercase()) {
             s = IMG_TAG_REGEX.replace(s) { m ->
                 val spec = parseImgTag(m, "img_${images.size}")
@@ -489,11 +496,16 @@ private fun transformOutsideCodeSpans(s: String, transform: (String) -> String):
                 continue
             }
         }
-        if (s.regionMatches(i, "<code>", 0, 6, ignoreCase = true)) {
-            val close = s.indexOf("</code>", i + 6, ignoreCase = true)
-            if (close >= 0) {
+        if (s.regionMatches(i, "<code", 0, 5, ignoreCase = true) &&
+            i + 5 < s.length && (s[i + 5] == '>' || s[i + 5].isWhitespace())
+        ) {
+            val openEnd = s.indexOf('>', i + 5)
+            val close = if (openEnd >= 0) s.indexOf("</code>", openEnd + 1, ignoreCase = true) else -1
+            if (openEnd >= 0 && close >= 0) {
                 flushNonCode()
-                out.append(s, i, close + 7)
+                out.append("<code>")
+                out.append(s, openEnd + 1, close)
+                out.append("</code>")
                 i = close + 7
                 continue
             }

@@ -619,10 +619,12 @@ internal object NodeRefReader {
         text = transformOutsideInlineCode(text) { segment ->
             segment
                 .replace(Regex("(?i)<br\\s*/?>"), "\n")
-                .replace(Regex("(?i)<b>"), "**").replace(Regex("(?i)</b>"), "**")
-                .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
-                .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
-                .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
+                .replace(Regex("(?i)<(?:b|strong)(?:\\s[^>]*)?>"), "**")
+                .replace(Regex("(?i)</(?:b|strong)\\s*>"), "**")
+                .replace(Regex("(?i)<(?:i|em)(?:\\s[^>]*)?>"), "*")
+                .replace(Regex("(?i)</(?:i|em)\\s*>"), "*")
+                .replace(Regex("(?i)<(u|ins|s|del|strike|sub|sup|code)(?:\\s[^>]*)?>")) { "<${it.groupValues[1].lowercase()}>" }
+                .replace(Regex("(?i)</(u|ins|s|del|strike|sub|sup|code)\\s*>")) { "</${it.groupValues[1].lowercase()}>" }
                 .replace(Regex("(?i)</?(?:span|div|p|font|small|mark)(?:\\s[^>]*)?>"), "")
         }
         text = text
@@ -659,11 +661,16 @@ internal object NodeRefReader {
                     continue
                 }
             }
-            if (s.regionMatches(i, "<code>", 0, 6, ignoreCase = true)) {
-                val close = s.indexOf("</code>", i + 6, ignoreCase = true)
-                if (close >= 0) {
+            if (s.regionMatches(i, "<code", 0, 5, ignoreCase = true) &&
+                i + 5 < s.length && (s[i + 5] == '>' || s[i + 5].isWhitespace())
+            ) {
+                val openEnd = s.indexOf('>', i + 5)
+                val close = if (openEnd >= 0) s.indexOf("</code>", openEnd + 1, ignoreCase = true) else -1
+                if (openEnd >= 0 && close >= 0) {
                     flush()
-                    out.append(s, i, close + 7)
+                    out.append("<code>")
+                    out.append(s, openEnd + 1, close)
+                    out.append("</code>")
                     i = close + 7
                     continue
                 }
