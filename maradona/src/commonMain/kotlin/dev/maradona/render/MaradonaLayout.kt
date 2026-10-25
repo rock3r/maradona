@@ -4,7 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -49,11 +53,10 @@ private class LayoutHolder {
     var adaptedTbLayout: DiagramLayout? = null
     var nodeSizes: Map<String, DiagramSize> = emptyMap()
     var edgeLabelSizes: List<DiagramSize?> = emptyList()
+    var subgraphLabelSizes: Map<String, DiagramSize> = emptyMap()
     var lastDensity: Float = Float.NaN
     var lastFontScale: Float = Float.NaN
     var lastResolvedImageUrls: Set<String> = emptySet()
-    var lastBoundedWidthPx: Int = Int.MAX_VALUE
-    var boundedWidthObserved: Boolean = false
     var visibleViewport: DiagramRect? = null
 }
 
@@ -163,7 +166,9 @@ fun MaradonaLayout(
             }
         }
     }
-    val effectiveAvailableWidthPx = minOf(availableWidthPx, holder.lastBoundedWidthPx)
+    var observedBoundedWidthPx by remember(chart, theme, layoutOptions) { mutableIntStateOf(Int.MAX_VALUE) }
+    var boundedWidthObserved by remember(chart, theme, layoutOptions) { mutableStateOf(false) }
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, observedBoundedWidthPx)
 
     // Pre-compute or reuse the layout at the current renderDensity/fontScale so viewport-lazy
     // composition knows every node, edge label, and subgraph bounding box before
@@ -191,6 +196,7 @@ fun MaradonaLayout(
                 holder.adaptedTbLayout = null
                 holder.nodeSizes = pre.nodeSizes
                 holder.edgeLabelSizes = pre.edgeLabelSizes
+                holder.subgraphLabelSizes = pre.subgraphLabelSizes
                 holder.lastDensity = renderDensity
                 holder.lastFontScale = renderFontScale
                 holder.lastResolvedImageUrls = resolvedImageUrls
@@ -237,7 +243,7 @@ fun MaradonaLayout(
         (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
         layoutOptions.directionOverride == null &&
         availableWidthPx == Int.MAX_VALUE &&
-        !holder.boundedWidthObserved
+        !boundedWidthObserved
     val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
     holder.visibleViewport = activeCullViewport
 
@@ -324,15 +330,18 @@ fun MaradonaLayout(
                     ),
                 )
             }
+            val sgTopPadPx = with(densityObj) { 2.dp.roundToPx().toFloat() }
             for (sg in chart.subgraphs) {
                 if (activeCullViewport != null) {
                     val psg = positionedSubgraphById[sg.id]
                     if (psg != null) {
+                        val sgSz = holder.subgraphLabelSizes[sg.id]
+                            ?: DiagramSize(psg.rect.width, 36f * renderDensity)
                         val hdrRect = DiagramRect(
-                            x = psg.rect.x,
-                            y = psg.rect.y,
-                            width = psg.rect.width,
-                            height = 36f * renderDensity,
+                            x = psg.rect.centerX - sgSz.width / 2f,
+                            y = psg.rect.y + sgTopPadPx,
+                            width = sgSz.width,
+                            height = sgSz.height,
                         )
                         if (!hdrRect.intersects(activeCullViewport)) continue
                     }
@@ -369,8 +378,10 @@ fun MaradonaLayout(
         }
 
         val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
-        holder.lastBoundedWidthPx = boundedWidth
-        holder.boundedWidthObserved = true
+        if (!boundedWidthObserved || observedBoundedWidthPx != boundedWidth) {
+            observedBoundedWidthPx = boundedWidth
+            boundedWidthObserved = true
+        }
         val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
         val wantVerticalAtMeasure = autoDirection &&
@@ -378,7 +389,11 @@ fun MaradonaLayout(
             layoutOptions.directionOverride == null &&
             effectiveMaxWidth in 1 until breakpoint &&
             naturalLayout.width > effectiveMaxWidth
-        val result = if (wantVerticalAtMeasure) {
+        // When culling was active during composition, keep measurement on the same
+        // adapted/unadapted layout until the state-driven recomposition runs.
+        val result = if (activeCullViewport != null && wantVerticalAtMeasure != wantVerticalInComposition) {
+            precomputedLayout
+        } else if (wantVerticalAtMeasure) {
             resolveAdaptedTbLayout()
         } else {
             naturalLayout
@@ -446,6 +461,7 @@ private data class PremeasuredFlowchartResult(
     val naturalLayout: DiagramLayout,
     val nodeSizes: Map<String, DiagramSize>,
     val edgeLabelSizes: List<DiagramSize?>,
+    val subgraphLabelSizes: Map<String, DiagramSize>,
 )
 
 private fun computePremeasuredFlowchartLayout(
@@ -533,6 +549,21 @@ private fun computePremeasuredFlowchartLayout(
         )
     }
 
+    val sgTextStyle = TextStyle(
+        color = theme.subgraphText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.subgraphFontSize,
+    )
+    val subgraphLabelSizes = chart.subgraphs.associate { sg ->
+        val m = textMeasurer.measure(
+            text = annotatedLabel(sg.label, theme.monospaceFontFamily),
+            style = sgTextStyle,
+            constraints = Constraints(),
+            density = densityObj,
+        )
+        sg.id to DiagramSize(m.size.width.toFloat(), m.size.height.toFloat())
+    }
+
     val scaledOptions = with(layoutOptions) {
         copy(
             nodeGap = nodeGap * renderDensity,
@@ -553,6 +584,7 @@ private fun computePremeasuredFlowchartLayout(
         naturalLayout = result,
         nodeSizes = nodeSizes,
         edgeLabelSizes = edgeLabelSizes,
+        subgraphLabelSizes = subgraphLabelSizes,
     )
 }
 
