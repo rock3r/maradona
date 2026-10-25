@@ -630,8 +630,9 @@ object MaradonaSvgExporter {
             val sgLines = plainTextLabel(psg.subgraph.label).split('\n')
             val sgFont = theme.subgraphFontSize.value
             val sgLineH = sgFont * 1.3f
+            val sgFirstLineOffset = 6f + sgFont * 0.85f
             for ((idx, line) in sgLines.withIndex()) {
-                val ly = r.y + 18f + idx * sgLineH
+                val ly = r.y + sgFirstLineOffset + idx * sgLineH
                 sb.append(
                     """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${theme.subgraphText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(sgFont)}" font-weight="600">${escapeXml(line)}</text>""",
                 ).append('\n')
@@ -911,7 +912,8 @@ object MaradonaSvgExporter {
                 """  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.subgraphFill.toSvgHex()}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1"/>""",
             ).append('\n')
             if (ns.namespace.label.isNotBlank()) {
-                appendMultilineText(sb, "  ", r.centerX, r.y + 16f, plainTextLabel(ns.namespace.label).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                val hr = ns.headerRect
+                appendMultilineText(sb, "  ", hr.centerX, hr.centerY, plainTextLabel(ns.namespace.label).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
             }
         }
 
@@ -1456,10 +1458,11 @@ object MaradonaSvgExporter {
             }
             val grpTitle = pg.group.title ?: pg.group.id
             val lr = pg.labelRect
+            val grpFont = theme.subgraphFontSize.value
             if (lr != null) {
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), grpFont)
             } else {
-                appendMultilineText(sb, "  ", r.centerX, r.y + 16f, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", r.centerX, r.y + 6f + grpFont * 0.65f, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), grpFont)
             }
         }
 
