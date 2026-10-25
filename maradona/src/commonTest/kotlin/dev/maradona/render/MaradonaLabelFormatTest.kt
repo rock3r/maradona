@@ -111,5 +111,10 @@ class MaradonaLabelFormatTest {
         assertEquals("https://example.com/a.png", gtImg[0].url)
         assertEquals("Example src='preview.png' x > 0", gtImg[0].alt)
         assertEquals("[🖼 Example src='preview.png' x > 0]", annotatedLabel("""<img alt="Example src='preview.png' x > 0" src='https://example.com/a.png'/>""").text)
+
+        val unquotedImg = extractInlineImages("<img src=https://example.com/logo.png alt=Logo/>")
+        assertEquals(1, unquotedImg.size)
+        assertEquals("https://example.com/logo.png", unquotedImg[0].url)
+        assertEquals("Logo", unquotedImg[0].alt)
     }
 }

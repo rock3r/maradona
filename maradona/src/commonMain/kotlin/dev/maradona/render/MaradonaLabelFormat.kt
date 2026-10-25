@@ -192,7 +192,8 @@ private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? 
     )
 }
 
-private fun parseHtmlAttributes(attrs: String): Map<String, String> {
+private fun parseHtmlAttributes(rawAttrs: String): Map<String, String> {
+    val attrs = rawAttrs.trimEnd().removeSuffix("/")
     val out = LinkedHashMap<String, String>()
     var i = 0
     val n = attrs.length
@@ -223,7 +224,7 @@ private fun parseHtmlAttributes(attrs: String): Map<String, String> {
             v
         } else {
             val valStart = i
-            while (i < n && !attrs[i].isWhitespace() && attrs[i] != '/' && attrs[i] != '>') i++
+            while (i < n && !attrs[i].isWhitespace() && attrs[i] != '>') i++
             attrs.substring(valStart, i)
         }
         out[name] = value
