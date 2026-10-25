@@ -609,24 +609,12 @@ internal object NodeRefReader {
      * node composable turns into [androidx.compose.ui.text.AnnotatedString] spans.
      */
     fun cleanLabel(raw: String): String {
-        val rawTrimmed = raw.trim()
-        var text = rawTrimmed
-        val hadOuterQuotes = text.length >= 2 && text.first() == '"' && text.last() == '"'
-        if (hadOuterQuotes) {
+        var text = raw.trim()
+        if (text.length >= 2 && text.first() == '"' && text.last() == '"') {
             text = text.substring(1, text.length - 1).replace("\\\"", "\"")
         }
         if (text.length >= 2 && text.first() == '`' && text.last() == '`') {
-            val inner = text.substring(1, text.length - 1)
-            val isSingleCodeToken = hadOuterQuotes &&
-                '`' !in inner &&
-                inner.none { it.isWhitespace() } &&
-                !inner.contains("**") &&
-                !inner.contains("__") &&
-                !inner.contains("~~") &&
-                !inner.contains('<')
-            if ('`' !in inner && !isSingleCodeToken) {
-                text = inner
-            }
+            text = text.substring(1, text.length - 1)
         }
         text = text
             .replace(Regex("(?i)<br\\s*/?>"), "\n")

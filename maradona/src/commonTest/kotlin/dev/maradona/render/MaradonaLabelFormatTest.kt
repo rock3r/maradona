@@ -82,5 +82,15 @@ class MaradonaLabelFormatTest {
         // HTML <code> containing backticks and backticks containing </code> close only on their matching delimiter.
         val nestedDelims = annotatedLabel("<code>echo `hostname`</code> and `literal </code> here`")
         assertEquals("echo `hostname` and literal </code> here", nestedDelims.text)
+
+        // Mermaid Markdown-string wrapper A["`...`"] strips outer backticks even when containing inner inline code.
+        val mdStringChart = FlowchartParser.parse(
+            """
+            flowchart TD
+              A["`**Ready** `fa:fa-check` now`"]
+            """.trimIndent(),
+        )
+        val mdAnnotated = annotatedLabel(mdStringChart.nodes.single().label)
+        assertEquals("Ready fa:fa-check now", mdAnnotated.text)
     }
 }
