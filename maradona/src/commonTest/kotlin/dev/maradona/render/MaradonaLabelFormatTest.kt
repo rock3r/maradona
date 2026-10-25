@@ -117,11 +117,20 @@ class MaradonaLabelFormatTest {
         assertEquals("https://example.com/logo.png", unquotedImg[0].url)
         assertEquals("Logo", unquotedImg[0].alt)
 
-        // Backticks inside <img alt='Run `hostname`'/> and balanced parens in ![Diagram](https://example.com/d_(v2).png)
-        val backtickAltAndParenUrl = """<img src='https://example.com/a.png' alt='Run `hostname`'/> and ![Diagram](https://example.com/d_(v2).png)"""
+        // Backticks inside <img alt='Run `hostname`'/> and ![Run `cmd`](https://example.com/d_(v2).png), plus '>' in <code title='x > 0'>
+        val backtickAltAndParenUrl = """<img src='https://example.com/a.png' alt='Run `hostname`'/> and ![Run `cmd`](https://example.com/d_(v2).png)"""
         val bothImgs = extractInlineImages(backtickAltAndParenUrl)
         assertEquals(2, bothImgs.size)
         assertEquals("Run `hostname`", bothImgs[0].alt)
+        assertEquals("Run `cmd`", bothImgs[1].alt)
         assertEquals("https://example.com/d_(v2).png", bothImgs[1].url)
+
+        val codeAttrChart = FlowchartParser.parse(
+            """
+            flowchart TD
+              A["<code title='x > 0'>cmd</code>"]
+            """.trimIndent(),
+        )
+        assertEquals("cmd", plainTextLabel(codeAttrChart.nodes.single().label))
     }
 }

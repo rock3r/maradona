@@ -640,6 +640,25 @@ internal object NodeRefReader {
         return text.trim()
     }
 
+    private val MD_IMAGE_SPAN_REGEX = Regex("""!\[([^\]]*)]\(((?:[^()\s]|\([^()\s]*\))+)\)""")
+
+    private fun findTagClose(s: String, startAfterTagName: Int): Int {
+        var j = startAfterTagName
+        var quote: Char? = null
+        while (j < s.length) {
+            val c = s[j]
+            if (quote != null) {
+                if (c == quote) quote = null
+            } else if (c == '"' || c == '\'') {
+                quote = c
+            } else if (c == '>') {
+                return j
+            }
+            j++
+        }
+        return -1
+    }
+
     private fun transformOutsideInlineCode(s: String, transform: (String) -> String): String {
         if ('`' !in s && "<code" !in s.lowercase()) return transform(s)
         val out = StringBuilder()
@@ -655,22 +674,18 @@ internal object NodeRefReader {
             if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
                 i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
             ) {
-                var j = i + 4
-                var quote: Char? = null
-                while (j < s.length) {
-                    val c = s[j]
-                    if (quote != null) {
-                        if (c == quote) quote = null
-                    } else if (c == '"' || c == '\'') {
-                        quote = c
-                    } else if (c == '>') {
-                        break
-                    }
-                    j++
+                val tagEnd = findTagClose(s, i + 4)
+                if (tagEnd >= 0) {
+                    nonCode.append(s, i, tagEnd + 1)
+                    i = tagEnd + 1
+                    continue
                 }
-                if (j < s.length && s[j] == '>') {
-                    nonCode.append(s, i, j + 1)
-                    i = j + 1
+            }
+            if (s.startsWith("![", i)) {
+                val mdMatch = MD_IMAGE_SPAN_REGEX.find(s, i)
+                if (mdMatch != null && mdMatch.range.first == i) {
+                    nonCode.append(mdMatch.value)
+                    i = mdMatch.range.last + 1
                     continue
                 }
             }
@@ -686,7 +701,7 @@ internal object NodeRefReader {
             if (s.regionMatches(i, "<code", 0, 5, ignoreCase = true) &&
                 i + 5 < s.length && (s[i + 5] == '>' || s[i + 5].isWhitespace())
             ) {
-                val openEnd = s.indexOf('>', i + 5)
+                val openEnd = findTagClose(s, i + 5)
                 val close = if (openEnd >= 0) s.indexOf("</code>", openEnd + 1, ignoreCase = true) else -1
                 if (openEnd >= 0 && close >= 0) {
                     flush()

@@ -545,6 +545,14 @@ private fun transformOutsideCodeSpans(s: String, transform: (String) -> String):
                 continue
             }
         }
+        if (s.startsWith("![", i)) {
+            val mdMatch = MD_IMAGE_REGEX.find(s, i)
+            if (mdMatch != null && mdMatch.range.first == i) {
+                nonCode.append(mdMatch.value)
+                i = mdMatch.range.last + 1
+                continue
+            }
+        }
         if (s[i] == '`') {
             val close = s.indexOf('`', i + 1)
             if (close > i) {
