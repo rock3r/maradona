@@ -123,7 +123,7 @@ object MaradonaSvgExporter {
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = seqOpts,
                 )
-                exportSequenceToSvg(d, layout, theme)
+                exportSequenceToSvg(d, layout, theme, options.density)
             }
             is MaradonaDiagramModel.ClassModel -> {
                 val d = model.diagram
@@ -307,7 +307,7 @@ object MaradonaSvgExporter {
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
-                exportC4ToSvg(d, layout, theme)
+                exportC4ToSvg(d, layout, theme, options.density)
             }
             is MaradonaDiagramModel.ArchitectureModel -> {
                 val d = model.diagram
@@ -370,7 +370,7 @@ object MaradonaSvgExporter {
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
-                exportZenUmlToSvg(d, layout, theme)
+                exportZenUmlToSvg(d, layout, theme, options.density)
             }
             else -> throw UnsupportedOperationException(
                 "Standalone SVG export does not yet support ${model::class.simpleName}; render it through MaradonaDiagram.",
@@ -498,7 +498,9 @@ object MaradonaSvgExporter {
         diagram: SequenceDiagram,
         layout: SequenceDiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
+        density: Float = 1f,
     ): String {
+        val dens = density.coerceAtLeast(0.01f)
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
         val bgHex = theme.background.toSvgHex()
 
@@ -577,13 +579,13 @@ object MaradonaSvgExporter {
             val textHex = theme.nodeText.toSvgHex()
             if (p.kind == ParticipantKind.Actor) {
                 val cx = r.centerX
-                val headR = 9f
-                val headCy = r.y + 6f + headR
+                val headR = 9f * dens
+                val headCy = r.y + 6f * dens + headR
                 val neckY = headCy + headR
-                val hipY = neckY + 14f
-                val armY = neckY + 5f
-                val footY = hipY + 11f
-                val span = 11f
+                val hipY = neckY + 14f * dens
+                val armY = neckY + 5f * dens
+                val footY = hipY + 11f * dens
+                val span = 11f * dens
                 sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(headCy)}" r="${fmt(headR)}" fill="$fillHex" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(neckY)}" x2="${fmt(cx)}" y2="${fmt(hipY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx - span)}" y1="${fmt(armY)}" x2="${fmt(cx + span)}" y2="${fmt(armY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
@@ -592,7 +594,7 @@ object MaradonaSvgExporter {
                 val actorLines = plainTextLabel(p.label).split('\n')
                 val actorFont = theme.nodeFontSize.value
                 val actorLineH = actorFont * 1.35f
-                val actorCenterY = r.bottom - 4f - actorFont * 0.35f - ((actorLines.size - 1) * actorLineH) / 2f
+                val actorCenterY = r.bottom - 4f * dens - actorFont * 0.35f - ((actorLines.size - 1) * actorLineH) / 2f
                 appendMultilineText(sb, "    ", r.centerX, actorCenterY, actorLines, textHex, actorFont)
             } else {
                 sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
@@ -627,8 +629,8 @@ object MaradonaSvgExporter {
             }
             val startMarker = if (arrow.bidirectional) endMarker else SvgMarker.None
             val pts = if (m.isSelf) {
-                val loopW = 36f
-                val loopH = 22f
+                val loopW = 36f * dens
+                val loopH = 22f * dens
                 listOf(
                     DiagramPoint(m.startX, m.lineY),
                     DiagramPoint(m.startX + loopW, m.lineY),
@@ -648,9 +650,9 @@ object MaradonaSvgExporter {
             }
             if (m.sequenceNumber != null) {
                 val dir = if (m.stopX >= m.startX) 1f else -1f
-                val badgeX = m.startX + dir * 8f
-                sb.append("""  <circle cx="${fmt(badgeX)}" cy="${fmt(m.lineY)}" r="7" fill="$edgeHex"/>""").append('\n')
-                sb.append("""  <text x="${fmt(badgeX)}" y="${fmt(m.lineY + 3.5f)}" text-anchor="middle" fill="$bgHex" font-family="sans-serif" font-size="9" font-weight="600">${m.sequenceNumber}</text>""").append('\n')
+                val badgeX = m.startX + dir * 8f * dens
+                sb.append("""  <circle cx="${fmt(badgeX)}" cy="${fmt(m.lineY)}" r="${fmt(7f * dens)}" fill="$edgeHex"/>""").append('\n')
+                sb.append("""  <text x="${fmt(badgeX)}" y="${fmt(m.lineY + 3.5f * dens)}" text-anchor="middle" fill="$bgHex" font-family="sans-serif" font-size="9" font-weight="600">${m.sequenceNumber}</text>""").append('\n')
             }
             if (m.statement.text.isNotBlank()) {
                 val msgLabel = if (m.sequenceNumber != null) "${m.sequenceNumber}. ${m.statement.text}" else m.statement.text
@@ -1084,7 +1086,9 @@ object MaradonaSvgExporter {
         diagram: C4Diagram,
         layout: C4DiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
+        density: Float = 1f,
     ): String {
+        val dens = density.coerceAtLeast(0.01f)
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
         val bgHex = theme.background.toSvgHex()
         val p = theme.c4Palette
@@ -1132,17 +1136,17 @@ object MaradonaSvgExporter {
 
             when {
                 el.kind.isPerson -> {
-                    val headR = 11f
+                    val headR = 11f * dens
                     val bodyTop = r.y + headR * 1.55f
-                    val bodyH = max(20f, r.bottom - bodyTop)
-                    sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(bodyTop)}" width="${fmt(r.width)}" height="${fmt(bodyH)}" rx="12" fill="$fillHex" stroke="$strokeHex" stroke-width="1.6"/>""").append('\n')
-                    sb.append("""    <circle cx="${fmt(r.centerX)}" cy="${fmt(r.y + headR + 2f)}" r="${fmt(headR)}" fill="$fillHex" stroke="$strokeHex" stroke-width="1.6"/>""").append('\n')
+                    val bodyH = max(20f * dens, r.bottom - bodyTop)
+                    sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(bodyTop)}" width="${fmt(r.width)}" height="${fmt(bodyH)}" rx="${fmt(12f * dens)}" fill="$fillHex" stroke="$strokeHex" stroke-width="1.6"/>""").append('\n')
+                    sb.append("""    <circle cx="${fmt(r.centerX)}" cy="${fmt(r.y + headR + 2f * dens)}" r="${fmt(headR)}" fill="$fillHex" stroke="$strokeHex" stroke-width="1.6"/>""").append('\n')
                 }
                 el.kind.isDatabase -> {
                     appendSvgNodeShape(sb, NodeShape.Cylinder, r, fillHex, strokeHex, 1.6f)
                 }
                 el.kind.isQueue -> {
-                    val capRx = (r.height * 0.22f).coerceIn(8f, 18f)
+                    val capRx = (r.height * 0.22f).coerceIn(8f * dens, 18f * dens)
                     appendSvgNodeShape(sb, NodeShape.Stadium, r, fillHex, strokeHex, 1.6f)
                     sb.append("""    <ellipse cx="${fmt(r.right - capRx)}" cy="${fmt(r.centerY)}" rx="${fmt(capRx)}" ry="${fmt(r.height / 2f)}" fill="none" stroke="$strokeHex" stroke-width="1.3"/>""").append('\n')
                 }
@@ -1282,7 +1286,9 @@ object MaradonaSvgExporter {
         diagram: ZenUmlDiagram,
         layout: ZenUmlDiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
+        density: Float = 1f,
     ): String {
+        val dens = density.coerceAtLeast(0.01f)
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
         val bgHex = theme.background.toSvgHex()
         val edgeHex = theme.edge.toSvgHex()
@@ -1349,8 +1355,8 @@ object MaradonaSvgExporter {
             if (pm.displayText.isBlank() && cr != null) continue
 
             val pts = if (pm.isSelf) {
-                val loopW = 34f
-                val loopH = max(18f, pm.selfLoopHeight)
+                val loopW = 34f * dens
+                val loopH = max(18f * dens, pm.selfLoopHeight)
                 val rightX = max(pm.startX, pm.endX) + loopW
                 listOf(
                     DiagramPoint(pm.startX, pm.y),
