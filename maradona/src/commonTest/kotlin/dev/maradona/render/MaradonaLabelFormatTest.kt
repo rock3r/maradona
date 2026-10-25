@@ -103,5 +103,12 @@ class MaradonaLabelFormatTest {
             """.trimIndent(),
         )
         assertEquals("Show <strike>old</strike> and gone H2O x", plainTextLabel(codeTagChart.nodes.single().label))
+
+        // Nested ** and __ bold delimiters track their own closers, and quoted '>' inside <img alt='x > 0'/> is preserved.
+        assertEquals("outer inner outer", annotatedLabel("**outer __inner__ outer**").text)
+        val gtImg = extractInlineImages("<img src='https://example.com/a.png' alt='x > 0'/>")
+        assertEquals(1, gtImg.size)
+        assertEquals("x > 0", gtImg[0].alt)
+        assertEquals("[🖼 x > 0]", annotatedLabel("<img src='https://example.com/a.png' alt='x > 0'/>").text)
     }
 }

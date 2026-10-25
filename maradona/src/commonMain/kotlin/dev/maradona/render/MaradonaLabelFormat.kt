@@ -51,7 +51,7 @@ data class InlineImageSpec(
     val heightPx: Float = 24f,
 )
 
-private val IMG_TAG_REGEX = Regex("""(?i)<img\b([^>]*)/?>""")
+private val IMG_TAG_REGEX = Regex("""(?i)<img\b((?:[^>"']|"[^"]*"|'[^']*')*)/?>""")
 private val IMG_SRC_REGEX = Regex("""(?i)(?:^|[\s"'/])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
 private val IMG_ALT_REGEX = Regex("""(?i)(?:^|[\s"'/])alt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
 private val IMG_WIDTH_REGEX = Regex("""(?i)(?:^|[\s"'/])width\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
@@ -205,7 +205,7 @@ private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? 
 }
 
 private val FORMATTING_OPEN_TAG_ATTRS_REGEX =
-    Regex("""(?i)<(u|ins|s|del|strike|sub|sup)\s[^>]*>""")
+    Regex("""(?i)<(u|ins|s|del|strike|sub|sup)\s(?:[^>"']|"[^"]*"|'[^']*')*>""")
 private val FORMATTING_CLOSE_TAG_WS_REGEX =
     Regex("""(?i)</(u|ins|s|del|strike|sub|sup)\s+>""")
 
@@ -320,7 +320,8 @@ fun annotatedLabel(
     val (prepared, images) = prepareLabelWithImagesAndIcons(label)
 
     var i = 0
-    var bold = false
+    var boldStar = false
+    var boldUnderscore = false
     var italic = false
     var underline = false
     var strike = false
@@ -330,6 +331,7 @@ fun annotatedLabel(
     val plain = StringBuilder()
 
     fun currentStyle(): SpanStyle? {
+        val bold = boldStar || boldUnderscore
         val code = codeDelimiter != null
         if (!bold && !italic && !underline && !strike && !code && !subscript && !superscript) {
             return null
@@ -414,11 +416,11 @@ fun annotatedLabel(
                 prepared.indexOf("</code>", i + 6, ignoreCase = true) >= 0 -> {
                 flush(); codeDelimiter = "</code>"; i += 6
             }
-            prepared.startsWith("**", i) && (bold || prepared.indexOf("**", i + 2) >= 0) -> {
-                flush(); bold = !bold; i += 2
+            prepared.startsWith("**", i) && (boldStar || prepared.indexOf("**", i + 2) >= 0) -> {
+                flush(); boldStar = !boldStar; i += 2
             }
-            prepared.startsWith("__", i) && (bold || prepared.indexOf("__", i + 2) >= 0) -> {
-                flush(); bold = !bold; i += 2
+            prepared.startsWith("__", i) && (boldUnderscore || prepared.indexOf("__", i + 2) >= 0) -> {
+                flush(); boldUnderscore = !boldUnderscore; i += 2
             }
             prepared.startsWith("~~", i) && (strike || prepared.indexOf("~~", i + 2) >= 0) -> {
                 flush(); strike = !strike; i += 2

@@ -618,14 +618,14 @@ internal object NodeRefReader {
         }
         text = transformOutsideInlineCode(text) { segment ->
             segment
-                .replace(Regex("(?i)<br\\s*/?>"), "\n")
-                .replace(Regex("(?i)<(?:b|strong)(?:\\s[^>]*)?>"), "**")
-                .replace(Regex("(?i)</(?:b|strong)\\s*>"), "**")
-                .replace(Regex("(?i)<(?:i|em)(?:\\s[^>]*)?>"), "*")
-                .replace(Regex("(?i)</(?:i|em)\\s*>"), "*")
-                .replace(Regex("(?i)<(u|ins|s|del|strike|sub|sup|code)(?:\\s[^>]*)?>")) { "<${it.groupValues[1].lowercase()}>" }
-                .replace(Regex("(?i)</(u|ins|s|del|strike|sub|sup|code)\\s*>")) { "</${it.groupValues[1].lowercase()}>" }
-                .replace(Regex("(?i)</?(?:span|div|p|font|small|mark)(?:\\s[^>]*)?>"), "")
+                .replace(Regex("""(?i)<br\s*/?>"""), "\n")
+                .replace(Regex("""(?i)<(?:b|strong)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "**")
+                .replace(Regex("""(?i)</(?:b|strong)\s*>"""), "**")
+                .replace(Regex("""(?i)<(?:i|em)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "*")
+                .replace(Regex("""(?i)</(?:i|em)\s*>"""), "*")
+                .replace(Regex("""(?i)<(u|ins|s|del|strike|sub|sup|code)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>""")) { "<${it.groupValues[1].lowercase()}>" }
+                .replace(Regex("""(?i)</(u|ins|s|del|strike|sub|sup|code)\s*>""")) { "</${it.groupValues[1].lowercase()}>" }
+                .replace(Regex("""(?i)</?(?:span|div|p|font|small|mark)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "")
         }
         text = text
             .replace("&quot;", "\"").replace("#quot;", "\"")
