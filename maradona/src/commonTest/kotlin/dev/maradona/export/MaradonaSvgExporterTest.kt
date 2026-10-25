@@ -110,6 +110,7 @@ class MaradonaSvgExporterTest {
         val seqSvg = MaradonaSvgExporter.exportToSvg(
             """
             sequenceDiagram
+                Alice->>Alice: Self check
                 Alice->>Bob: Request
                 alt Cache hit
                     Bob-->>Alice: Fast response
@@ -121,9 +122,22 @@ class MaradonaSvgExporterTest {
         assertTrue(seqSvg.contains("[Cache hit]"), "Expected sequence alt block condition in SVG")
         assertTrue(seqSvg.contains("[Cache miss]"), "Expected sequence else divider label in SVG")
 
+        val stateSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            stateDiagram-v2
+                state Check <<choice>>
+                [*] --> Check
+                Check --> Idle
+                Idle --> [*]
+            """.trimIndent(),
+        )
+        assertTrue(stateSvg.contains("<circle "), "Expected start/end circle pseudonodes in state SVG")
+        assertTrue(stateSvg.contains("<polygon "), "Expected choice diamond polygon in state SVG")
+
         val erSvg = MaradonaSvgExporter.exportToSvg(
             """
             erDiagram
+                CUSTOMER ||--o{ ORDER : places
                 CUSTOMER {
                     string id PK "Primary key"
                     string email UK
@@ -132,6 +146,32 @@ class MaradonaSvgExporterTest {
         )
         assertTrue(erSvg.contains("string id PK"), "Expected ER entity attribute in SVG")
         assertTrue(erSvg.contains("string email UK"), "Expected ER entity second attribute in SVG")
+        assertTrue(erSvg.contains("data-marker=\"er-exactly-one\""), "Expected ER exactly-one cardinality marker in SVG")
+        assertTrue(erSvg.contains("data-marker=\"er-zero-or-more\""), "Expected ER zero-or-more cardinality marker in SVG")
+
+        val donutSingleSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            ---
+            config:
+              pie:
+                donutHole: 0.5
+            ---
+            pie title Single Donut
+                "Only" : 100
+            """.trimIndent(),
+        )
+        assertTrue(donutSingleSvg.contains("fill-rule=\"evenodd\""), "Expected single-slice donut to render annulus with fill-rule=\"evenodd\"")
+
+        val quadrantSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            quadrantChart
+                title Reach vs Engagement
+                x-axis Low --> High
+                y-axis Low --> High
+                Campaign A: [0.3, 0.7]
+            """.trimIndent(),
+        )
+        assertTrue(quadrantSvg.contains("class=\"quadrant-point\""), "Expected quadrant data point circle in SVG")
 
         val xySvg = MaradonaSvgExporter.exportToSvg(
             """
