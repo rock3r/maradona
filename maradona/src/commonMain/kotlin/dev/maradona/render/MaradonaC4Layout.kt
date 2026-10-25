@@ -24,7 +24,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -43,6 +45,7 @@ import dev.maradona.model.C4BoundaryKind
 import dev.maradona.model.C4Diagram
 import dev.maradona.model.C4Element
 import dev.maradona.model.C4ElementKind
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -135,14 +138,30 @@ fun MaradonaC4Layout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (C4DiagramLayout) -> Unit = {},
 ) {
     val holder = remember { C4LayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val isDark = theme.isDark
+    val relDescriptions = remember(diagram) {
+        val labelById = diagram.elements.associate { it.id to it.label }
+        val out = HashMap<String, MutableList<String>>()
+        for (el in diagram.elements) out[el.id] = mutableListOf()
+        for (rel in diagram.relationships) {
+            val toName = labelById[rel.to] ?: rel.to
+            val fromName = labelById[rel.from] ?: rel.from
+            val lbl = rel.label.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+            out[rel.from]?.add("connects to $toName$lbl")
+            out[rel.to]?.add("connected from $fromName$lbl")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -199,23 +218,41 @@ fun MaradonaC4Layout(
                 }
             }
 
-            for (el in diagram.elements) {
+            for ((elIdx, el) in diagram.elements.withIndex()) {
                 val colors = resolveC4ElementColors(el, theme)
                 val topPad = when {
                     el.kind.isPerson -> 26.dp
                     el.kind.isDatabase -> 16.dp
                     else -> 12.dp
                 }
+                val desc = el.description?.let { ": $it" } ?: ""
+                val relDesc = relDescriptions[el.id]
+                val baseDesc = buildString {
+                    append("${el.kind.defaultTypeTag} ${el.label}$desc")
+                    if (!relDesc.isNullOrBlank()) append(". $relDesc")
+                }
+                val clickEvent = if (!el.link.isNullOrBlank() || onNodeClick != null) {
+                    MaradonaNodeClickEvent(
+                        nodeId = el.id,
+                        label = el.label,
+                        url = el.link,
+                        tooltip = el.description,
+                    )
+                } else {
+                    null
+                }
                 Column(
                     modifier = Modifier
                         .layoutId("el:${el.id}")
                         .widthIn(min = 172.dp, max = 240.dp)
                         .padding(start = 14.dp, end = 14.dp, top = topPad, bottom = 12.dp)
-                        .focusable()
-                        .semantics {
-                            val desc = el.description?.let { ": $it" } ?: ""
-                            contentDescription = "${el.kind.defaultTypeTag} ${el.label}$desc"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = elIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {

@@ -7,6 +7,7 @@ import dev.maradona.model.EdgeStyle
 import dev.maradona.model.FlowEdge
 import dev.maradona.model.FlowNode
 import dev.maradona.model.Flowchart
+import dev.maradona.model.NodeAction
 import dev.maradona.model.NodeShape
 import dev.maradona.model.NodeStyle
 import dev.maradona.model.Subgraph
@@ -190,6 +191,7 @@ object FlowchartParser {
         private val classDefs = HashMap<String, NodeStyle>()
         private val nodeClasses = HashMap<String, MutableList<String>>()
         private val explicitNodeStyles = HashMap<String, NodeStyle>()
+        private val nodeActions = HashMap<String, NodeAction>()
         private var defaultLinkStyle: EdgeStyle? = null
         private val linkStyles = HashMap<Int, EdgeStyle>()
         private val edgeIds = HashSet<String>()
@@ -206,7 +208,13 @@ object FlowchartParser {
                 lower.startsWith("classdef ") -> classDef(stmt.substring("classdef ".length).trim(), lineNo)
                 lower.startsWith("class ") -> classAssign(stmt.substring("class ".length).trim())
                 lower.startsWith("linkstyle ") -> linkStyle(stmt.substring("linkstyle ".length).trim())
-                lower.startsWith("click ") || lower.startsWith("click\t") -> Unit
+                lower.startsWith("click ") || lower.startsWith("click\t") -> {
+                    ClickDirectiveParser.parseClick(stmt.substring(5).trim())?.let { parsed ->
+                        for (id in parsed.nodeIds) {
+                            nodeActions[id] = nodeActions[id]?.merge(parsed.action) ?: parsed.action
+                        }
+                    }
+                }
                 lower.startsWith("style ") -> style(stmt.substring("style ".length).trim(), lineNo)
                 else -> chain(stmt, lineNo)
             }
@@ -236,7 +244,12 @@ object FlowchartParser {
                 if (explicit != null) {
                     merged = merged?.merge(explicit) ?: explicit
                 }
-                if (merged != null) node.copy(style = merged) else node
+                val action = nodeActions[node.id]
+                if (merged != null || action != null) {
+                    node.copy(style = merged ?: node.style, action = action ?: node.action)
+                } else {
+                    node
+                }
             }
             val resolvedEdges = edges.mapIndexed { index, edge ->
                 val style = defaultLinkStyle?.merge(linkStyles[index]) ?: linkStyles[index]

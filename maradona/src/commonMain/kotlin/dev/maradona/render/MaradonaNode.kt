@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -18,8 +19,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -28,8 +27,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
 import dev.maradona.model.FlowNode
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.NodeShape
 
 /**
@@ -44,7 +43,10 @@ fun MaradonaNode(
     modifier: Modifier = Modifier,
     /** Plain-language summary of this node's connections, for accessibility. */
     connectionsDescription: String? = null,
+    traversalOrder: Int = 0,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
 ) {
+    val uriHandler = LocalUriHandler.current
     val shape = nodeShape(node.shape)
     val fill = parseCssColor(node.style?.fill) ?: theme.nodeFill
     val borderColor = parseCssColor(node.style?.stroke) ?: theme.nodeBorder
@@ -82,6 +84,8 @@ fun MaradonaNode(
     } else {
         "$plainLabel. $connectionsDescription"
     }
+    val clickEvent = node.action?.toClickEvent(node.id, plainLabel)
+        ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = node.id, label = plainLabel) else null
 
     Box(
         modifier = modifier
@@ -134,8 +138,14 @@ fun MaradonaNode(
                     else -> Unit
                 }
             }
-            .focusable()
-            .semantics(mergeDescendants = true) { contentDescription = description },
+            .diagramNodeInteraction(
+                baseDescription = description,
+                traversalOrder = traversalOrder,
+                event = clickEvent,
+                onNodeClick = onNodeClick,
+                uriHandler = uriHandler,
+                mergeDescendants = true,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         val labelModifier = when (node.shape) {

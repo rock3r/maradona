@@ -4,6 +4,7 @@ import dev.maradona.model.GanttDiagram
 import dev.maradona.model.GanttTask
 import dev.maradona.model.GanttTaskStatus
 import dev.maradona.model.GanttWeekendStart
+import dev.maradona.model.NodeAction
 import kotlin.math.max
 import kotlin.math.min
 
@@ -155,6 +156,7 @@ object GanttParser {
         val sections = mutableListOf<String>()
         var currentSection: String? = null
         val pendingTasks = mutableListOf<PendingTaskSpec>()
+        val taskActions = HashMap<String, NodeAction>()
 
         for (rawLine in bodyLines) {
             val clean = stripLineComment(rawLine).trim()
@@ -252,7 +254,14 @@ object GanttParser {
                     }
                     continue
                 }
-                lower.startsWith("click ") -> continue
+                lower.startsWith("click ") -> {
+                    ClickDirectiveParser.parseClick(clean.substring("click ".length).trim())?.let { parsed ->
+                        for (id in parsed.nodeIds) {
+                            taskActions[id] = taskActions[id]?.merge(parsed.action) ?: parsed.action
+                        }
+                    }
+                    continue
+                }
             }
 
             val colonIdx = clean.indexOf(':')
@@ -379,7 +388,10 @@ object GanttParser {
             excludes = excludes.distinct(),
             weekend = weekend,
             inclusiveEndDates = inclusiveEndDates,
-        )
+        ).map { task ->
+            val act = taskActions[task.id]
+            if (act != null) task.copy(action = act) else task
+        }
 
         return GanttDiagram(
             tasks = resolvedTasks,

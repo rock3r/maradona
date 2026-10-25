@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -40,6 +42,7 @@ import dev.maradona.model.Direction
 import dev.maradona.model.ErCardinality
 import dev.maradona.model.ErDiagram
 import dev.maradona.model.ErEntity
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -66,13 +69,17 @@ fun MaradonaErLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 52f, layerGap = 58f, subgraphPaddingX = 28f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (ErDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ErLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
+    val relDescriptions = remember(diagram) { erRelationshipDescriptions(diagram) }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -100,7 +107,7 @@ fun MaradonaErLayout(
                     ),
                 )
             }
-            for (e in diagram.entities) {
+            for ((eIdx, e) in diagram.entities.withIndex()) {
                 val textColor = parseCssColor(e.style?.textColor) ?: theme.nodeText
                 val hasKeys = e.attributes.any { it.keys.isNotEmpty() }
                 val hasComments = e.attributes.any { !it.comment.isNullOrEmpty() }
@@ -160,13 +167,19 @@ fun MaradonaErLayout(
                         )
                     }
                 }
+                val relDesc = relDescriptions[e.id]
+                val fullDesc = if (relDesc.isNullOrBlank()) "Entity ${e.label}" else "Entity ${e.label}. $relDesc"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = e.id, label = e.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("ebox:${e.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Entity ${e.label}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = fullDesc,
+                            traversalOrder = eIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
             for (sg in diagram.subgraphs) {
@@ -366,6 +379,20 @@ fun MaradonaErLayout(
             }
         }
     }
+}
+
+private fun erRelationshipDescriptions(diagram: ErDiagram): Map<String, String> {
+    val labelById = diagram.entities.associate { it.id to it.label }
+    val out = HashMap<String, MutableList<String>>()
+    for (e in diagram.entities) out[e.id] = mutableListOf()
+    for (rel in diagram.relationships) {
+        val lbl = rel.label?.let { " ($it)" } ?: ""
+        val toName = labelById[rel.to] ?: rel.to
+        val fromName = labelById[rel.from] ?: rel.from
+        out[rel.from]?.add("relates to $toName$lbl")
+        out[rel.to]?.add("related from $fromName$lbl")
+    }
+    return out.mapValues { it.value.joinToString("; ") }
 }
 
 private fun DrawScope.drawErUnderlay(

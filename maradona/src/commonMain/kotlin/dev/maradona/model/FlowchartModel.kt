@@ -48,12 +48,48 @@ data class EdgeStyle(
     }
 }
 
+/**
+ * Interactive link or callback action attached to a diagram node or task via
+ * Mermaid `click`, `link`, `callback`, C4 `$link`, Requirement `docRef`, or Kanban `ticket`.
+ */
+data class NodeAction(
+    val url: String? = null,
+    val callback: String? = null,
+    val tooltip: String? = null,
+    val target: String? = null,
+) {
+    fun merge(override: NodeAction?): NodeAction {
+        if (override == null) return this
+        return NodeAction(
+            url = override.url ?: url,
+            callback = override.callback ?: callback,
+            tooltip = override.tooltip ?: tooltip,
+            target = override.target ?: target,
+        )
+    }
+}
+
+/**
+ * Event delivered to [dev.maradona.render.MaradonaDiagram]'s `onNodeClick` callback when a user
+ * activates a node, class, task, C4 element, requirement element, or Kanban ticket.
+ */
+data class MaradonaNodeClickEvent(
+    val nodeId: String,
+    val label: String,
+    val url: String? = null,
+    val callback: String? = null,
+    val tooltip: String? = null,
+    val target: String? = null,
+    val links: Map<String, String> = emptyMap(),
+)
+
 data class FlowNode(
     val id: String,
     val label: String = id,
     val shape: NodeShape = NodeShape.Rect,
     val subgraphId: String? = null,
     val style: NodeStyle? = null,
+    val action: NodeAction? = null,
 )
 
 data class FlowEdge(

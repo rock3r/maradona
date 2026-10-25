@@ -23,7 +23,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +40,7 @@ import dev.maradona.layout.PositionedSequenceMessage
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.SequenceLayout
 import dev.maradona.layout.SequenceLayoutOptions
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.ParticipantKind
 import dev.maradona.model.SequenceBlockKind
 import dev.maradona.model.SequenceDiagram
@@ -67,16 +70,27 @@ fun MaradonaSequenceLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     options: SequenceLayoutOptions = SequenceLayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (SequenceDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { SequenceLayoutHolder() }
     val flatMessages = remember(diagram) { collectMessages(diagram.statements) }
     val flatNotes = remember(diagram) { collectNotes(diagram.statements) }
     val flatBlocks = remember(diagram) { collectBlocks(diagram.statements) }
+    val participantSummaries = remember(diagram, flatMessages) {
+        val out = HashMap<String, MutableList<String>>()
+        for (p in diagram.participants) out[p.id] = mutableListOf()
+        for (m in flatMessages) {
+            out[m.from]?.add("sends ${m.text.replace("*", "")} to ${m.to}")
+            out[m.to]?.add("receives ${m.text.replace("*", "")} from ${m.from}")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 contentDescription =
                     "Sequence diagram. ${diagram.participants.size} participants, ${flatMessages.size} messages."
             }
@@ -97,7 +111,7 @@ fun MaradonaSequenceLayout(
                     ),
                 )
             }
-            for (p in diagram.participants) {
+            for ((pIdx, p) in diagram.participants.withIndex()) {
                 BasicText(
                     text = annotatedLabel(p.label),
                     modifier = Modifier.layoutId("plabel:${p.id}"),
@@ -112,12 +126,18 @@ fun MaradonaSequenceLayout(
                     participant = p,
                     theme = theme,
                     modifier = Modifier.layoutId("ptop:${p.id}"),
+                    messageSummary = participantSummaries[p.id],
+                    traversalOrder = pIdx,
+                    onNodeClick = onNodeClick,
                 )
                 if (diagram.mirrorActors) {
                     SequenceParticipantBox(
                         participant = p,
                         theme = theme,
                         modifier = Modifier.layoutId("pbot:${p.id}"),
+                        messageSummary = participantSummaries[p.id],
+                        traversalOrder = diagram.participants.size + flatMessages.size + pIdx,
+                        onNodeClick = onNodeClick,
                     )
                 }
             }
@@ -384,8 +404,31 @@ private fun SequenceParticipantBox(
     participant: SequenceParticipant,
     theme: MaradonaTheme,
     modifier: Modifier = Modifier,
+    messageSummary: String? = null,
+    traversalOrder: Int = 0,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
 ) {
+    val uriHandler = LocalUriHandler.current
     val plainLabel = participant.label.replace("**", "").replace("*", "")
+    val baseDesc = buildString {
+        append("Participant $plainLabel")
+        if (!messageSummary.isNullOrBlank()) append(". $messageSummary")
+    }
+    val firstLink = participant.links.entries.firstOrNull()
+    val clickEvent = when {
+        firstLink != null -> MaradonaNodeClickEvent(
+            nodeId = participant.id,
+            label = plainLabel,
+            url = firstLink.value,
+            tooltip = firstLink.key,
+            links = participant.links,
+        )
+        onNodeClick != null -> MaradonaNodeClickEvent(
+            nodeId = participant.id,
+            label = plainLabel,
+        )
+        else -> null
+    }
     Box(
         modifier = modifier
             .drawBehind {
@@ -414,8 +457,14 @@ private fun SequenceParticipantBox(
                     drawRoundRect(theme.nodeBorder, cornerRadius = radius, style = stroke)
                 }
             }
-            .focusable()
-            .semantics(mergeDescendants = true) { contentDescription = "Participant $plainLabel" },
+            .diagramNodeInteraction(
+                baseDescription = baseDesc,
+                traversalOrder = traversalOrder,
+                event = clickEvent,
+                onNodeClick = onNodeClick,
+                uriHandler = uriHandler,
+                mergeDescendants = true,
+            ),
         contentAlignment = if (participant.kind == ParticipantKind.Actor) Alignment.BottomCenter else Alignment.Center,
     ) {
         BasicText(

@@ -9,6 +9,7 @@ import dev.maradona.model.ClassNote
 import dev.maradona.model.ClassRelation
 import dev.maradona.model.ClassRelationEnd
 import dev.maradona.model.Direction
+import dev.maradona.model.NodeAction
 import dev.maradona.model.NodeStyle
 
 /**
@@ -173,6 +174,7 @@ object ClassParser {
         var namespaceId: String? = null,
         val styleClasses: MutableList<String> = mutableListOf(),
         var inlineStyle: NodeStyle? = null,
+        var action: NodeAction? = null,
     )
 
     private class MutableNamespace(
@@ -353,7 +355,39 @@ object ClassParser {
                 lower.startsWith("title:") -> title = NodeRefReader.cleanLabel(stmt.substring("title:".length))
                 lower.startsWith("title ") -> title = NodeRefReader.cleanLabel(stmt.substring("title ".length))
                 lower.startsWith("acctitle:") || lower.startsWith("accdescr:") -> Unit
-                lower.startsWith("link ") || lower.startsWith("click ") || lower.startsWith("callback ") -> Unit
+                lower.startsWith("click ") -> {
+                    ClickDirectiveParser.parseClick(stmt.substring("click ".length).trim())?.let { parsed ->
+                        for (rawId in parsed.nodeIds) {
+                            val id = normalizeClassTargetId(rawId)
+                            if (id.isNotEmpty()) {
+                                val c = ensureClass(id)
+                                c.action = c.action?.merge(parsed.action) ?: parsed.action
+                            }
+                        }
+                    }
+                }
+                lower.startsWith("link ") -> {
+                    ClickDirectiveParser.parseClassLink(stmt.substring("link ".length).trim())?.let { parsed ->
+                        for (rawId in parsed.nodeIds) {
+                            val id = normalizeClassTargetId(rawId)
+                            if (id.isNotEmpty()) {
+                                val c = ensureClass(id)
+                                c.action = c.action?.merge(parsed.action) ?: parsed.action
+                            }
+                        }
+                    }
+                }
+                lower.startsWith("callback ") -> {
+                    ClickDirectiveParser.parseClassCallback(stmt.substring("callback ".length).trim())?.let { parsed ->
+                        for (rawId in parsed.nodeIds) {
+                            val id = normalizeClassTargetId(rawId)
+                            if (id.isNotEmpty()) {
+                                val c = ensureClass(id)
+                                c.action = c.action?.merge(parsed.action) ?: parsed.action
+                            }
+                        }
+                    }
+                }
                 lower.startsWith("classdef ") -> parseClassDef(stmt.substring("classDef ".length).trim())
                 lower.startsWith("cssclass ") -> parseCssClass(stmt.substring("cssClass ".length).trim())
                 lower.startsWith("style ") -> parseStyle(stmt.substring("style ".length).trim())
@@ -765,10 +799,15 @@ object ClassParser {
             }
         }
 
+        private fun normalizeClassTargetId(rawId: String): String {
+            val tildeIdx = findOutsideBackticks(rawId, '~')
+            return unquoteClassId(if (tildeIdx >= 0) rawId.substring(0, tildeIdx) else rawId)
+        }
+
         private fun parseStyle(rest: String) {
             val parts = rest.split(Regex("\\s+"), limit = 2)
             if (parts.size < 2) return
-            val id = unquoteClassId(parts[0].substringBefore('~'))
+            val id = normalizeClassTargetId(parts[0])
             if (id.isEmpty()) return
             val c = ensureClass(id)
             c.inlineStyle = (c.inlineStyle ?: NodeStyle()).merge(parseStyleProps(parts[1]))
@@ -838,6 +877,7 @@ object ClassParser {
                     methods = c.methods.toList(),
                     namespaceId = resolveExplicitNamespace(c.namespaceId),
                     style = style,
+                    action = c.action,
                 )
             }
             val builtNotes = notes.map { n ->

@@ -19,7 +19,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +35,7 @@ import dev.maradona.layout.LayoutOptions
 import dev.maradona.model.GanttDiagram
 import dev.maradona.model.GanttTask
 import dev.maradona.model.GanttTaskStatus
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.parse.GanttParser
 import kotlin.math.roundToInt
 
@@ -53,13 +56,16 @@ fun MaradonaGanttLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (GanttDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { GanttLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -100,7 +106,7 @@ fun MaradonaGanttLayout(
                     ),
                 )
             }
-            for (t in diagram.tasks) {
+            for ((tIdx, t) in diagram.tasks.withIndex()) {
                 BasicText(
                     text = annotatedLabel(t.label),
                     modifier = Modifier.layoutId("tasklbl:${t.id}"),
@@ -111,13 +117,18 @@ fun MaradonaGanttLayout(
                         fontWeight = if (t.isCritical || t.isMilestone) FontWeight.SemiBold else FontWeight.Medium,
                     ),
                 )
+                val clickEvent = t.action?.toClickEvent(t.id, t.label)
+                    ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = t.id, label = t.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("taskbox:${t.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Gantt task ${t.label}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = "Gantt task ${t.label}",
+                            traversalOrder = tIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
             val candidateTicks = remember(diagram) { GanttLayout.candidateTicks(diagram) }

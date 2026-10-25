@@ -59,6 +59,7 @@ import dev.maradona.layout.TimelineDiagramLayout
 import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.XyChartDiagramLayout
 import dev.maradona.layout.ZenUmlDiagramLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
 import kotlin.math.pow
@@ -115,6 +116,13 @@ fun MaradonaDiagram(
     initialPan: Offset? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
     onNaturalSize: (IntSize) -> Unit = {},
+    /**
+     * Optional callback invoked when a diagram node, class, task, C4 element,
+     * requirement element, or Kanban ticket is clicked/activated.
+     * When `null`, nodes with a URL (`click ... href`, C4 `$link`, `docRef`, `ticketBaseUrl`)
+     * open their link via [androidx.compose.ui.platform.LocalUriHandler].
+     */
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     /** Reports the computed flowchart layout (see [MaradonaLayout.onLayout]). */
     onLayout: (dev.maradona.layout.DiagramLayout) -> Unit = {},
     /** Reports the computed sequence diagram layout (see [MaradonaSequenceLayout.onLayout]). */
@@ -375,6 +383,7 @@ fun MaradonaDiagram(
                                 // density-scaled values, so zooming in would spuriously
                                 // flip a horizontal chart to vertical.
                                 availableWidthPx = layoutWidthPx,
+                                onNodeClick = onNodeClick,
                                 onLayout = onLayout,
                                 modifier = contentModifier,
                             )
@@ -382,6 +391,7 @@ fun MaradonaDiagram(
                             MaradonaSequenceLayout(
                                 diagram = model.diagram,
                                 theme = theme,
+                                onNodeClick = onNodeClick,
                                 onLayout = onSequenceLayout,
                                 modifier = contentModifier,
                             )
@@ -392,6 +402,7 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                onNodeClick = onNodeClick,
                                 onLayout = onClassLayout,
                                 modifier = contentModifier,
                             )
@@ -402,6 +413,7 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                onNodeClick = onNodeClick,
                                 onLayout = onStateLayout,
                                 modifier = contentModifier,
                             )
@@ -412,6 +424,7 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                onNodeClick = onNodeClick,
                                 onLayout = onErLayout,
                                 modifier = contentModifier,
                             )
@@ -420,6 +433,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onMindmapLayout,
                                 modifier = contentModifier,
                             )
@@ -428,6 +442,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onGanttLayout,
                                 modifier = contentModifier,
                             )
@@ -484,6 +499,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onKanbanLayout,
                                 modifier = contentModifier,
                             )
@@ -502,6 +518,7 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                onNodeClick = onNodeClick,
                                 onLayout = onRequirementLayout,
                                 modifier = contentModifier,
                             )
@@ -526,6 +543,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onBlockLayout,
                                 modifier = contentModifier,
                             )
@@ -534,6 +552,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onArchitectureLayout,
                                 modifier = contentModifier,
                             )
@@ -550,6 +569,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onC4Layout,
                                 modifier = contentModifier,
                             )

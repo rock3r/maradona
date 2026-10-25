@@ -9,6 +9,7 @@ data class SequenceParticipant(
     val id: String,
     val label: String = id,
     val kind: ParticipantKind = ParticipantKind.Participant,
+    val links: Map<String, String> = emptyMap(),
 )
 
 enum class SequenceHead {

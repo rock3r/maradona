@@ -10,6 +10,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -19,8 +20,11 @@ import dev.maradona.layout.DiagramLayout
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.FlowchartLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.model.ArrowHead
 import dev.maradona.model.Direction
+import dev.maradona.model.EdgeStroke
 import dev.maradona.model.Flowchart
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.roundToInt
 
 private class LayoutHolder {
@@ -43,6 +47,8 @@ fun MaradonaLayout(
      * [autoDirection]. Callers that measure this layout unbounded (for
      * fit-to-size zooming) must pass it explicitly. */
     availableWidthPx: Int = Int.MAX_VALUE,
+    /** Optional callback invoked when a flowchart node is clicked/activated. */
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     /** Reports the computed layout (the intermediate representation the oracle
      * compares against mermaid's SVG geometry, and the renderer against its own
      * pixels). Called whenever the layout is recomputed. */
@@ -54,6 +60,7 @@ fun MaradonaLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 contentDescription =
                     "Flowchart. ${chart.nodes.size} nodes, ${chart.edges.size} connections."
             }
@@ -61,12 +68,14 @@ fun MaradonaLayout(
                 holder.layout?.let { drawDiagramUnderlay(it, theme) }
             },
         content = {
-            for (node in chart.nodes) {
+            for ((index, node) in chart.nodes.withIndex()) {
                 MaradonaNode(
                     node = node,
                     theme = theme,
                     modifier = Modifier.layoutId("node:${node.id}"),
                     connectionsDescription = connections[node.id],
+                    traversalOrder = index,
+                    onNodeClick = onNodeClick,
                 )
             }
             for ((index, edge) in chart.edges.withIndex()) {
@@ -200,9 +209,28 @@ private fun connectionDescriptions(chart: Flowchart): Map<String, String> {
     val out = HashMap<String, MutableList<String>>()
     for (node in chart.nodes) out[node.id] = mutableListOf()
     for (edge in chart.edges) {
+        if (edge.stroke == EdgeStroke.Invisible) continue
         val labelPart = edge.label?.let { " (${it.replace("*", "")})" } ?: ""
-        out[edge.from]?.add("goes to ${plainLabel(chart, edge.to)}$labelPart")
-        out[edge.to]?.add("comes from ${plainLabel(chart, edge.from)}$labelPart")
+        val fromLabel = plainLabel(chart, edge.from)
+        val toLabel = plainLabel(chart, edge.to)
+        when {
+            edge.startHead != ArrowHead.None && edge.endHead != ArrowHead.None -> {
+                out[edge.from]?.add("connects bidirectionally with $toLabel$labelPart")
+                out[edge.to]?.add("connects bidirectionally with $fromLabel$labelPart")
+            }
+            edge.startHead == ArrowHead.None && edge.endHead == ArrowHead.None -> {
+                out[edge.from]?.add("connected with $toLabel$labelPart")
+                out[edge.to]?.add("connected with $fromLabel$labelPart")
+            }
+            edge.startHead != ArrowHead.None && edge.endHead == ArrowHead.None -> {
+                out[edge.to]?.add("goes to $fromLabel$labelPart")
+                out[edge.from]?.add("comes from $toLabel$labelPart")
+            }
+            else -> {
+                out[edge.from]?.add("goes to $toLabel$labelPart")
+                out[edge.to]?.add("comes from $fromLabel$labelPart")
+            }
+        }
     }
     return out.mapValues { it.value.joinToString("; ") }
 }
