@@ -330,7 +330,13 @@ object MaradonaSvgExporter {
                     title = d.title to layout.titleRect,
                     boxes = layout.nodes.map { pn ->
                         val stroke = if (pn.branchIndex >= 0) theme.seriesColor(pn.branchIndex) else theme.nodeBorder
-                        SvgBox(pn.rect, pn.node.label, theme.nodeFill, stroke, theme.nodeText)
+                        val shape = when (pn.node.shape) {
+                            dev.maradona.model.MindmapShape.Square -> NodeShape.Rect
+                            dev.maradona.model.MindmapShape.Circle -> NodeShape.Circle
+                            dev.maradona.model.MindmapShape.Hexagon -> NodeShape.Hexagon
+                            else -> NodeShape.RoundedRect
+                        }
+                        SvgBox(pn.rect, pn.node.label, theme.nodeFill, stroke, theme.nodeText, shape = shape)
                     },
                     lines = layout.edges.map { e ->
                         val stroke = if (e.branchIndex >= 0) theme.seriesColor(e.branchIndex) else theme.edge
@@ -701,6 +707,17 @@ object MaradonaSvgExporter {
             is MaradonaDiagramModel.BlockModel -> {
                 val d = model.diagram
                 val layout = BlockLayout.layout(diagram = d, options = options)
+                val blockArrowElements = layout.blocks
+                    .filter { !it.isCompositeContainer && it.item.shape == dev.maradona.model.BlockShape.BlockArrow }
+                    .map { pb ->
+                        val r = pb.rect
+                        val fill = (parseCssColor(pb.item.style?.fill) ?: theme.nodeFill).toSvgHex()
+                        val stroke = (parseCssColor(pb.item.style?.stroke) ?: theme.nodeBorder).toSvgHex()
+                        val dir = pb.item.arrowDirections.firstOrNull() ?: dev.maradona.model.BlockArrowDir.Right
+                        val dirTag = dir.name.lowercase()
+                        val pts = buildBlockArrowPoints(r, dir)
+                        """  <polygon class="block-arrow" data-dir="$dirTag" points="$pts" fill="$fill" stroke="$stroke" stroke-width="1.3"/>"""
+                    }
                 buildGenericBoxSvg(
                     width = layout.width,
                     height = layout.height,
@@ -709,13 +726,15 @@ object MaradonaSvgExporter {
                     containers = layout.blocks.filter { it.isCompositeContainer }.map { pb ->
                         SvgBox(pb.rect, pb.item.label, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
                     },
-                    boxes = layout.blocks.filter { !it.isCompositeContainer }.map { pb ->
+                    boxes = layout.blocks.filter { !it.isCompositeContainer && it.item.shape != dev.maradona.model.BlockShape.Space }.map { pb ->
+                        val isArrow = pb.item.shape == dev.maradona.model.BlockShape.BlockArrow
                         SvgBox(
                             rect = pb.rect,
                             label = pb.item.label,
-                            fill = parseCssColor(pb.item.style?.fill) ?: theme.nodeFill,
-                            stroke = parseCssColor(pb.item.style?.stroke) ?: theme.nodeBorder,
+                            fill = if (isArrow) Color.Transparent else (parseCssColor(pb.item.style?.fill) ?: theme.nodeFill),
+                            stroke = if (isArrow) Color.Transparent else (parseCssColor(pb.item.style?.stroke) ?: theme.nodeBorder),
                             textColor = parseCssColor(pb.item.style?.textColor) ?: theme.nodeText,
+                            shape = mapBlockNodeShape(pb.item.shape),
                         )
                     },
                     lines = layout.edges.map { pe ->
@@ -728,6 +747,7 @@ object MaradonaSvgExporter {
                             endMarker = mapBlockEndMarker(pe.edge.endHead),
                         )
                     },
+                    extraSvgElements = blockArrowElements,
                 )
             }
             is MaradonaDiagramModel.ArchitectureModel -> {
@@ -939,11 +959,18 @@ object MaradonaSvgExporter {
             val lr = pe.labelRect
             val lbl = pe.edge.label
             if (lr != null && !lbl.isNullOrBlank()) {
-                val plainLbl = escapeXml(plainTextLabel(lbl))
                 sb.append(
-                    """  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""" + "\n" +
-                        """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">$plainLbl</text>""",
+                    """  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""",
                 ).append('\n')
+                appendMultilineText(
+                    sb = sb,
+                    indent = "  ",
+                    centerX = lr.centerX,
+                    centerY = lr.centerY,
+                    rawText = lbl,
+                    colorHex = theme.edgeLabelText.toSvgHex(),
+                    fontSize = theme.edgeLabelFontSize.value,
+                )
             }
         }
 
@@ -1191,6 +1218,48 @@ object MaradonaSvgExporter {
         dev.maradona.model.ErCardinality.ZeroOrMore -> SvgMarker.ErZeroOrMore
     }
 
+    private fun mapBlockNodeShape(shape: dev.maradona.model.BlockShape): NodeShape = when (shape) {
+        dev.maradona.model.BlockShape.Rect, dev.maradona.model.BlockShape.BlockArrow, dev.maradona.model.BlockShape.Composite, dev.maradona.model.BlockShape.Space -> NodeShape.Rect
+        dev.maradona.model.BlockShape.Round -> NodeShape.RoundedRect
+        dev.maradona.model.BlockShape.Stadium -> NodeShape.Stadium
+        dev.maradona.model.BlockShape.Subroutine -> NodeShape.Subroutine
+        dev.maradona.model.BlockShape.Cylinder -> NodeShape.Cylinder
+        dev.maradona.model.BlockShape.Circle -> NodeShape.Circle
+        dev.maradona.model.BlockShape.DoubleCircle -> NodeShape.DoubleCircle
+        dev.maradona.model.BlockShape.Asymmetric -> NodeShape.Asymmetric
+        dev.maradona.model.BlockShape.Diamond -> NodeShape.Diamond
+        dev.maradona.model.BlockShape.Hexagon -> NodeShape.Hexagon
+        dev.maradona.model.BlockShape.LeanRight -> NodeShape.Parallelogram
+        dev.maradona.model.BlockShape.LeanLeft -> NodeShape.ParallelogramAlt
+        dev.maradona.model.BlockShape.Trapezoid -> NodeShape.Trapezoid
+        dev.maradona.model.BlockShape.InvTrapezoid -> NodeShape.TrapezoidAlt
+    }
+
+    private fun buildBlockArrowPoints(r: DiagramRect, dir: dev.maradona.model.BlockArrowDir): String {
+        val x = r.x
+        val y = r.y
+        val right = r.right
+        val bottom = r.bottom
+        val cx = r.centerX
+        val cy = r.centerY
+        val sw = r.width * 0.22f
+        val sh = r.height * 0.22f
+        return when (dir) {
+            dev.maradona.model.BlockArrowDir.Right ->
+                "${fmt(x)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(x)},${fmt(bottom - sh)}"
+            dev.maradona.model.BlockArrowDir.Left ->
+                "${fmt(right)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y)} ${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)}"
+            dev.maradona.model.BlockArrowDir.Down ->
+                "${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x + sw)},${fmt(bottom - sh)}"
+            dev.maradona.model.BlockArrowDir.Up ->
+                "${fmt(x + sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right)},${fmt(y + sh)} ${fmt(cx)},${fmt(y)} ${fmt(x)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)}"
+            dev.maradona.model.BlockArrowDir.X ->
+                "${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom)}"
+            dev.maradona.model.BlockArrowDir.Y ->
+                "${fmt(cx)},${fmt(y)} ${fmt(right)},${fmt(y + sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x)},${fmt(y + sh)}"
+        }
+    }
+
     private fun mapBlockEndMarker(head: dev.maradona.model.BlockArrowHead): SvgMarker = when (head) {
         dev.maradona.model.BlockArrowHead.None -> SvgMarker.None
         dev.maradona.model.BlockArrowHead.Point -> SvgMarker.FilledArrow
@@ -1399,9 +1468,15 @@ object MaradonaSvgExporter {
                 }
                 for ((lbl, lr) in listOf(ln.label, ln.startLabel, ln.endLabel)) {
                     if (!lbl.isNullOrBlank() && lr != null) {
-                        sb.append(
-                            """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""",
-                        ).append('\n')
+                        appendMultilineText(
+                            sb = sb,
+                            indent = "  ",
+                            centerX = lr.centerX,
+                            centerY = lr.centerY,
+                            rawText = lbl,
+                            colorHex = theme.edgeLabelText.toSvgHex(),
+                            fontSize = theme.edgeLabelFontSize.value,
+                        )
                     }
                 }
             }
@@ -1421,21 +1496,16 @@ object MaradonaSvgExporter {
             }
             appendSvgNodeShape(sb, b.shape, r, b.fill.toSvgHex(), b.stroke.toSvgHex(), 1.3f)
             if (b.label.isNotBlank()) {
-                val fontSize = theme.nodeFontSize.value
-                val textLines = plainTextLabel(b.label).split('\n')
-                val lineH = fontSize * 1.35f
-                val startY = r.centerY - ((textLines.size - 1) * lineH) / 2f + fontSize * 0.35f
-                val rotateAttr = if (b.rotationDeg != 0f) {
-                    """ transform="rotate(${fmt(b.rotationDeg)} ${fmt(r.centerX)} ${fmt(r.centerY)})""""
-                } else {
-                    ""
-                }
-                for ((idx, textLine) in textLines.withIndex()) {
-                    val ly = startY + idx * lineH
-                    sb.append(
-                        """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${b.textColor.toSvgHex()}" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>${escapeXml(textLine)}</text>""",
-                    ).append('\n')
-                }
+                appendMultilineText(
+                    sb = sb,
+                    indent = "    ",
+                    centerX = r.centerX,
+                    centerY = r.centerY,
+                    rawText = b.label,
+                    colorHex = b.textColor.toSvgHex(),
+                    fontSize = theme.nodeFontSize.value,
+                    rotationDeg = b.rotationDeg,
+                )
             }
             sb.append("""  </g>""").append('\n')
             if (url != null) {
@@ -1450,6 +1520,32 @@ object MaradonaSvgExporter {
 
         sb.append("</svg>")
         return sb.toString()
+    }
+
+    private fun appendMultilineText(
+        sb: StringBuilder,
+        indent: String,
+        centerX: Float,
+        centerY: Float,
+        rawText: String,
+        colorHex: String,
+        fontSize: Float,
+        rotationDeg: Float = 0f,
+    ) {
+        val textLines = plainTextLabel(rawText).split('\n')
+        val lineH = fontSize * 1.35f
+        val startY = centerY - ((textLines.size - 1) * lineH) / 2f + fontSize * 0.35f
+        val rotateAttr = if (rotationDeg != 0f) {
+            """ transform="rotate(${fmt(rotationDeg)} ${fmt(centerX)} ${fmt(centerY)})""""
+        } else {
+            ""
+        }
+        for ((idx, textLine) in textLines.withIndex()) {
+            val ly = startY + idx * lineH
+            sb.append(
+                """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>${escapeXml(textLine)}</text>""",
+            ).append('\n')
+        }
     }
 
     private fun Color.toSvgHex(): String {

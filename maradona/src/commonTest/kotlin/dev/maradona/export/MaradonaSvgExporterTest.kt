@@ -111,7 +111,7 @@ class MaradonaSvgExporterTest {
             """
             sequenceDiagram
                 Alice->>Alice: Self check
-                Alice->>Bob: Request
+                Alice->>Bob: First line<br/>Second line
                 alt Cache hit
                     Bob-->>Alice: Fast response
                 else Cache miss
@@ -121,6 +121,18 @@ class MaradonaSvgExporterTest {
         )
         assertTrue(seqSvg.contains("[Cache hit]"), "Expected sequence alt block condition in SVG")
         assertTrue(seqSvg.contains("[Cache miss]"), "Expected sequence else divider label in SVG")
+        assertTrue(seqSvg.contains(">First line</text>") && seqSvg.contains(">Second line</text>"), "Expected multiline sequence message to emit separate <text> lines")
+
+        val blockSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            block-beta
+                columns 2
+                arr<["Flow"]>(down)
+                dec{"Decision"}
+            """.trimIndent(),
+        )
+        assertTrue(blockSvg.contains("class=\"block-arrow\" data-dir=\"down\""), "Expected directional block arrow polygon in SVG")
+        assertTrue(blockSvg.contains("<polygon "), "Expected diamond polygon in block SVG")
 
         val stateSvg = MaradonaSvgExporter.exportToSvg(
             """
