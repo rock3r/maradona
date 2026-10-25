@@ -275,10 +275,10 @@ object MaradonaSvgExporter {
                 val fontSize = theme.nodeFontSize.value
                 val elementSizes = d.elements.associate { el ->
                     val defaultSz = C4Layout.defaultElementSize(el, dens)
-                    val wrapW = (defaultSz.width - 28f * dens).coerceAtLeast(140f)
-                    val wrappedLines = c4WrappedCardLines(el, fontSize, wrapW)
-                    val maxLineCols = wrappedLines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
-                    val neededW = max(defaultSz.width, (maxLineCols * fontSize * 0.62f + 32f * dens).coerceAtMost(280f * dens))
+                    val initialLines = c4WrappedCardLines(el, fontSize, c4WrapWidth(defaultSz.width, dens))
+                    val maxLineCols = initialLines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                    val neededW = max(defaultSz.width, (maxLineCols * fontSize * 0.62f + 28f * dens).coerceAtMost(280f * dens))
+                    val wrappedLines = c4WrappedCardLines(el, fontSize, c4WrapWidth(neededW, dens))
                     val personExtra = if (el.kind.isPerson) 22f * dens else 0f
                     val dbExtra = if (el.kind.isDatabase) 12f * dens else 0f
                     val neededH = max(defaultSz.height, wrappedLines.size * fontSize * 1.38f + 28f * dens + personExtra + dbExtra)
@@ -336,13 +336,13 @@ object MaradonaSvgExporter {
                 val messageLabelSizes = msgSpecs.mapNotNull { spec ->
                     if (spec.displayText.isBlank()) null else spec.index to defaultTextSize(spec.displayText, theme.edgeLabelFontSize.value)
                 }.toMap()
-                val commentWrapW = 216f * dens
                 val commentFont = theme.captionFontSize.value
                 val commentSizes = msgSpecs.mapNotNull { spec ->
                     val ct = spec.commentText?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                    val wrapped = wrapSvgLines(plainTextLabel(ct), commentFont, commentWrapW)
-                    val maxCols = wrapped.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                    val initialLines = wrapSvgLines(plainTextLabel(ct), commentFont, zenUmlCommentWrapWidth(240f * dens, dens))
+                    val maxCols = initialLines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
                     val w = min(240f * dens, max(64f * dens, maxCols * commentFont * 0.62f + 16f * dens))
+                    val wrapped = wrapSvgLines(plainTextLabel(ct), commentFont, zenUmlCommentWrapWidth(w, dens))
                     val h = max(24f * dens, wrapped.size * commentFont * 1.4f + 10f * dens)
                     spec.index to DiagramSize(w, h)
                 }.toMap()
@@ -1156,7 +1156,7 @@ object MaradonaSvgExporter {
             }
 
             val fontSize = theme.nodeFontSize.value
-            val wrapW = (r.width - 28f).coerceAtLeast(120f)
+            val wrapW = c4WrapWidth(r.width, dens)
             val cardLines = c4WrappedCardLines(el, fontSize, wrapW)
             appendMultilineText(sb, "    ", r.centerX, r.centerY, cardLines, textHex, fontSize)
             sb.append("""  </g>""").append('\n')
@@ -1349,7 +1349,7 @@ object MaradonaSvgExporter {
             val cr = pm.commentRect
             if (!ct.isNullOrBlank() && cr != null) {
                 sb.append("""  <rect x="${fmt(cr.x)}" y="${fmt(cr.y)}" width="${fmt(cr.width)}" height="${fmt(cr.height)}" rx="4" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
-                val commentLines = wrapSvgLines(plainTextLabel(ct), theme.captionFontSize.value, (cr.width - 12f).coerceAtLeast(80f))
+                val commentLines = wrapSvgLines(plainTextLabel(ct), theme.captionFontSize.value, zenUmlCommentWrapWidth(cr.width, dens))
                 appendMultilineText(sb, "  ", cr.centerX, cr.centerY, commentLines, theme.noteText.toSvgHex(), theme.captionFontSize.value)
             }
             if (pm.displayText.isBlank() && cr != null) continue
@@ -1404,6 +1404,12 @@ object MaradonaSvgExporter {
             addAll(plainTextLabel(p.label).split('\n'))
         }
     }
+
+    private fun c4WrapWidth(cardWidth: Float, dens: Float): Float =
+        (cardWidth - 28f * dens).coerceAtLeast(80f * dens)
+
+    private fun zenUmlCommentWrapWidth(noteWidth: Float, dens: Float): Float =
+        (noteWidth - 16f * dens).coerceAtLeast(48f * dens)
 
     private fun c4WrappedCardLines(
         el: dev.maradona.model.C4Element,
