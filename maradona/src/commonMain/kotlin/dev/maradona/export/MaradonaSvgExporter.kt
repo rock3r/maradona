@@ -97,11 +97,20 @@ object MaradonaSvgExporter {
                         SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
                     lines = layout.messages.map { m ->
+                        val endMarker = when (m.statement.arrow.head) {
+                            dev.maradona.model.SequenceHead.Filled -> SvgMarker.FilledArrow
+                            dev.maradona.model.SequenceHead.Open -> SvgMarker.None
+                            dev.maradona.model.SequenceHead.Cross -> SvgMarker.Cross
+                            dev.maradona.model.SequenceHead.Async -> SvgMarker.OpenArrow
+                        }
+                        val startMarker = if (m.statement.arrow.bidirectional) endMarker else SvgMarker.None
                         SvgLine(
                             points = listOf(DiagramPoint(m.startX, m.lineY), DiagramPoint(m.stopX, m.lineY)),
                             color = theme.edge,
                             dashed = m.statement.arrow.dashed,
                             label = m.statement.text to m.labelRect,
+                            startMarker = startMarker,
+                            endMarker = endMarker,
                         )
                     },
                 )
@@ -152,7 +161,16 @@ object MaradonaSvgExporter {
                         SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
                     lines = layout.relations.map { r ->
-                        SvgLine(r.points, theme.edge, r.relation.dashed, r.relation.label to r.labelRect)
+                        SvgLine(
+                            points = r.points,
+                            color = theme.edge,
+                            dashed = r.relation.dashed,
+                            label = r.relation.label to r.labelRect,
+                            startMarker = mapClassEndMarker(r.relation.startEnd),
+                            endMarker = mapClassEndMarker(r.relation.endEnd),
+                            startLabel = r.relation.fromCardinality to r.fromCardinalityRect,
+                            endLabel = r.relation.toCardinality to r.toCardinalityRect,
+                        )
                     },
                 )
             }
@@ -172,16 +190,25 @@ object MaradonaSvgExporter {
                         SvgBox(cs.rect, cs.state.label, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
                     },
                     boxes = layout.states.filter { it.state.kind != dev.maradona.model.StateKind.Composite }.map { ps ->
+                        val fullStateText = (listOf(ps.state.label) + ps.state.descriptions).filter { it.isNotBlank() }.joinToString("\n")
                         SvgBox(
                             rect = ps.rect,
-                            label = ps.state.label,
+                            label = fullStateText,
                             fill = parseCssColor(ps.state.style?.fill) ?: theme.nodeFill,
                             stroke = parseCssColor(ps.state.style?.stroke) ?: theme.nodeBorder,
                             textColor = parseCssColor(ps.state.style?.textColor) ?: theme.nodeText,
                         )
+                    } + layout.notes.map { n ->
+                        SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
                     lines = layout.transitions.map { tr ->
-                        SvgLine(tr.points, theme.edge, false, tr.transition.label to tr.labelRect)
+                        SvgLine(
+                            points = tr.points,
+                            color = theme.edge,
+                            dashed = false,
+                            label = tr.transition.label to tr.labelRect,
+                            endMarker = SvgMarker.FilledArrow,
+                        )
                     },
                 )
             }
@@ -328,8 +355,26 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.periods.map { pp ->
-                        SvgBox(pp.rect, pp.period.title, theme.seriesFill(pp.colorIndex), theme.seriesColor(pp.colorIndex), theme.nodeText)
+                    containers = layout.sections.map { s ->
+                        SvgBox(s.rect, s.name, theme.seriesFill(s.sectionIndex), theme.seriesColor(s.sectionIndex), theme.nodeText)
+                    },
+                    boxes = layout.periods.flatMap { pp ->
+                        listOf(
+                            SvgBox(pp.rect, pp.period.title, theme.seriesFill(pp.colorIndex), theme.seriesColor(pp.colorIndex), theme.nodeText),
+                        ) + pp.events.map { ev ->
+                            SvgBox(ev.rect, ev.text, theme.nodeFill, theme.seriesColor(pp.colorIndex), theme.nodeText)
+                        }
+                    },
+                    lines = listOf(
+                        SvgLine(listOf(layout.spineStart, layout.spineEnd), theme.edge, false, null to null),
+                    ) + layout.periods.mapNotNull { pp ->
+                        val cs = pp.connectorStart
+                        val ce = pp.connectorEnd
+                        if (cs != null && ce != null) {
+                            SvgLine(listOf(cs, ce), theme.seriesColor(pp.colorIndex), true, null to null)
+                        } else {
+                            null
+                        }
                     },
                 )
             }
@@ -431,7 +476,13 @@ object MaradonaSvgExporter {
                         SvgBox(pi.rect, pi.item.name, theme.nodeFill, theme.nodeBorder, theme.nodeText)
                     },
                     lines = layout.relations.map { pr ->
-                        SvgLine(pr.points, theme.edge, !pr.relation.isContains, pr.relation.label to pr.labelRect)
+                        SvgLine(
+                            points = pr.points,
+                            color = theme.edge,
+                            dashed = !pr.relation.isContains,
+                            label = pr.relation.label to pr.labelRect,
+                            endMarker = if (pr.relation.isContains) SvgMarker.Circle else SvgMarker.OpenArrow,
+                        )
                     },
                 )
             }
@@ -485,7 +536,14 @@ object MaradonaSvgExporter {
                         )
                     },
                     lines = layout.edges.map { pe ->
-                        SvgLine(pe.points, theme.edge, false, pe.edge.label to pe.labelRect)
+                        SvgLine(
+                            points = pe.points,
+                            color = theme.edge,
+                            dashed = pe.edge.pattern == dev.maradona.model.BlockEdgePattern.Dotted,
+                            label = pe.edge.label to pe.labelRect,
+                            startMarker = mapBlockEndMarker(pe.edge.startHead),
+                            endMarker = mapBlockEndMarker(pe.edge.endHead),
+                        )
                     },
                 )
             }
@@ -504,7 +562,14 @@ object MaradonaSvgExporter {
                         SvgBox(ps.iconRect, ps.service.title ?: ps.service.id, theme.accentBorder, theme.accentBorder, theme.accentText)
                     },
                     lines = layout.edges.map { pe ->
-                        SvgLine(pe.points, theme.edge, false, pe.edge.title to pe.labelRect)
+                        SvgLine(
+                            points = pe.points,
+                            color = theme.edge,
+                            dashed = false,
+                            label = pe.edge.title to pe.labelRect,
+                            startMarker = if (pe.edge.lhsInto) SvgMarker.FilledArrow else SvgMarker.None,
+                            endMarker = if (pe.edge.rhsInto) SvgMarker.FilledArrow else SvgMarker.None,
+                        )
                     },
                 )
             }
@@ -547,7 +612,13 @@ object MaradonaSvgExporter {
                         )
                     },
                     lines = layout.relationships.map { pr ->
-                        SvgLine(pr.points, theme.edge, true, pr.relationship.label to pr.labelRect)
+                        SvgLine(
+                            points = pr.points,
+                            color = theme.edge,
+                            dashed = true,
+                            label = pr.relationship.label to pr.labelRect,
+                            endMarker = SvgMarker.FilledArrow,
+                        )
                     },
                 )
             }
@@ -569,8 +640,9 @@ object MaradonaSvgExporter {
                         SvgLine(
                             points = listOf(DiagramPoint(pm.startX, pm.y), DiagramPoint(pm.endX, pm.y)),
                             color = theme.edge,
-                            dashed = false,
+                            dashed = pm.kind == dev.maradona.model.ZenUmlMessageKind.RETURN,
                             label = pm.displayText to pm.labelRect,
+                            endMarker = if (pm.kind == dev.maradona.model.ZenUmlMessageKind.ASYNC) SvgMarker.OpenArrow else SvgMarker.FilledArrow,
                         )
                     },
                 )
@@ -843,6 +915,101 @@ object MaradonaSvgExporter {
         }
     }
 
+    private enum class SvgMarker {
+        None,
+        FilledArrow,
+        OpenArrow,
+        HollowTriangle,
+        FilledDiamond,
+        HollowDiamond,
+        Cross,
+        Circle,
+        Lollipop,
+    }
+
+    private fun mapClassEndMarker(end: dev.maradona.model.ClassRelationEnd): SvgMarker = when (end) {
+        dev.maradona.model.ClassRelationEnd.None -> SvgMarker.None
+        dev.maradona.model.ClassRelationEnd.Extension -> SvgMarker.HollowTriangle
+        dev.maradona.model.ClassRelationEnd.Composition -> SvgMarker.FilledDiamond
+        dev.maradona.model.ClassRelationEnd.Aggregation -> SvgMarker.HollowDiamond
+        dev.maradona.model.ClassRelationEnd.Dependency -> SvgMarker.OpenArrow
+        dev.maradona.model.ClassRelationEnd.Lollipop -> SvgMarker.Lollipop
+    }
+
+    private fun mapBlockEndMarker(head: dev.maradona.model.BlockArrowHead): SvgMarker = when (head) {
+        dev.maradona.model.BlockArrowHead.None -> SvgMarker.None
+        dev.maradona.model.BlockArrowHead.Point -> SvgMarker.FilledArrow
+        dev.maradona.model.BlockArrowHead.Circle -> SvgMarker.Circle
+        dev.maradona.model.BlockArrowHead.Cross -> SvgMarker.Cross
+    }
+
+    private fun appendSvgMarker(
+        sb: StringBuilder,
+        tip: DiagramPoint,
+        from: DiagramPoint,
+        marker: SvgMarker,
+        color: String,
+        bgColor: String,
+    ) {
+        if (marker == SvgMarker.None) return
+        val angle = atan2((tip.y - from.y).toDouble(), (tip.x - from.x).toDouble())
+        when (marker) {
+            SvgMarker.FilledArrow -> {
+                val len = 9.0
+                val spread = 0.45
+                val x1 = tip.x - (len * cos(angle - spread)).toFloat()
+                val y1 = tip.y - (len * sin(angle - spread)).toFloat()
+                val x2 = tip.x - (len * cos(angle + spread)).toFloat()
+                val y2 = tip.y - (len * sin(angle + spread)).toFloat()
+                sb.append("""  <polygon class="edge-marker" data-marker="filled-arrow" points="${fmt(tip.x)},${fmt(tip.y)} ${fmt(x1)},${fmt(y1)} ${fmt(x2)},${fmt(y2)}" fill="$color"/>""").append('\n')
+            }
+            SvgMarker.OpenArrow -> {
+                val len = 9.0
+                val spread = 0.45
+                val x1 = tip.x - (len * cos(angle - spread)).toFloat()
+                val y1 = tip.y - (len * sin(angle - spread)).toFloat()
+                val x2 = tip.x - (len * cos(angle + spread)).toFloat()
+                val y2 = tip.y - (len * sin(angle + spread)).toFloat()
+                sb.append("""  <polyline class="edge-marker" data-marker="open-arrow" points="${fmt(x1)},${fmt(y1)} ${fmt(tip.x)},${fmt(tip.y)} ${fmt(x2)},${fmt(y2)}" fill="none" stroke="$color" stroke-width="1.6"/>""").append('\n')
+            }
+            SvgMarker.HollowTriangle -> {
+                val len = 11.0
+                val spread = 0.48
+                val x1 = tip.x - (len * cos(angle - spread)).toFloat()
+                val y1 = tip.y - (len * sin(angle - spread)).toFloat()
+                val x2 = tip.x - (len * cos(angle + spread)).toFloat()
+                val y2 = tip.y - (len * sin(angle + spread)).toFloat()
+                sb.append("""  <polygon class="edge-marker" data-marker="hollow-triangle" points="${fmt(tip.x)},${fmt(tip.y)} ${fmt(x1)},${fmt(y1)} ${fmt(x2)},${fmt(y2)}" fill="$bgColor" stroke="$color" stroke-width="1.6"/>""").append('\n')
+            }
+            SvgMarker.FilledDiamond, SvgMarker.HollowDiamond -> {
+                val len = 12.0
+                val halfLen = 6.0
+                val spread = 0.48
+                val x1 = tip.x - (halfLen * cos(angle - spread)).toFloat()
+                val y1 = tip.y - (halfLen * sin(angle - spread)).toFloat()
+                val xBack = tip.x - (len * cos(angle)).toFloat()
+                val yBack = tip.y - (len * sin(angle)).toFloat()
+                val x2 = tip.x - (halfLen * cos(angle + spread)).toFloat()
+                val y2 = tip.y - (halfLen * sin(angle + spread)).toFloat()
+                val fill = if (marker == SvgMarker.FilledDiamond) color else bgColor
+                val tag = if (marker == SvgMarker.FilledDiamond) "filled-diamond" else "hollow-diamond"
+                sb.append("""  <polygon class="edge-marker" data-marker="$tag" points="${fmt(tip.x)},${fmt(tip.y)} ${fmt(x1)},${fmt(y1)} ${fmt(xBack)},${fmt(yBack)} ${fmt(x2)},${fmt(y2)}" fill="$fill" stroke="$color" stroke-width="1.6"/>""").append('\n')
+            }
+            SvgMarker.Circle, SvgMarker.Lollipop -> {
+                val tag = if (marker == SvgMarker.Lollipop) "lollipop" else "circle"
+                sb.append("""  <circle class="edge-marker" data-marker="$tag" cx="${fmt(tip.x)}" cy="${fmt(tip.y)}" r="4.5" fill="$bgColor" stroke="$color" stroke-width="1.5"/>""").append('\n')
+            }
+            SvgMarker.Cross -> {
+                val d = 4f
+                sb.append("""  <g class="edge-marker" data-marker="cross">""").append('\n')
+                sb.append("""    <line x1="${fmt(tip.x - d)}" y1="${fmt(tip.y - d)}" x2="${fmt(tip.x + d)}" y2="${fmt(tip.y + d)}" stroke="$color" stroke-width="1.8"/>""").append('\n')
+                sb.append("""    <line x1="${fmt(tip.x - d)}" y1="${fmt(tip.y + d)}" x2="${fmt(tip.x + d)}" y2="${fmt(tip.y - d)}" stroke="$color" stroke-width="1.8"/>""").append('\n')
+                sb.append("""  </g>""").append('\n')
+            }
+            SvgMarker.None -> Unit
+        }
+    }
+
     private data class SvgBox(
         val rect: DiagramRect,
         val label: String,
@@ -858,6 +1025,10 @@ object MaradonaSvgExporter {
         val color: Color,
         val dashed: Boolean,
         val label: Pair<String?, DiagramRect?>,
+        val startMarker: SvgMarker = SvgMarker.None,
+        val endMarker: SvgMarker = SvgMarker.None,
+        val startLabel: Pair<String?, DiagramRect?> = null to null,
+        val endLabel: Pair<String?, DiagramRect?> = null to null,
     )
 
     private fun buildGenericBoxSvg(
@@ -872,9 +1043,10 @@ object MaradonaSvgExporter {
     ): String {
         val w = width.roundToInt().coerceAtLeast(1)
         val h = height.roundToInt().coerceAtLeast(1)
+        val bgHex = theme.background.toSvgHex()
         val sb = StringBuilder()
         sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" width="$w" height="$h">""").append('\n')
-        sb.append("""  <rect width="100%" height="100%" fill="${theme.background.toSvgHex()}"/>""").append('\n')
+        sb.append("""  <rect width="100%" height="100%" fill="$bgHex"/>""").append('\n')
 
         val (titleText, titleRect) = title
         if (!titleText.isNullOrBlank() && titleRect != null) {
@@ -903,12 +1075,20 @@ object MaradonaSvgExporter {
             if (ln.points.size < 2) continue
             val d = buildSvgEdgePath(ln.points)
             val dashAttr = if (ln.dashed) """ stroke-dasharray="5,4"""" else ""
-            sb.append("""  <path d="$d" fill="none" stroke="${ln.color.toSvgHex()}" stroke-width="1.6"$dashAttr/>""").append('\n')
-            val (lbl, lr) = ln.label
-            if (!lbl.isNullOrBlank() && lr != null) {
-                sb.append(
-                    """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""",
-                ).append('\n')
+            val lineColorHex = ln.color.toSvgHex()
+            sb.append("""  <path d="$d" fill="none" stroke="$lineColorHex" stroke-width="1.6"$dashAttr/>""").append('\n')
+            if (ln.startMarker != SvgMarker.None) {
+                appendSvgMarker(sb, ln.points.first(), ln.points[1], ln.startMarker, lineColorHex, bgHex)
+            }
+            if (ln.endMarker != SvgMarker.None) {
+                appendSvgMarker(sb, ln.points.last(), ln.points[ln.points.size - 2], ln.endMarker, lineColorHex, bgHex)
+            }
+            for ((lbl, lr) in listOf(ln.label, ln.startLabel, ln.endLabel)) {
+                if (!lbl.isNullOrBlank() && lr != null) {
+                    sb.append(
+                        """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""",
+                    ).append('\n')
+                }
             }
         }
 
@@ -948,9 +1128,13 @@ object MaradonaSvgExporter {
     }
 
     private fun Color.toSvgHex(): String {
+        if (alpha <= 0.004f) return "none"
         val r = (red * 255f).roundToInt().coerceIn(0, 255)
         val g = (green * 255f).roundToInt().coerceIn(0, 255)
         val b = (blue * 255f).roundToInt().coerceIn(0, 255)
+        if (alpha < 0.996f) {
+            return "rgba($r,$g,$b,${fmt(alpha)})"
+        }
         return "#" +
             r.toString(16).padStart(2, '0').uppercase() +
             g.toString(16).padStart(2, '0').uppercase() +

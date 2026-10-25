@@ -322,7 +322,7 @@ object FlowchartLayout {
                     var requiredShift = 0f
                     for (j in 0 until i) {
                         val prev = ordered[j]
-                        if (!cur.isSubgraph && !prev.isSubgraph) continue
+                        if (!cur.isSubgraph && !prev.isSubgraph && shifts[j] <= 0f) continue
                         val overlapsVertically =
                             cur.rect.y < prev.rect.bottom - 1f && cur.rect.bottom > prev.rect.y + 1f
                         if (!overlapsVertically) continue

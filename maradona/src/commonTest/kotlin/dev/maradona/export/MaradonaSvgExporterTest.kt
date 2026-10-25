@@ -106,10 +106,48 @@ class MaradonaSvgExporterTest {
             assertTrue(svg.contains("</svg>"))
         }
 
-        // Verify Class members, Pie slices, Sankey links, wrapped labels, and XML control char stripping.
-        val classSvg = MaradonaSvgExporter.exportToSvg(samples[1])
+        // Verify Class members, relation markers, Timeline events, Pie slices, Sankey links, transparent/rgba colors, wrapped labels, and XML control char stripping.
+        val classSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            classDiagram
+                class Order {
+                    +String id
+                    +submit()
+                }
+                class LineItem
+                class SpecialOrder
+                Order *-- LineItem : contains
+                Order <|-- SpecialOrder
+                link Order "https://example.com/order" "Order docs"
+            """.trimIndent(),
+        )
         assertTrue(classSvg.contains("+String id"), "Expected class attribute in SVG")
         assertTrue(classSvg.contains("+submit()"), "Expected class method in SVG")
+        assertTrue(classSvg.contains("data-marker=\"filled-diamond\""), "Expected composition diamond marker in SVG")
+        assertTrue(classSvg.contains("data-marker=\"hollow-triangle\""), "Expected extension hollow-triangle marker in SVG")
+
+        val timelineSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            timeline
+                section Roadmap
+                2026 : Launch : Scale
+            """.trimIndent(),
+        )
+        assertTrue(timelineSvg.contains("Roadmap"), "Expected timeline section in SVG")
+        assertTrue(timelineSvg.contains("2026"), "Expected timeline period in SVG")
+        assertTrue(timelineSvg.contains("Launch"), "Expected timeline event 'Launch' in SVG")
+        assertTrue(timelineSvg.contains("Scale"), "Expected timeline event 'Scale' in SVG")
+
+        val alphaSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            flowchart LR
+                A[ Ghost ] --> B[ Translucent ]
+                style A fill:transparent,stroke:#2563EB
+                style B fill:#2563EB80,stroke:#1D4ED8
+            """.trimIndent(),
+        )
+        assertTrue(alphaSvg.contains("fill=\"none\""), "Expected fill:transparent to serialize as fill=\"none\"")
+        assertTrue(alphaSvg.contains("fill=\"rgba(37,99,235,"), "Expected 8-digit hex alpha to serialize as rgba(...)")
 
         val pieSvg = MaradonaSvgExporter.exportToSvg(
             """
@@ -207,7 +245,8 @@ class MaradonaSvgExporterTest {
                 Root --> N2[Inner A2]
                 Root --> M2[Inner B2]
                 Root --> P1[Peer Cluster Node]
-                Root --> Free[Unclustered Peer]
+                Root --> Free1[Unclustered Peer 1]
+                Root --> Free2[Unclustered Peer 2]
                 subgraph outerLeft [Outer Left]
                     subgraph innerA [Inner A]
                         N1
@@ -232,15 +271,17 @@ class MaradonaSvgExporterTest {
         val innerB = assertNotNull(nestedLayout.subgraphs.find { it.subgraph.id == "innerB" })
         val outerLeft = assertNotNull(nestedLayout.subgraphs.find { it.subgraph.id == "outerLeft" })
         val outerRight = assertNotNull(nestedLayout.subgraphs.find { it.subgraph.id == "outerRight" })
-        val freeNode = assertNotNull(nestedLayout.node("Free"))
+        val freeNode1 = assertNotNull(nestedLayout.node("Free1"))
+        val freeNode2 = assertNotNull(nestedLayout.node("Free2"))
 
         fun rectsOverlap(a: dev.maradona.layout.DiagramRect, b: dev.maradona.layout.DiagramRect): Boolean =
             a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y
 
         assertFalse(rectsOverlap(innerA.rect, innerB.rect), "Nested siblings innerA and innerB must not overlap")
         assertFalse(rectsOverlap(outerLeft.rect, outerRight.rect), "Parent outerLeft and sibling outerRight must not overlap after inner expansion")
-        assertFalse(rectsOverlap(outerLeft.rect, freeNode.rect), "outerLeft must not overlap unclustered Free node")
-        assertFalse(rectsOverlap(outerRight.rect, freeNode.rect), "outerRight must not overlap unclustered Free node")
+        assertFalse(rectsOverlap(outerLeft.rect, freeNode1.rect), "outerLeft must not overlap unclustered Free1 node")
+        assertFalse(rectsOverlap(outerRight.rect, freeNode1.rect), "outerRight must not overlap unclustered Free1 node")
+        assertFalse(rectsOverlap(freeNode1.rect, freeNode2.rect), "Shifted unclustered Free1 and Free2 nodes must not overlap each other")
     }
 
     @Test
