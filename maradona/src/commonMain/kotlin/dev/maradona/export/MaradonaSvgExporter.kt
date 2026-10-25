@@ -494,7 +494,7 @@ object MaradonaSvgExporter {
                 val d = model.diagram
                 val layout = JourneyLayout.layout(
                     diagram = d,
-                    taskLabelSize = { t -> defaultTextSize(t.label, theme.nodeFontSize.value) },
+                    taskLabelSize = { t -> defaultTextSize("${t.label} (${t.score})", theme.nodeFontSize.value) },
                     sectionTitleSize = { s -> defaultTextSize(s, theme.subgraphFontSize.value) },
                     actorLabelSize = { a -> defaultTextSize(a, theme.edgeLabelFontSize.value) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
@@ -2333,19 +2333,22 @@ object MaradonaSvgExporter {
             appendMultilineText(sb, "  ", pa.labelRect.centerX, pa.labelRect.centerY, plainTextLabel(pa.axis.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
         }
         val fillAlpha = diagram.config.curveOpacity.coerceIn(0f, 1f)
+        val rawStrokeW = diagram.config.curveStrokeWidth.coerceAtLeast(0f)
         fun resolveRadarColor(curveIndex: Int): Color =
             parseCssColor(diagram.config.customPalette[curveIndex]) ?: theme.seriesColor(curveIndex)
         for (pc in layout.curves) {
             if (pc.points.isEmpty()) continue
             val cColor = resolveRadarColor(pc.curveIndex)
-            val strokeHex = cColor.toSvgHex()
+            val strokeHex = if (rawStrokeW > 0f) cColor.toSvgHex() else "none"
             val fillHex = cColor.copy(alpha = fillAlpha).toSvgHex()
-            if (pc.points.size >= 2) {
+            if (pc.points.size >= 2 && (fillAlpha > 0f || rawStrokeW > 0f)) {
                 val pts = pc.points.joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" }
-                sb.append("""  <polygon class="radar-curve" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(diagram.config.curveStrokeWidth.coerceAtLeast(1f))}"/>""").append('\n')
+                sb.append("""  <polygon class="radar-curve" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(rawStrokeW)}"/>""").append('\n')
             }
-            for (pt in pc.points) {
-                sb.append("""  <circle cx="${fmt(pt.x)}" cy="${fmt(pt.y)}" r="3.2" fill="$strokeHex"/>""").append('\n')
+            if (rawStrokeW > 0f) {
+                for (pt in pc.points) {
+                    sb.append("""  <circle cx="${fmt(pt.x)}" cy="${fmt(pt.y)}" r="3.2" fill="$strokeHex"/>""").append('\n')
+                }
             }
         }
         for (li in layout.legendItems) {
