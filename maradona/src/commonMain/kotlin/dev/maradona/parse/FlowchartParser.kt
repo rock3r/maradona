@@ -616,14 +616,16 @@ internal object NodeRefReader {
         if (text.length >= 2 && text.first() == '`' && text.last() == '`') {
             text = text.substring(1, text.length - 1)
         }
+        text = transformOutsideInlineCode(text) { segment ->
+            segment
+                .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                .replace(Regex("(?i)<b>"), "**").replace(Regex("(?i)</b>"), "**")
+                .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
+                .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
+                .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
+                .replace(Regex("(?i)</?(?:span|div|p|font|small|mark)(?:\\s[^>]*)?>"), "")
+        }
         text = text
-            .replace(Regex("(?i)<br\\s*/?>"), "\n")
-            .replace(Regex("(?i)<b>"), "**").replace(Regex("(?i)</b>"), "**")
-            .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
-            .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
-            .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
-            .replace(Regex("(?i)<strike>"), "~~").replace(Regex("(?i)</strike>"), "~~")
-            .replace(Regex("(?i)</?(?:span|div|p|font|small|mark)(?:\\s[^>]*)?>"), "")
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
             .replace("&lt;", "<").replace("#lt;", "<")
@@ -634,6 +636,43 @@ internal object NodeRefReader {
                 if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
             }
         return text.trim()
+    }
+
+    private fun transformOutsideInlineCode(s: String, transform: (String) -> String): String {
+        if ('`' !in s && "<code" !in s.lowercase()) return transform(s)
+        val out = StringBuilder()
+        val nonCode = StringBuilder()
+        var i = 0
+        fun flush() {
+            if (nonCode.isNotEmpty()) {
+                out.append(transform(nonCode.toString()))
+                nonCode.clear()
+            }
+        }
+        while (i < s.length) {
+            if (s[i] == '`') {
+                val close = s.indexOf('`', i + 1)
+                if (close > i) {
+                    flush()
+                    out.append(s, i, close + 1)
+                    i = close + 1
+                    continue
+                }
+            }
+            if (s.regionMatches(i, "<code>", 0, 6, ignoreCase = true)) {
+                val close = s.indexOf("</code>", i + 6, ignoreCase = true)
+                if (close >= 0) {
+                    flush()
+                    out.append(s, i, close + 7)
+                    i = close + 7
+                    continue
+                }
+            }
+            nonCode.append(s[i])
+            i++
+        }
+        flush()
+        return out.toString()
     }
 }
 

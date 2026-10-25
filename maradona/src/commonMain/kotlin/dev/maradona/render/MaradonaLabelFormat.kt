@@ -272,31 +272,11 @@ fun rememberInlineImageContent(
 
 /**
  * Strips Markdown, HTML, icon, and image markup from [label] to produce a clean plain-text
- * string suitable for screen-reader descriptions and character-count heuristics.
+ * string suitable for screen-reader descriptions and character-count heuristics, while
+ * preserving literal contents inside inline code spans.
  */
-fun plainTextLabel(label: String): String {
-    var s = expandIconTokens(label)
-    s = IMG_TAG_REGEX.replace(s) { m ->
-        val attrs = m.groupValues[1]
-        val altMatch = IMG_ALT_REGEX.find(attrs)
-        val alt = altMatch?.let {
-            it.groupValues[1].ifEmpty { it.groupValues[2] }.ifEmpty { it.groupValues[3] }
-        }?.trim()?.takeIf { it.isNotEmpty() } ?: "image"
-        "[$alt]"
-    }
-    s = MD_IMAGE_REGEX.replace(s) { m ->
-        val alt = m.groupValues[1].trim().ifEmpty { "image" }
-        "[$alt]"
-    }
-    return s
-        .replace(Regex("""(?i)</?(?:u|ins|s|del|strike|code|sub|sup)>"""), "")
-        .replace("**", "")
-        .replace("__", "")
-        .replace("~~", "")
-        .replace("*", "")
-        .replace("`", "")
-        .trim()
-}
+fun plainTextLabel(label: String): String =
+    annotatedLabel(label).text.trim()
 
 private fun expandIconTokens(input: String): String {
     if ("::icon(" !in input.lowercase() && "fa:" !in input.lowercase() && "fas:" !in input.lowercase() &&
@@ -459,6 +439,12 @@ fun annotatedLabel(
             }
             prepared.regionMatches(i, "</del>", 0, 6, ignoreCase = true) -> {
                 flush(); strike = false; i += 6
+            }
+            prepared.regionMatches(i, "<strike>", 0, 8, ignoreCase = true) -> {
+                flush(); strike = true; i += 8
+            }
+            prepared.regionMatches(i, "</strike>", 0, 9, ignoreCase = true) -> {
+                flush(); strike = false; i += 9
             }
             prepared.regionMatches(i, "<sub>", 0, 5, ignoreCase = true) -> {
                 flush(); subscript = true; i += 5

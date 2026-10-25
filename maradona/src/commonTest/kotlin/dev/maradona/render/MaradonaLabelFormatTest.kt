@@ -92,5 +92,15 @@ class MaradonaLabelFormatTest {
         )
         val mdAnnotated = annotatedLabel(mdStringChart.nodes.single().label)
         assertEquals("Ready fa:fa-check now", mdAnnotated.text)
+        assertEquals("Ready fa:fa-check now", plainTextLabel(mdStringChart.nodes.single().label))
+
+        // HTML tags inside inline code are preserved literally by cleanLabel and plainTextLabel.
+        val codeTagChart = FlowchartParser.parse(
+            """
+            flowchart TD
+              A["Show `<strike>old</strike>` and <strike>gone</strike>"]
+            """.trimIndent(),
+        )
+        assertEquals("Show <strike>old</strike> and gone", plainTextLabel(codeTagChart.nodes.single().label))
     }
 }
