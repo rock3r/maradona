@@ -88,15 +88,39 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
+                    containers = layout.boxes.map { b ->
+                        SvgBox(b.rect, b.box.label.orEmpty(), theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
+                    } + layout.blocks.map { blk ->
+                        val header = listOfNotNull(blk.tag, blk.label?.takeIf { it.isNotBlank() }?.let { "[$it]" }).joinToString(" ")
+                        SvgBox(blk.rect, header, Color.Transparent, theme.subgraphBorder, theme.subgraphText)
+                    },
                     boxes = layout.participants.flatMap { pp ->
                         listOfNotNull(
                             SvgBox(pp.topRect, pp.participant.label, theme.nodeFill, theme.nodeBorder, theme.nodeText),
                             pp.bottomRect?.let { SvgBox(it, pp.participant.label, theme.nodeFill, theme.nodeBorder, theme.nodeText) },
                         )
+                    } + layout.activations.map { act ->
+                        SvgBox(act.rect, "", theme.subgraphFill, theme.nodeBorder, theme.nodeText)
                     } + layout.notes.map { n ->
                         SvgBox(n.rect, n.note.text, theme.noteFill, theme.noteBorder, theme.noteText)
                     },
-                    lines = layout.messages.map { m ->
+                    lines = layout.participants.map { pp ->
+                        SvgLine(
+                            points = listOf(DiagramPoint(pp.lifelineX, pp.lifelineTopY), DiagramPoint(pp.lifelineX, pp.lifelineBottomY)),
+                            color = theme.subgraphBorder,
+                            dashed = true,
+                            label = null to null,
+                        )
+                    } + layout.blocks.flatMap { blk ->
+                        blk.dividers.map { div ->
+                            SvgLine(
+                                points = listOf(DiagramPoint(blk.rect.x, div.y), DiagramPoint(blk.rect.right, div.y)),
+                                color = theme.subgraphBorder,
+                                dashed = true,
+                                label = div.label?.let { "[$it]" } to div.labelRect,
+                            )
+                        }
+                    } + layout.messages.map { m ->
                         val endMarker = when (m.statement.arrow.head) {
                             dev.maradona.model.SequenceHead.Filled -> SvgMarker.FilledArrow
                             dev.maradona.model.SequenceHead.Open -> SvgMarker.None
@@ -104,11 +128,22 @@ object MaradonaSvgExporter {
                             dev.maradona.model.SequenceHead.Async -> SvgMarker.OpenArrow
                         }
                         val startMarker = if (m.statement.arrow.bidirectional) endMarker else SvgMarker.None
+                        val msgLabel = if (m.sequenceNumber != null) "${m.sequenceNumber}. ${m.statement.text}" else m.statement.text
+                        val pts = if (m.isSelf) {
+                            listOf(
+                                DiagramPoint(m.startX, m.lineY),
+                                DiagramPoint(m.stopX, m.lineY),
+                                DiagramPoint(m.stopX, m.lineY + 18f),
+                                DiagramPoint(m.startX, m.lineY + 18f),
+                            )
+                        } else {
+                            listOf(DiagramPoint(m.startX, m.lineY), DiagramPoint(m.stopX, m.lineY))
+                        }
                         SvgLine(
-                            points = listOf(DiagramPoint(m.startX, m.lineY), DiagramPoint(m.stopX, m.lineY)),
+                            points = pts,
                             color = theme.edge,
                             dashed = m.statement.arrow.dashed,
-                            label = m.statement.text to m.labelRect,
+                            label = msgLabel to m.labelRect,
                             startMarker = startMarker,
                             endMarker = endMarker,
                         )
@@ -228,9 +263,18 @@ object MaradonaSvgExporter {
                         SvgBox(sg.rect, sg.subgraph.label, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
                     },
                     boxes = layout.entities.map { pe ->
+                        val attrLines = pe.entity.attributes.map { attr ->
+                            listOfNotNull(
+                                attr.type,
+                                attr.name,
+                                attr.keys.takeIf { it.isNotEmpty() }?.joinToString(","),
+                                attr.comment?.takeIf { it.isNotBlank() }?.let { "\"$it\"" },
+                            ).joinToString(" ")
+                        }
+                        val fullEntityText = (listOf(pe.entity.label) + attrLines).joinToString("\n")
                         SvgBox(
                             rect = pe.rect,
-                            label = pe.entity.label,
+                            label = fullEntityText,
                             fill = parseCssColor(pe.entity.style?.fill) ?: theme.nodeFill,
                             stroke = parseCssColor(pe.entity.style?.stroke) ?: theme.nodeBorder,
                             textColor = parseCssColor(pe.entity.style?.textColor) ?: theme.nodeText,
@@ -271,6 +315,9 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
+                    containers = layout.sections.map { s ->
+                        SvgBox(s.rect, s.name, theme.seriesFill(s.sectionIndex.coerceAtLeast(0)), theme.subgraphBorder, theme.nodeText)
+                    },
                     boxes = layout.tasks.map { pt ->
                         val idx = pt.sectionIndex.coerceAtLeast(0)
                         SvgBox(
@@ -282,6 +329,13 @@ object MaradonaSvgExporter {
                             url = pt.task.action?.url,
                             tooltip = pt.task.action?.tooltip,
                         )
+                    } + layout.ticks.map { t ->
+                        SvgBox(t.bottomLabelRect, t.label, Color.Transparent, Color.Transparent, theme.edgeLabelText)
+                    } + layout.verticalMarkers.map { vm ->
+                        SvgBox(vm.labelRect, vm.task.label, theme.accentFill, theme.accentBorder, theme.nodeText)
+                    },
+                    lines = layout.verticalMarkers.map { vm ->
+                        SvgLine(listOf(DiagramPoint(vm.x, vm.topY), DiagramPoint(vm.x, vm.bottomY)), theme.accentBorder, true, null to null)
                     },
                 )
             }
@@ -339,10 +393,17 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.commits.map { pc ->
-                        SvgBox(pc.nodeRect, pc.commit.id, theme.seriesFill(pc.laneIndex), theme.seriesColor(pc.laneIndex), theme.nodeText)
+                    boxes = layout.branches.mapNotNull { b ->
+                        b.labelRect?.let { SvgBox(it, b.branch.name, theme.seriesFill(b.laneIndex), theme.seriesColor(b.laneIndex), theme.nodeText) }
+                    } + layout.commits.flatMap { pc ->
+                        listOfNotNull(
+                            SvgBox(pc.nodeRect, pc.commit.id, theme.seriesFill(pc.laneIndex), theme.seriesColor(pc.laneIndex), theme.nodeText),
+                            pc.tagRect?.let { tr -> SvgBox(tr, pc.commit.tag.orEmpty(), theme.noteFill, theme.noteBorder, theme.noteText) },
+                        )
                     },
-                    lines = layout.edges.map { e ->
+                    lines = layout.branches.map { b ->
+                        SvgLine(listOf(b.lineStart, b.lineEnd), theme.seriesColor(b.laneIndex), true, null to null)
+                    } + layout.edges.map { e ->
                         SvgLine(e.points, theme.seriesColor(e.branchLaneIndex), e.isCherryPick, null to null)
                     },
                 )
@@ -386,9 +447,18 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.tasks.map { pt ->
-                        SvgBox(pt.cardRect, pt.task.label, theme.seriesFill(pt.sectionIndex), theme.seriesColor(pt.sectionIndex), theme.nodeText)
+                    containers = layout.sections.map { s ->
+                        SvgBox(s.rect, s.name, theme.seriesFill(s.sectionIndex), theme.seriesColor(s.sectionIndex), theme.nodeText)
                     },
+                    boxes = layout.actorLegend.map { al ->
+                        SvgBox(al.labelRect, al.actor, theme.seriesFill(al.actorIndex), theme.seriesColor(al.actorIndex), theme.nodeText)
+                    } + layout.tasks.map { pt ->
+                        val actors = pt.task.actors.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "\n[$it]" }.orEmpty()
+                        SvgBox(pt.cardRect, "${pt.task.label} (${pt.task.score})$actors", theme.seriesFill(pt.sectionIndex), theme.seriesColor(pt.sectionIndex), theme.nodeText)
+                    },
+                    lines = listOf(
+                        SvgLine(listOf(layout.spineStart, layout.spineEnd), theme.edge, false, null to null, endMarker = SvgMarker.FilledArrow),
+                    ),
                 )
             }
             is MaradonaDiagramModel.QuadrantModel -> {
@@ -399,7 +469,12 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.points.map { pt ->
+                    containers = layout.quadrants.map { q ->
+                        SvgBox(q.rect, q.text.orEmpty(), theme.seriesFill(q.quadrantNumber - 1), theme.subgraphBorder, theme.subgraphText)
+                    },
+                    boxes = layout.axisLabels.map { al ->
+                        SvgBox(al.rect, al.text, Color.Transparent, Color.Transparent, theme.edgeLabelText)
+                    } + layout.points.map { pt ->
                         SvgBox(pt.labelRect, pt.point.label, theme.accentFill, theme.accentBorder, theme.nodeText)
                     },
                 )
@@ -413,9 +488,20 @@ object MaradonaSvgExporter {
                     theme = theme,
                     title = d.title to layout.titleRect,
                     boxes = layout.bars.map { b ->
-                        SvgBox(b.rect, "", theme.seriesColor(b.seriesIndex), theme.seriesColor(b.seriesIndex), theme.nodeText)
+                        SvgBox(b.rect, b.dataLabel.orEmpty(), theme.seriesColor(b.seriesIndex), theme.seriesColor(b.seriesIndex), theme.nodeText)
+                    } + layout.axisTitles.map { at ->
+                        SvgBox(at.rect, at.text, Color.Transparent, Color.Transparent, theme.nodeText)
+                    } + (layout.xTicks + layout.yTicks).map { tk ->
+                        SvgBox(tk.labelRect, tk.label, Color.Transparent, Color.Transparent, theme.edgeLabelText)
+                    } + layout.legendItems.map { li ->
+                        SvgBox(li.labelRect, li.series.label.orEmpty(), theme.seriesFill(li.seriesIndex), theme.seriesColor(li.seriesIndex), theme.nodeText)
                     },
-                    lines = layout.lines.map { ls ->
+                    lines = listOf(
+                        SvgLine(listOf(layout.xAxisLineStart, layout.xAxisLineEnd), theme.nodeBorder, false, null to null),
+                        SvgLine(listOf(layout.yAxisLineStart, layout.yAxisLineEnd), theme.nodeBorder, false, null to null),
+                    ) + (layout.xTicks + layout.yTicks).map { tk ->
+                        SvgLine(listOf(tk.lineStart, tk.lineEnd), theme.nodeBorder, false, null to null)
+                    } + layout.lines.map { ls ->
                         SvgLine(ls.points.map { it.position }, theme.seriesColor(ls.seriesIndex), false, null to null)
                     },
                 )
@@ -433,9 +519,11 @@ object MaradonaSvgExporter {
                     },
                     boxes = layout.columns.flatMap { c ->
                         c.tasks.map { pt ->
+                            val meta = listOfNotNull(pt.task.ticket, pt.task.assigned?.let { "@$it" }).joinToString(" ")
+                            val text = if (meta.isNotEmpty()) "${pt.task.label}\n$meta" else pt.task.label
                             SvgBox(
                                 rect = pt.cardRect,
-                                label = pt.task.label,
+                                label = text,
                                 fill = theme.background,
                                 stroke = theme.nodeBorder,
                                 textColor = theme.nodeText,
@@ -473,7 +561,8 @@ object MaradonaSvgExporter {
                     theme = theme,
                     title = d.title to layout.titleRect,
                     boxes = layout.items.map { pi ->
-                        SvgBox(pi.rect, pi.item.name, theme.nodeFill, theme.nodeBorder, theme.nodeText)
+                        val fullText = (listOf("<<${pi.item.stereotype}>>", pi.item.name) + pi.item.bodyLines).joinToString("\n")
+                        SvgBox(pi.rect, fullText, theme.nodeFill, theme.nodeBorder, theme.nodeText)
                     },
                     lines = layout.relations.map { pr ->
                         SvgLine(
@@ -495,7 +584,12 @@ object MaradonaSvgExporter {
                     theme = theme,
                     title = d.title to layout.titleRect,
                     boxes = layout.blocks.map { pb ->
-                        SvgBox(pb.rect, pb.block.label, theme.nodeFill, theme.nodeBorder, theme.nodeText)
+                        val bitInfo = if (layout.showBits) {
+                            if (pb.isSingleBit) " [${pb.leadingBitLabel}]" else " [${pb.leadingBitLabel}-${pb.trailingBitLabel}]"
+                        } else {
+                            ""
+                        }
+                        SvgBox(pb.rect, "${pb.block.label}$bitInfo", theme.nodeFill, theme.nodeBorder, theme.nodeText)
                     },
                 )
             }
@@ -509,8 +603,12 @@ object MaradonaSvgExporter {
                     title = d.title to layout.titleRect,
                     boxes = layout.axes.map { pa ->
                         SvgBox(pa.labelRect, pa.axis.label, theme.nodeFill, theme.nodeBorder, theme.nodeText)
+                    } + layout.legendItems.map { li ->
+                        SvgBox(li.labelRect, li.label, theme.seriesFill(li.curveIndex), theme.seriesColor(li.curveIndex), theme.nodeText)
                     },
-                    lines = layout.curves.map { pc ->
+                    lines = layout.axes.map { pa ->
+                        SvgLine(listOf(layout.center, pa.lineEnd), theme.subgraphBorder, true, null to null)
+                    } + layout.curves.map { pc ->
                         SvgLine(pc.points + listOfNotNull(pc.points.firstOrNull()), theme.seriesColor(pc.curveIndex), false, null to null)
                     },
                 )
@@ -598,12 +696,18 @@ object MaradonaSvgExporter {
                     theme = theme,
                     title = d.title to layout.titleRect,
                     containers = layout.boundaries.map { pb ->
-                        SvgBox(pb.rect, pb.boundary.label, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
+                        val hdr = listOfNotNull(pb.boundary.label, pb.boundary.type?.takeIf { it.isNotBlank() }?.let { "[$it]" }).joinToString(" ")
+                        SvgBox(pb.rect, hdr, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
                     },
                     boxes = layout.elements.map { pe ->
+                        val cardText = listOfNotNull(
+                            pe.element.label,
+                            pe.element.technology?.takeIf { it.isNotBlank() }?.let { "[$it]" },
+                            pe.element.description?.takeIf { it.isNotBlank() },
+                        ).joinToString("\n")
                         SvgBox(
                             rect = pe.rect,
-                            label = pe.element.label,
+                            label = cardText,
                             fill = theme.c4Palette.systemFill,
                             stroke = theme.c4Palette.systemBorder,
                             textColor = theme.c4Palette.systemText,
@@ -612,12 +716,17 @@ object MaradonaSvgExporter {
                         )
                     },
                     lines = layout.relationships.map { pr ->
+                        val relLabel = listOfNotNull(
+                            pr.relationship.label,
+                            pr.relationship.technology?.takeIf { it.isNotBlank() }?.let { "[$it]" },
+                        ).joinToString(" ")
                         SvgLine(
                             points = pr.points,
                             color = theme.edge,
                             dashed = true,
-                            label = pr.relationship.label to pr.labelRect,
-                            endMarker = SvgMarker.FilledArrow,
+                            label = relLabel to pr.labelRect,
+                            startMarker = if (pr.startArrow) SvgMarker.FilledArrow else SvgMarker.None,
+                            endMarker = if (pr.endArrow) SvgMarker.FilledArrow else SvgMarker.None,
                         )
                     },
                 )
@@ -632,11 +741,39 @@ object MaradonaSvgExporter {
                     title = d.title to layout.titleRect,
                     containers = layout.groups.map { pg ->
                         SvgBox(pg.rect, pg.group.name, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
+                    } + layout.blocks.map { blk ->
+                        val hdr = listOfNotNull(blk.keyword, blk.condition?.takeIf { it.isNotBlank() }?.let { "[$it]" }).joinToString(" ")
+                        SvgBox(blk.rect, hdr, Color.Transparent, theme.subgraphBorder, theme.subgraphText)
                     },
-                    boxes = layout.participants.map { pp ->
-                        SvgBox(pp.topRect, pp.participant.label, theme.nodeFill, theme.nodeBorder, theme.nodeText)
+                    boxes = layout.participants.flatMap { pp ->
+                        listOfNotNull(
+                            SvgBox(pp.topRect, pp.participant.label, theme.nodeFill, theme.nodeBorder, theme.nodeText),
+                            pp.bottomRect?.let { SvgBox(it, pp.participant.label, theme.nodeFill, theme.nodeBorder, theme.nodeText) },
+                        )
+                    } + layout.activations.map { act ->
+                        SvgBox(act.rect, "", theme.subgraphFill, theme.nodeBorder, theme.nodeText)
+                    } + layout.messages.mapNotNull { pm ->
+                        val ct = pm.commentText
+                        val cr = pm.commentRect
+                        if (!ct.isNullOrBlank() && cr != null) SvgBox(cr, ct, theme.noteFill, theme.noteBorder, theme.noteText) else null
                     },
-                    lines = layout.messages.map { pm ->
+                    lines = layout.participants.map { pp ->
+                        SvgLine(
+                            points = listOf(DiagramPoint(pp.lifelineX, pp.lifelineTopY), DiagramPoint(pp.lifelineX, pp.lifelineBottomY)),
+                            color = theme.subgraphBorder,
+                            dashed = true,
+                            label = null to null,
+                        )
+                    } + layout.blocks.flatMap { blk ->
+                        blk.dividers.map { div ->
+                            SvgLine(
+                                points = listOf(DiagramPoint(blk.rect.x, div.y), DiagramPoint(blk.rect.right, div.y)),
+                                color = theme.subgraphBorder,
+                                dashed = true,
+                                label = div.label to div.labelRect,
+                            )
+                        }
+                    } + layout.messages.map { pm ->
                         SvgLine(
                             points = listOf(DiagramPoint(pm.startX, pm.y), DiagramPoint(pm.endX, pm.y)),
                             color = theme.edge,

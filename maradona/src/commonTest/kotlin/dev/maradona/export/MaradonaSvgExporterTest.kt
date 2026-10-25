@@ -106,7 +106,46 @@ class MaradonaSvgExporterTest {
             assertTrue(svg.contains("</svg>"))
         }
 
-        // Verify Class members, relation markers, Timeline events, Pie slices, Sankey links, transparent/rgba colors, wrapped labels, and XML control char stripping.
+        // Verify Class members, relation markers, Sequence blocks, ER attributes, XY chart axes/ticks, Timeline events, Pie slices, Sankey links, transparent/rgba colors, wrapped labels, and XML control char stripping.
+        val seqSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            sequenceDiagram
+                Alice->>Bob: Request
+                alt Cache hit
+                    Bob-->>Alice: Fast response
+                else Cache miss
+                    Bob-->>Alice: Slow response
+                end
+            """.trimIndent(),
+        )
+        assertTrue(seqSvg.contains("[Cache hit]"), "Expected sequence alt block condition in SVG")
+        assertTrue(seqSvg.contains("[Cache miss]"), "Expected sequence else divider label in SVG")
+
+        val erSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            erDiagram
+                CUSTOMER {
+                    string id PK "Primary key"
+                    string email UK
+                }
+            """.trimIndent(),
+        )
+        assertTrue(erSvg.contains("string id PK"), "Expected ER entity attribute in SVG")
+        assertTrue(erSvg.contains("string email UK"), "Expected ER entity second attribute in SVG")
+
+        val xySvg = MaradonaSvgExporter.exportToSvg(
+            """
+            xychart-beta
+                title "Quarterly Revenue"
+                x-axis "Quarter" [Q1, Q2, Q3]
+                y-axis "Revenue (M)" 0 --> 100
+                bar [30, 60, 90]
+            """.trimIndent(),
+        )
+        assertTrue(xySvg.contains("Quarter"), "Expected XY chart X-axis title in SVG")
+        assertTrue(xySvg.contains("Revenue (M)"), "Expected XY chart Y-axis title in SVG")
+        assertTrue(xySvg.contains("Q1") && xySvg.contains("Q2") && xySvg.contains("Q3"), "Expected XY chart X-axis tick labels in SVG")
+
         val classSvg = MaradonaSvgExporter.exportToSvg(
             """
             classDiagram
