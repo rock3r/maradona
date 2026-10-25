@@ -7,34 +7,98 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramLayout
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.FlowchartLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.NodeSizing
 import dev.maradona.model.ArrowHead
 import dev.maradona.model.Direction
 import dev.maradona.model.EdgeStroke
 import dev.maradona.model.Flowchart
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private class LayoutHolder {
     var layout: DiagramLayout? = null
+    var lastDensity: Float = Float.NaN
+    var lastAdaptedVertical: Boolean = false
+    var visibleViewport: DiagramRect? = null
+}
+
+internal data class FlowchartViewportParams(
+    val viewportWidthPx: Float,
+    val viewportHeightPx: Float,
+    val gestureZoom: Float,
+    val panPx: Offset,
+    val gesturePanPx: Offset,
+    val initialPan: Offset?,
+    val initialViewApplied: Boolean,
+    val overscanPx: Float,
+    val scaleKnownOnFirstFrame: Boolean,
+) {
+    fun resolve(layoutWidth: Float, layoutHeight: Float): DiagramRect? {
+        if (!scaleKnownOnFirstFrame) return null
+        if (viewportWidthPx <= 0f || viewportHeightPx <= 0f || layoutWidth <= 0f || layoutHeight <= 0f) return null
+        val effectivePan = if (!initialViewApplied && initialPan != null) {
+            val rangeX = layoutWidth - viewportWidthPx
+            val rangeY = layoutHeight - viewportHeightPx
+            Offset(
+                if (rangeX > 0f) rangeX / 2f - initialPan.x * rangeX else 0f,
+                if (rangeY > 0f) rangeY / 2f - initialPan.y * rangeY else 0f,
+            )
+        } else {
+            panPx
+        }
+        val centerX = (viewportWidthPx - layoutWidth) / 2f
+        val centerY = (viewportHeightPx - layoutHeight) / 2f
+        val transX = centerX + effectivePan.x + gesturePanPx.x
+        val transY = centerY + effectivePan.y + gesturePanPx.y
+        val gZoom = gestureZoom.coerceAtLeast(0.01f)
+        return DiagramRect(
+            x = (-transX - overscanPx) / gZoom,
+            y = (-transY - overscanPx) / gZoom,
+            width = (viewportWidthPx + overscanPx * 2f) / gZoom,
+            height = (viewportHeightPx + overscanPx * 2f) / gZoom,
+        )
+    }
 }
 
 /**
  * Custom layout that measures node composables, runs the Sugiyama layout
  * with those measured sizes, then places nodes, edge labels, and subgraph
  * labels. Edge paths are drawn in an underlay behind the nodes.
+ *
+ * When [visibleViewport] is non-null (in layout pixel coordinates at the
+ * current render density), only nodes, edge labels, and subgraph headers
+ * whose bounding boxes intersect [visibleViewport] are composed into the
+ * Compose layout tree, and [drawDiagramUnderlay] skips off-screen edges and
+ * subgraphs while preserving edges that cross the viewport between off-screen
+ * endpoints.
  */
 @Composable
 fun MaradonaLayout(
@@ -47,15 +111,93 @@ fun MaradonaLayout(
      * [autoDirection]. Callers that measure this layout unbounded (for
      * fit-to-size zooming) must pass it explicitly. */
     availableWidthPx: Int = Int.MAX_VALUE,
+    /**
+     * Optional visible viewport rectangle in this layout's local pixel
+     * coordinates (at the current [LocalDensity]). When non-null, off-screen
+     * nodes, edge labels, subgraph headers, and underlay edges/subgraphs
+     * outside this rectangle are lazily skipped without a separate renderer.
+     */
+    visibleViewport: DiagramRect? = null,
+    /**
+     * Optional resolver that computes the visible viewport rectangle in local
+     * layout pixel coordinates once the layout's `width` and `height` are known.
+     */
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     /** Optional callback invoked when a flowchart node is clicked/activated. */
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    /** Reports diagnostic counts for viewport-lazy composition and underlay culling. */
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     /** Reports the computed layout (the intermediate representation the oracle
      * compares against mermaid's SVG geometry, and the renderer against its own
      * pixels). Called whenever the layout is recomputed. */
     onLayout: (DiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { LayoutHolder() }
+    val holder = remember(chart, theme, layoutOptions) { LayoutHolder() }
     val connections = remember(chart) { connectionDescriptions(chart) }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val imageResolver = LocalMaradonaImageResolver.current
+    val uriHandler = LocalUriHandler.current
+
+    // Pre-compute or reuse the layout at the current renderDensity so viewport-lazy
+    // composition knows every node, edge label, and subgraph bounding box before
+    // emitting child composables, and panning across a zoomed diagram does not
+    // re-run Sugiyama/Dagre layout.
+    val precomputedLayout = run {
+        val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+        val cached = holder.layout
+        if (cached != null && abs(holder.lastDensity - renderDensity) < 1e-4f) {
+            val wantVertical = autoDirection &&
+                (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
+                layoutOptions.directionOverride == null &&
+                availableWidthPx in 1 until breakpointPx &&
+                cached.width > availableWidthPx
+            if (wantVertical == holder.lastAdaptedVertical) {
+                cached
+            } else {
+                computePremeasuredFlowchartLayout(
+                    chart = chart,
+                    theme = theme,
+                    layoutOptions = layoutOptions,
+                    autoDirection = autoDirection,
+                    availableWidthPx = availableWidthPx,
+                    densityObj = densityObj,
+                    textMeasurer = textMeasurer,
+                    hasImageResolver = imageResolver != null,
+                ).also { (lyt, adapted) ->
+                    holder.layout = lyt
+                    holder.lastDensity = renderDensity
+                    holder.lastAdaptedVertical = adapted
+                }.first
+            }
+        } else {
+            computePremeasuredFlowchartLayout(
+                chart = chart,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                autoDirection = autoDirection,
+                availableWidthPx = availableWidthPx,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+                hasImageResolver = imageResolver != null,
+            ).also { (lyt, adapted) ->
+                holder.layout = lyt
+                holder.lastDensity = renderDensity
+                holder.lastAdaptedVertical = adapted
+            }.first
+        }
+    }
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = effectiveViewport
+
+    val positionedNodeById = remember(precomputedLayout) {
+        precomputedLayout.nodes.associateBy { it.node.id }
+    }
+    val positionedSubgraphById = remember(precomputedLayout) {
+        precomputedLayout.subgraphs.associateBy { it.subgraph.id }
+    }
 
     Layout(
         modifier = modifier
@@ -63,12 +205,43 @@ fun MaradonaLayout(
                 isTraversalGroup = true
                 contentDescription =
                     "Flowchart. ${chart.nodes.size} nodes, ${chart.edges.size} connections."
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenActions = buildList {
+                        for (node in chart.nodes) {
+                            val pNode = positionedNodeById[node.id] ?: continue
+                            if (pNode.rect.intersects(vp)) continue
+                            val plain = plainTextLabel(node.label)
+                            val clickEvent = node.action?.toClickEvent(node.id, plain)
+                                ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = node.id, label = plain) else null
+                            if (clickEvent != null && (onNodeClick != null || !clickEvent.url.isNullOrBlank())) {
+                                add(
+                                    CustomAccessibilityAction(label = "Activate off-screen node $plain") {
+                                        if (onNodeClick != null) {
+                                            onNodeClick(clickEvent)
+                                        } else if (!clickEvent.url.isNullOrBlank()) {
+                                            runCatching { uriHandler.openUri(clickEvent.url) }
+                                        }
+                                        true
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    if (offscreenActions.isNotEmpty()) {
+                        customActions = offscreenActions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawDiagramUnderlay(it, theme) }
+                holder.layout?.let { drawDiagramUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             for ((index, node) in chart.nodes.withIndex()) {
+                if (effectiveViewport != null) {
+                    val pNode = positionedNodeById[node.id]
+                    if (pNode != null && !pNode.rect.intersects(effectiveViewport)) continue
+                }
                 MaradonaNode(
                     node = node,
                     theme = theme,
@@ -80,6 +253,10 @@ fun MaradonaLayout(
             }
             for ((index, edge) in chart.edges.withIndex()) {
                 val label = edge.label ?: continue
+                if (effectiveViewport != null) {
+                    val lr = precomputedLayout.edges.getOrNull(index)?.labelRect
+                    if (lr != null && !lr.intersects(effectiveViewport)) continue
+                }
                 BasicText(
                     text = annotatedLabel(label, theme.monospaceFontFamily),
                     modifier = Modifier
@@ -99,6 +276,18 @@ fun MaradonaLayout(
                 )
             }
             for (sg in chart.subgraphs) {
+                if (effectiveViewport != null) {
+                    val psg = positionedSubgraphById[sg.id]
+                    if (psg != null) {
+                        val hdrRect = DiagramRect(
+                            x = psg.rect.x,
+                            y = psg.rect.y,
+                            width = psg.rect.width,
+                            height = 36f * renderDensity,
+                        )
+                        if (!hdrRect.intersects(effectiveViewport)) continue
+                    }
+                }
                 BasicText(
                     text = annotatedLabel(sg.label, theme.monospaceFontFamily),
                     modifier = Modifier.layoutId("sg:${sg.id}"),
@@ -110,7 +299,7 @@ fun MaradonaLayout(
                 )
             }
         },
-    ) { measurables, constraints ->
+    ) { measurables, _ ->
         val maxNodeWidth = 240.dp.roundToPx()
         val nodeConstraints = Constraints(maxWidth = maxNodeWidth)
         val nodePlaceables = HashMap<String, androidx.compose.ui.layout.Placeable>()
@@ -130,51 +319,39 @@ fun MaradonaLayout(
             }
         }
 
-        val nodeSizes = nodePlaceables.mapValues { DiagramSize(it.value.width.toFloat(), it.value.height.toFloat()) }
-        val edgeLabelSizes = chart.edges.mapIndexed { index, _ ->
-            edgeLabelPlaceables[index]?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
-        }
-
-        // Measured sizes are in px at the current density, so scale the gaps too.
-        val renderDensity = density
-        val scaledOptions = with(layoutOptions) {
-            copy(
-                nodeGap = nodeGap * renderDensity,
-                layerGap = layerGap * renderDensity,
-                padding = padding * renderDensity,
-                subgraphPaddingX = subgraphPaddingX * renderDensity,
-                subgraphPaddingY = subgraphPaddingY * renderDensity,
-                density = renderDensity,
-            )
-        }
-        var result = FlowchartLayout.layout(
-            chart = chart,
-            nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
-            edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
-            options = scaledOptions,
-        )
-        // Pele-style adaption: on narrow widths a horizontal chart goes vertical.
-        val breakpoint = 640.dp.roundToPx()
-        val effectiveMaxWidth = minOf(
-            if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE,
-            availableWidthPx,
-        )
-        if (
-            autoDirection &&
-            (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
-            layoutOptions.directionOverride == null &&
-            effectiveMaxWidth in 1 until breakpoint &&
-            result.width > effectiveMaxWidth
-        ) {
-            result = FlowchartLayout.layout(
-                chart = chart,
-                nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
-                edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
-                options = scaledOptions.copy(directionOverride = Direction.TB),
-            )
-        }
+        val result = precomputedLayout
         holder.layout = result
         onLayout(result)
+
+        val edgeCullMargin = 20f * density
+        val totalVisibleEdges = result.edges.count { it.edge.stroke != EdgeStroke.Invisible && it.points.size >= 2 }
+        val drawnEdges = if (effectiveViewport == null) {
+            totalVisibleEdges
+        } else {
+            result.edges.count {
+                it.edge.stroke != EdgeStroke.Invisible &&
+                    it.points.size >= 2 &&
+                    it.bounds(edgeCullMargin).intersects(effectiveViewport)
+            }
+        }
+        val drawnSubgraphs = if (effectiveViewport == null) {
+            result.subgraphs.size
+        } else {
+            result.subgraphs.count { it.rect.intersects(effectiveViewport) }
+        }
+        val totalEdgeLabels = chart.edges.count { it.label != null }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = nodePlaceables.size,
+                totalNodes = chart.nodes.size,
+                composedEdgeLabels = edgeLabelPlaceables.size,
+                totalEdgeLabels = totalEdgeLabels,
+                drawnEdges = drawnEdges,
+                totalEdges = totalVisibleEdges,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = result.subgraphs.size,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             for (positioned in result.nodes) {
@@ -200,6 +377,125 @@ fun MaradonaLayout(
             }
         }
     }
+}
+
+private fun computePremeasuredFlowchartLayout(
+    chart: Flowchart,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    autoDirection: Boolean,
+    availableWidthPx: Int,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+    hasImageResolver: Boolean,
+): Pair<DiagramLayout, Boolean> {
+    val renderDensity = densityObj.density
+    val wrapPx = with(densityObj) { NodeSizing.WRAPPING_WIDTH.dp.roundToPx() }
+    val maxNodeWidthPx = with(densityObj) { 240.dp.roundToPx() }
+    val nodeTextStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.nodeFontSize,
+        lineHeight = theme.nodeFontSize * 1.5f,
+        textAlign = TextAlign.Center,
+    )
+    val nodeSizes = HashMap<String, DiagramSize>(chart.nodes.size)
+    for (node in chart.nodes) {
+        val inlineImages = if (hasImageResolver) extractInlineImages(node.label) else emptyList()
+        val inlineIds = if (inlineImages.isEmpty()) emptySet() else inlineImages.map { it.inlineId }.toSet()
+        val wrappedLabel = annotatedLabel(node.label, theme.monospaceFontFamily, inlineIds)
+        val placeholderRanges = if (inlineImages.isEmpty()) {
+            emptyList()
+        } else {
+            val byId = inlineImages.associateBy { it.inlineId }
+            wrappedLabel.getStringAnnotations(0, wrappedLabel.length).mapNotNull { range ->
+                val spec = byId[range.item] ?: return@mapNotNull null
+                AnnotatedString.Range(
+                    item = Placeholder(
+                        width = spec.widthPx.sp,
+                        height = spec.heightPx.sp,
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+                    ),
+                    start = range.start,
+                    end = range.end,
+                )
+            }
+        }
+        val measured = textMeasurer.measure(
+            text = wrappedLabel,
+            style = nodeTextStyle,
+            constraints = Constraints(maxWidth = wrapPx),
+            placeholders = placeholderRanges,
+            density = densityObj,
+        )
+        val labelBox = NodeSizing.labelBox(
+            node.shape,
+            measured.size.width / renderDensity,
+            maxOf(measured.lineCount * theme.nodeFontSize.value * 1.5f, measured.size.height / renderDensity),
+        )
+        val nodeBox = NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
+        val wPx = with(densityObj) { nodeBox.width.dp.roundToPx().coerceAtMost(maxNodeWidthPx) }
+        val hPx = with(densityObj) { nodeBox.height.dp.roundToPx() }
+        nodeSizes[node.id] = DiagramSize(wPx.toFloat(), hPx.toFloat())
+    }
+
+    val edgePadH = with(densityObj) { 4.dp.roundToPx() }
+    val edgePadV = with(densityObj) { 2.dp.roundToPx() }
+    val maxEdgeLabelW = with(densityObj) { 180.dp.roundToPx() }
+    val edgeTextStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val edgeLabelSizes = chart.edges.map { edge ->
+        val label = edge.label ?: return@map null
+        val m = textMeasurer.measure(
+            text = annotatedLabel(label, theme.monospaceFontFamily),
+            style = edgeTextStyle,
+            constraints = Constraints(maxWidth = (maxEdgeLabelW - edgePadH * 2).coerceAtLeast(1)),
+            density = densityObj,
+        )
+        DiagramSize(
+            width = (m.size.width + edgePadH * 2).coerceAtMost(maxEdgeLabelW).toFloat(),
+            height = (m.size.height + edgePadV * 2).toFloat(),
+        )
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            padding = padding * renderDensity,
+            subgraphPaddingX = subgraphPaddingX * renderDensity,
+            subgraphPaddingY = subgraphPaddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    var result = FlowchartLayout.layout(
+        chart = chart,
+        nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
+        edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
+        options = scaledOptions,
+    )
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    var adaptedVertical = false
+    if (
+        autoDirection &&
+        (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        availableWidthPx in 1 until breakpointPx &&
+        result.width > availableWidthPx
+    ) {
+        result = FlowchartLayout.layout(
+            chart = chart,
+            nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
+            edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
+            options = scaledOptions.copy(directionOverride = Direction.TB),
+        )
+        adaptedVertical = true
+    }
+    return result to adaptedVertical
 }
 
 private fun plainLabel(chart: Flowchart, id: String): String =

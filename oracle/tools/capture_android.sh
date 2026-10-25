@@ -23,9 +23,6 @@ PY=$ROOT/oracle/tools/.venv/bin/python
 GEOM=$ROOT/oracle/tools/oracle_geom.py
 PKG=dev.maradona.sample.android
 mkdir -p "$OUT"
-# Start clean: a render left by an earlier run (or by an older naming scheme) must
-# never be measured as if it came from this one.
-rm -f "$OUT"/*.png "$OUT"/captures.txt "$OUT"/manifest.json
 CAPTURES=$OUT/captures.txt
 
 case "$SERIAL" in
@@ -41,7 +38,16 @@ esac
 
 CHARTS=("$@")
 if [ ${#CHARTS[@]} -eq 0 ]; then
+  rm -f "$OUT"/*.png "$OUT"/captures.txt "$OUT"/manifest.json
+  : > "$CAPTURES"
   for f in "$ROOT"/oracle/charts/*.mmd; do CHARTS+=("$(basename "$f" .mmd)"); done
+else
+  touch "$CAPTURES"
+  for c in "${CHARTS[@]}"; do
+    rm -f "$OUT/$c"-*.png
+    grep -v "^$c " "$CAPTURES" > "$CAPTURES.tmp" || true
+    mv "$CAPTURES.tmp" "$CAPTURES"
+  done
 fi
 
 log() { printf '\033[2m%s\033[0m\n' "$*"; }
@@ -162,7 +168,6 @@ from PIL import Image; print('%dx%d' % Image.open('$OUT/.probe.png').size)")
 VW=${VIEW%x*}; VH=${VIEW#*x}
 log "viewport ${VIEW}"
 
-: > "$CAPTURES"
 for chart in "${CHARTS[@]}"; do
   log "chart $chart"
   # Calibration: the app's density matches the golden against its layout box,

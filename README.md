@@ -343,15 +343,27 @@ stays on screen, dimmed, with the error shown at the bottom.
 
 ## Theme
 
-`MaradonaTheme` is a data class of colours and text sizes. Build one from
-your Material colour scheme, or use `MaradonaTheme.light()` / `.dark()`.
-A theme change re-renders the diagram with the new colours.
+`MaradonaTheme` is structured around host-customizable sub-models
+(`MaradonaPalette`, `MaradonaTypography`, `MaradonaShapes`, `MaradonaSpacing`,
+and `MaradonaStyle`) and can be supplied via `ProvideMaradonaTheme` /
+`LocalMaradonaTheme` or the `theme` parameter on `MaradonaDiagram`. Built-in
+presets include `MaradonaTheme.light()`, `MaradonaTheme.dark()`,
+`MaradonaTheme.jewelLight()`, and `MaradonaTheme.jewelDark()`.
+
+## SVG Export
+
+`MaradonaSvgExporter.exportToSvg(source, theme, options)` exports standalone SVG
+documents across all 23 Mermaid diagram families without requiring a Compose UI
+scene.
 
 ## Targets
 
 The library targets Desktop (JVM), Android, and iOS (arm64). All library
 code is in `commonMain` and uses only Compose Multiplatform common APIs,
-so every target shares the same sources.
+so every target shares the same sources. (Note: `oracle/out/web/index.html`
+is a static HTML/JS comparison viewer inspected in headless Chrome to compare
+Desktop, Android, and iOS captures against `mermaid.js` goldens — Maradona does
+not have a separate web renderer target.)
 
 Samples:
 
@@ -376,18 +388,31 @@ devices; Compose Multiplatform no longer ships an iosX64 target.
 The sample tests render diagrams offscreen to
 `sample-desktop/build/screenshots/*.png`. Use them as visual checks.
 
-## Limits
+## Scalability & Limits
 
-- Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, mindmaps, Gantt charts, pie charts, Git graphs, timelines, user journeys, quadrant charts, XY charts, Kanban boards, Sankey diagrams, requirement diagrams, packet diagrams, radar charts, block diagrams, architecture diagrams, treemap diagrams, C4 diagrams, and ZenUML diagrams.
-- Subgraphs are bounding boxes. The layout engine does not lay out a
-  subgraph as its own cluster yet, so members may not stay together in
-  large graphs.
-- HTML in labels is limited to line breaks, bold, and italic.
-- No icons and no images inside nodes.
-- No SVG or PNG export from the library yet. On Desktop you can render
-  offscreen with `ImageComposeScene`; that is how the sample tests work.
-- One composable per node suits documentation-size diagrams. Graphs with
-  thousands of nodes need a canvas fast path, which is future work.
+- Supports all 23 Mermaid diagram families: Flowcharts, Sequence, Class, State,
+  ER, Mindmap, Gantt, Pie, GitGraph, Timeline, User Journey, Quadrant, XY Chart,
+  Kanban, Sankey, Requirement, Packet, Radar, Block, Architecture, Treemap, C4,
+  and ZenUML.
+- Subgraphs are laid out with horizontal cluster coalescing, non-overlapping
+  sibling separation, and cross-subgraph edge obstacle deflection.
+- Rich labels support HTML/Markdown inline formatting (`<b>`, `<i>`, `<u>`,
+  `<ins>`, `<s>`, `<code>`, `<sup>`, `<sub>`, `<small>`, `<mark>`, `<h1>`–`<h6>`,
+  blockquotes), icon glyph badges (`fa:`, `mdi:`, `::icon()`), and inline images
+  via `LocalMaradonaImageResolver`.
+- Interactive `click` / `link` / `callback` directives, `onNodeClick`, and
+  screen-reader accessibility traversal (`diagramNodeInteraction`) are supported
+  across all 23 diagram families.
+- **Viewport-lazy composition within the single Compose pipeline:** Maradona
+  intentionally avoids a parallel Canvas-only renderer so native text
+  measurement, hit-testing (`onNodeClick`), and accessibility semantics stay
+  unified. When zoomed in or panned (`viewportCullingEnabled = true`),
+  `MaradonaLayout` lazily composes only nodes, edge labels, and subgraph headers
+  whose bounds intersect the visible viewport (plus overscan) and culls
+  off-screen underlay edges while still drawing edges that cross the viewport
+  between off-screen endpoints. When zoomed out so that thousands of nodes are
+  simultaneously visible inside the viewport, layout and frame times vary with
+  graph density and may still be slow.
 
 ## License
 

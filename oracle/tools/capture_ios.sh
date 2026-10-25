@@ -16,9 +16,6 @@ PY=$ROOT/oracle/tools/.venv/bin/python
 GEOM=$ROOT/oracle/tools/oracle_geom.py
 APP=dev.maradona.sample
 mkdir -p "$OUT"
-# Start clean: a render left by an earlier run (or by an older naming scheme) must
-# never be measured as if it came from this one.
-rm -f "$OUT"/*.png "$OUT"/captures.txt "$OUT"/manifest.json
 CAPTURES=$OUT/captures.txt
 
 case "$SIM" in
@@ -31,7 +28,16 @@ fi
 
 CHARTS=("$@")
 if [ ${#CHARTS[@]} -eq 0 ]; then
+  rm -f "$OUT"/*.png "$OUT"/captures.txt "$OUT"/manifest.json
+  : > "$CAPTURES"
   for f in "$ROOT"/oracle/charts/*.mmd; do CHARTS+=("$(basename "$f" .mmd)"); done
+else
+  touch "$CAPTURES"
+  for c in "${CHARTS[@]}"; do
+    rm -f "$OUT/$c"-*.png
+    grep -v "^$c " "$CAPTURES" > "$CAPTURES.tmp" || true
+    mv "$CAPTURES.tmp" "$CAPTURES"
+  done
 fi
 
 log() { printf '\033[2m%s\033[0m\n' "$*"; }
@@ -92,23 +98,30 @@ from PIL import Image; print('%dx%d' % Image.open('$OUT/.probe.png').size)")
 VW=${VIEW%x*}; VH=${VIEW#*x}
 log "viewport ${VIEW}"
 
-: > "$CAPTURES"
 for chart in "${CHARTS[@]}"; do
   log "chart $chart"
   # Calibration: the app's density matches the golden against its layout box,
   # which carries padding the golden does not. Render the whole diagram once
   # at 0.1x, measure the real ink, and correct the density.
   launch "$chart" min 0.5 0.5
-  sleep 2
-  xcrun simctl </dev/null io "$SIM" screenshot "$OUT/.probe.png" >/dev/null 2>&1
-  if ! DENSITY=$(get_field density min 0.5 0.5); then
+  if ! RAW_DENSITY=$(get_field density min 0.5 0.5); then
     echo "ERROR: no density logged for $chart" >&2
     echo "  (check: xcrun simctl </dev/null spawn $SIM log show --predicate 'eventMessage CONTAINS \"MARADONA_ORACLE\"')" >&2
     exit 1
   fi
-  if ! DENSITY=$("$PY" "$ROOT/oracle/tools/calibrate.py" --capture "$OUT/.probe.png" \
-    --scale 0.1 --density "$DENSITY" --gold "$ROOT/oracle/goldens/$chart.png"); then
-    echo "ERROR: calibration failed for $chart (see above)" >&2
+  DENSITY=""
+  for attempt in 1 2 3 4 5; do
+    sleep 1.5
+    xcrun simctl </dev/null io "$SIM" screenshot "$OUT/.probe.png" >/dev/null 2>&1
+    if DENSITY=$("$PY" "$ROOT/oracle/tools/calibrate.py" --capture "$OUT/.probe.png" \
+      --scale 0.1 --density "$RAW_DENSITY" --gold "$ROOT/oracle/goldens/$chart.png" 2>/dev/null); then
+      break
+    fi
+    log "  calibration attempt $attempt was not a clean render; retrying"
+    DENSITY=""
+  done
+  if [ -z "$DENSITY" ]; then
+    echo "ERROR: calibration failed for $chart" >&2
     exit 1
   fi
 

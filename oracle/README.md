@@ -1,7 +1,15 @@
 # Oracle: golden-reference comparison against mermaid.js
 
-Renders the same flowcharts with mermaid.js (the reference implementation) and
-with Maradona on desktop, Android and iOS, then compares them.
+Renders the same Mermaid diagrams (`flowchart`, `sequenceDiagram`, `classDiagram`,
+`stateDiagram-v2`, `erDiagram`, `pie`) with `mermaid.js` (the reference
+implementation) and with Maradona on **Desktop (JVM)**, **Android**, and **iOS**,
+then compares them.
+
+> **Note on the Chrome viewer (`out/web/index.html`):** `web_report.py` generates
+> a static HTML/JS inspection viewer (side-by-side, onion-skin, pixel-diff, and
+> layout tables) and runs a headless Chrome smoke check on that viewer's DOM
+> controls. It is an oracle comparison viewer for the Desktop, Android, and iOS
+> renders — **not** a web renderer target for Maradona.
 
 Every capture is framed the same way on every platform, so the comparison is
 1:1 — no letterboxing, no rescaling of our render:
