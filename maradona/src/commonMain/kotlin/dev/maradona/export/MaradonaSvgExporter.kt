@@ -1446,7 +1446,13 @@ object MaradonaSvgExporter {
                 """  <rect class="arch-group" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="8" fill="${theme.subgraphFill.toSvgHex()}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1.4" stroke-dasharray="6,4"/>""",
             ).append('\n')
             pg.iconRect?.let { ir ->
-                sb.append("""  <rect x="${fmt(ir.x)}" y="${fmt(ir.y)}" width="${fmt(ir.width)}" height="${fmt(ir.height)}" rx="4" fill="${theme.accentBorder.toSvgHex()}"/>""").append('\n')
+                val grpIconAttr = pg.group.icon?.takeIf { it.isNotBlank() }?.let { """ data-icon="${escapeXml(it)}"""" }.orEmpty()
+                sb.append("""  <rect class="arch-group-icon"$grpIconAttr x="${fmt(ir.x)}" y="${fmt(ir.y)}" width="${fmt(ir.width)}" height="${fmt(ir.height)}" rx="4" fill="${theme.accentBorder.toSvgHex()}"/>""").append('\n')
+                val grpIconGlyph = pg.group.icon?.takeIf { it.isNotBlank() }?.let(::resolveMermaidIconGlyph).orEmpty()
+                if (grpIconGlyph.isNotBlank()) {
+                    val iconFont = (ir.height * 0.65f).coerceIn(9f, theme.nodeFontSize.value)
+                    appendMultilineText(sb, "  ", ir.centerX, ir.centerY, listOf(grpIconGlyph), theme.accentText.toSvgHex(), iconFont)
+                }
             }
             val grpTitle = pg.group.title ?: pg.group.id
             val lr = pg.labelRect

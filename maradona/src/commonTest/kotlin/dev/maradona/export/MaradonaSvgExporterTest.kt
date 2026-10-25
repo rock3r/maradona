@@ -461,6 +461,8 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(archSvg.contains("class=\"arch-group\""), "Expected architecture group")
+        assertTrue(archSvg.contains("class=\"arch-group-icon\" data-icon=\"cloud\""), "Expected architecture group icon")
+        assertTrue(archSvg.contains("☁"), "Expected architecture group cloud glyph")
         assertTrue(archSvg.contains("class=\"arch-service\" data-id=\"gw\""), "Expected architecture service")
         assertTrue(archSvg.contains("class=\"arch-junction\""), "Expected architecture junction")
 
