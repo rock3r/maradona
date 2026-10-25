@@ -494,7 +494,7 @@ object MaradonaSvgExporter {
                     } + (layout.xTicks + layout.yTicks).map { tk ->
                         SvgBox(tk.labelRect, tk.label, Color.Transparent, Color.Transparent, theme.edgeLabelText)
                     } + layout.legendItems.map { li ->
-                        SvgBox(li.labelRect, li.series.label.orEmpty(), theme.seriesFill(li.seriesIndex), theme.seriesColor(li.seriesIndex), theme.nodeText)
+                        SvgBox(li.labelRect, li.series.title ?: li.series.id, theme.seriesFill(li.seriesIndex), theme.seriesColor(li.seriesIndex), theme.nodeText)
                     },
                     lines = listOf(
                         SvgLine(listOf(layout.xAxisLineStart, layout.xAxisLineEnd), theme.nodeBorder, false, null to null),
