@@ -27,7 +27,7 @@ internal object ClickDirectiveParser {
     fun parseClick(rest: String): ParsedNodeAction? {
         val tokens = tokenize(rest.trim())
         if (tokens.size < 2) return null
-        val nodeIds = tokens[0].text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val nodeIds = splitNodeIds(tokens[0].text)
         if (nodeIds.isEmpty()) return null
 
         var idx = 1
@@ -82,7 +82,7 @@ internal object ClickDirectiveParser {
     fun parseClassLink(rest: String): ParsedNodeAction? {
         val tokens = tokenize(rest.trim())
         if (tokens.size < 2) return null
-        val nodeIds = tokens[0].text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val nodeIds = splitNodeIds(tokens[0].text)
         if (nodeIds.isEmpty()) return null
         val url = tokens[1].text.takeIf { it.isNotBlank() } ?: return null
         var tooltip: String? = null
@@ -104,7 +104,7 @@ internal object ClickDirectiveParser {
     fun parseClassCallback(rest: String): ParsedNodeAction? {
         val tokens = tokenize(rest.trim())
         if (tokens.size < 2) return null
-        val nodeIds = tokens[0].text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        val nodeIds = splitNodeIds(tokens[0].text)
         if (nodeIds.isEmpty()) return null
         val cb = tokens[1].text.takeIf { it.isNotBlank() } ?: return null
         val tooltip = tokens.getOrNull(2)?.text?.takeIf { it.isNotBlank() }
@@ -161,6 +161,29 @@ internal object ClickDirectiveParser {
 
     private data class Token(val text: String, val wasQuoted: Boolean)
 
+    private fun splitNodeIds(raw: String): List<String> {
+        val out = ArrayList<String>()
+        val sb = StringBuilder()
+        var inBacktick = false
+        for (c in raw) {
+            when {
+                c == '`' -> {
+                    inBacktick = !inBacktick
+                    sb.append(c)
+                }
+                c == ',' && !inBacktick -> {
+                    val item = sb.toString().trim()
+                    if (item.isNotEmpty()) out += item
+                    sb.clear()
+                }
+                else -> sb.append(c)
+            }
+        }
+        val tail = sb.toString().trim()
+        if (tail.isNotEmpty()) out += tail
+        return out
+    }
+
     private fun tokenize(input: String): List<Token> {
         val out = ArrayList<Token>()
         var i = 0
@@ -185,11 +208,13 @@ internal object ClickDirectiveParser {
             } else {
                 val sb = StringBuilder()
                 var parenDepth = 0
+                var inBacktick = false
                 while (i < n) {
                     val c = input[i]
-                    if (c.isWhitespace() && parenDepth == 0) break
-                    if (c == '(') parenDepth++
-                    else if (c == ')' && parenDepth > 0) parenDepth--
+                    if (c.isWhitespace() && parenDepth == 0 && !inBacktick) break
+                    if (c == '`') inBacktick = !inBacktick
+                    else if (!inBacktick && c == '(') parenDepth++
+                    else if (!inBacktick && c == ')' && parenDepth > 0) parenDepth--
                     sb.append(c)
                     i++
                 }
