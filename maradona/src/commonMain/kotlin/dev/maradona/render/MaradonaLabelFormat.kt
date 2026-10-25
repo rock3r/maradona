@@ -52,10 +52,6 @@ data class InlineImageSpec(
 )
 
 private val IMG_TAG_REGEX = Regex("""(?i)<img\b((?:[^>"']|"[^"]*"|'[^']*')*)/?>""")
-private val IMG_SRC_REGEX = Regex("""(?i)(?:^|[\s"'/])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
-private val IMG_ALT_REGEX = Regex("""(?i)(?:^|[\s"'/])alt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
-private val IMG_WIDTH_REGEX = Regex("""(?i)(?:^|[\s"'/])width\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
-private val IMG_HEIGHT_REGEX = Regex("""(?i)(?:^|[\s"'/])height\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
 private val MD_IMAGE_REGEX = Regex("""!\[([^\]]*)]\(([^)\s]+)\)""")
 
 private val INLINE_ICON_CALL_REGEX = Regex("""(?i)::icon\(([^)]+)\)""")
@@ -181,20 +177,12 @@ fun extractInlineImages(label: String): List<InlineImageSpec> =
     prepareLabelWithImagesAndIcons(label).second
 
 private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? {
-    val attrs = match.groupValues[1]
-    val srcMatch = IMG_SRC_REGEX.find(attrs) ?: return null
-    val url = (srcMatch.groupValues[1].ifEmpty { srcMatch.groupValues[2] }.ifEmpty { srcMatch.groupValues[3] }).trim()
-    if (url.isEmpty()) return null
-    val altMatch = IMG_ALT_REGEX.find(attrs)
-    val alt = altMatch?.let {
-        it.groupValues[1].ifEmpty { it.groupValues[2] }.ifEmpty { it.groupValues[3] }
-    }?.trim()?.takeIf { it.isNotEmpty() } ?: url.substringAfterLast('/').substringBefore('?').ifEmpty { "image" }
-    val w = IMG_WIDTH_REGEX.find(attrs)?.let {
-        (it.groupValues[1].ifEmpty { it.groupValues[2] }.ifEmpty { it.groupValues[3] }).toFloatOrNull()
-    } ?: 24f
-    val h = IMG_HEIGHT_REGEX.find(attrs)?.let {
-        (it.groupValues[1].ifEmpty { it.groupValues[2] }.ifEmpty { it.groupValues[3] }).toFloatOrNull()
-    } ?: w
+    val attrMap = parseHtmlAttributes(match.groupValues[1])
+    val url = attrMap["src"]?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val alt = attrMap["alt"]?.trim()?.takeIf { it.isNotEmpty() }
+        ?: url.substringAfterLast('/').substringBefore('?').ifEmpty { "image" }
+    val w = attrMap["width"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 24f
+    val h = attrMap["height"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: w
     return InlineImageSpec(
         inlineId = inlineId,
         url = url,
@@ -202,6 +190,45 @@ private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? 
         widthPx = w.coerceIn(10f, 160f),
         heightPx = h.coerceIn(10f, 160f),
     )
+}
+
+private fun parseHtmlAttributes(attrs: String): Map<String, String> {
+    val out = LinkedHashMap<String, String>()
+    var i = 0
+    val n = attrs.length
+    while (i < n) {
+        while (i < n && (attrs[i].isWhitespace() || attrs[i] == '/')) i++
+        if (i >= n) break
+        val nameStart = i
+        while (i < n && (attrs[i].isLetterOrDigit() || attrs[i] == '-' || attrs[i] == '_' || attrs[i] == ':')) i++
+        if (i == nameStart) {
+            i++
+            continue
+        }
+        val name = attrs.substring(nameStart, i).lowercase()
+        while (i < n && attrs[i].isWhitespace()) i++
+        if (i >= n || attrs[i] != '=') {
+            out[name] = ""
+            continue
+        }
+        i++ // skip '='
+        while (i < n && attrs[i].isWhitespace()) i++
+        if (i >= n) break
+        val value = if (attrs[i] == '"' || attrs[i] == '\'') {
+            val quote = attrs[i++]
+            val valStart = i
+            while (i < n && attrs[i] != quote) i++
+            val v = attrs.substring(valStart, i)
+            if (i < n && attrs[i] == quote) i++
+            v
+        } else {
+            val valStart = i
+            while (i < n && !attrs[i].isWhitespace() && attrs[i] != '/' && attrs[i] != '>') i++
+            attrs.substring(valStart, i)
+        }
+        out[name] = value
+    }
+    return out
 }
 
 private val FORMATTING_OPEN_TAG_ATTRS_REGEX =
