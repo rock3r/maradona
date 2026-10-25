@@ -16,7 +16,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +30,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.PacketDiagramLayout
 import dev.maradona.layout.PacketLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.PacketBitOrder
 import dev.maradona.model.PacketBlock
 import dev.maradona.model.PacketDiagram
@@ -50,14 +53,17 @@ fun MaradonaPacketLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (PacketDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { PacketLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val allBlocks = remember(diagram) { diagram.words.flatten() }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -150,18 +156,24 @@ fun MaradonaPacketLayout(
                     )
                 }
 
+                val rangeText = if (block.start == block.end) {
+                    "bit ${block.start}"
+                } else {
+                    "bits ${block.start}..${block.end}"
+                }
+                val baseDesc = "Packet field ${block.label} ($rangeText)"
+                val nodeId = "${block.start}-${block.end}"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = nodeId, label = block.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("blockbox:$idx")
-                        .focusable()
-                        .semantics {
-                            val rangeText = if (block.start == block.end) {
-                                "bit ${block.start}"
-                            } else {
-                                "bits ${block.start}..${block.end}"
-                            }
-                            contentDescription = "Packet field ${block.label} ($rangeText)"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = idx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

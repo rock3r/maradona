@@ -16,7 +16,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +29,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.QuadrantDiagramLayout
 import dev.maradona.layout.QuadrantLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.QuadrantDiagram
 import kotlin.math.roundToInt
 
@@ -47,9 +50,11 @@ fun MaradonaQuadrantLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (QuadrantDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { QuadrantLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val quadrantSpecs = remember(diagram) {
         listOf(
             1 to diagram.quadrant1Text,
@@ -74,6 +79,7 @@ fun MaradonaQuadrantLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -127,7 +133,7 @@ fun MaradonaQuadrantLayout(
                     ),
                 )
             }
-            for (p in diagram.points) {
+            for ((pIdx, p) in diagram.points.withIndex()) {
                 BasicText(
                     text = annotatedLabel(p.label),
                     modifier = Modifier.layoutId("ptlbl:${p.id}"),
@@ -139,13 +145,18 @@ fun MaradonaQuadrantLayout(
                         textAlign = TextAlign.Center,
                     ),
                 )
+                val baseDesc = "Quadrant point ${p.label} at (${p.x}, ${p.y})"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = p.id, label = p.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("ptbox:${p.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Quadrant point ${p.label} at (${p.x}, ${p.y})"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = pIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

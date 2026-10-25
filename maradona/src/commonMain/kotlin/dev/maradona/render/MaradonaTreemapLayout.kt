@@ -18,7 +18,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -32,6 +34,7 @@ import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.PositionedTreemapLeaf
 import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.TreemapLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.TreemapDiagram
 import dev.maradona.model.TreemapNode
 import kotlin.math.max
@@ -55,9 +58,11 @@ fun MaradonaTreemapLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (TreemapDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { TreemapLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val isDark = theme.isDark
 
     // Precompute layout so we know exact section and leaf counts and adaptive font sizes.
@@ -71,6 +76,7 @@ fun MaradonaTreemapLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -164,13 +170,18 @@ fun MaradonaTreemapLayout(
                         ),
                     )
                 }
+                val baseDesc = "Treemap item ${leaf.node.name}: ${leaf.formattedValue}"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = leaf.node.name, label = leaf.node.name) else null
                 Box(
                     modifier = Modifier
                         .layoutId("leaf_box:$idx")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Treemap item ${leaf.node.name}: ${leaf.formattedValue}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = idx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.PieDiagramLayout
 import dev.maradona.layout.PieLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.PieDiagram
 import kotlin.math.roundToInt
 
@@ -50,15 +53,18 @@ fun MaradonaPieLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (PieDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { PieLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val validSlices = remember(diagram) { PieLayout.validSlices(diagram) }
     val fractions = remember(validSlices) { PieLayout.sliceFractions(validSlices) }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -111,13 +117,18 @@ fun MaradonaPieLayout(
                         fontWeight = FontWeight.Medium,
                     ),
                 )
+                val baseDesc = "${s.label}: $pctText (${PieLayout.formatSliceValue(s.value)})"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = s.label, label = s.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("legbox:$idx")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "${s.label}: $pctText (${PieLayout.formatSliceValue(s.value)})"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = idx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

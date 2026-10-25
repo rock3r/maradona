@@ -255,11 +255,12 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
     for (fx, fy), img in zip(f100, tiles100):
         stitched.paste(img, (round(window_origin(canvas[0], view[0], fx)),
                              round(window_origin(canvas[1], view[1], fy))))
-    ours_content = crop_to_content(stitched, bg_color(stitched))
+    chart_bg = bg_color(stitched)
+    ours_content = crop_to_content(stitched, chart_bg)
     if ours_content is None:
         results[f"{prefix}100"] = {"mode": "fidelity", "pass": False, "error": "blank capture"}
         return results
-    box = content_bbox(stitched, bg_color(stitched))
+    box = content_bbox(stitched, chart_bg)
     size = ours_content.size
     offset = (box[0], box[1])
 
@@ -300,7 +301,7 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
         problems = []
         for tile in tiles:
             problems += _capture_problems(tile, view)
-        ink = sum(ink_fraction(t, bg_color(t)) for t in tiles) / len(tiles)
+        ink = sum(ink_fraction(t, chart_bg) for t in tiles) / len(tiles)
         if level != "min" and ink < MIN_INK:
             problems.append("blank capture")
         elif ink > MAX_INK:
@@ -318,8 +319,8 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
         for (fx, fy), ours in zip(fractions, tiles):
             origin = (window_origin(big.size[0], view[0], fx), window_origin(big.size[1], view[1], fy))
             ref = framed(big, origin, view)
-            f_ref = flatten_bg(ref, WHITE)
-            f_ours = flatten_bg(ours, bg_color(ours))
+            f_ref = flatten_bg(ref, chart_bg if level == "max" else WHITE)
+            f_ours = flatten_bg(ours, chart_bg)
             count, diff_img = diff_counts(f_ref, f_ours)
             mismatch += count
             r_ink, o_ink = _ink_pixels(f_ref), _ink_pixels(f_ours)

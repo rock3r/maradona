@@ -10,7 +10,18 @@ import androidx.compose.ui.unit.Density
 import dev.maradona.layout.C4DiagramLayout
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.DiagramLayout
+import dev.maradona.layout.GitGraphDiagramLayout
+import dev.maradona.layout.JourneyDiagramLayout
+import dev.maradona.layout.PacketDiagramLayout
+import dev.maradona.layout.PieDiagramLayout
+import dev.maradona.layout.QuadrantDiagramLayout
+import dev.maradona.layout.RadarDiagramLayout
 import dev.maradona.layout.RequirementDiagramLayout
+import dev.maradona.layout.SankeyDiagramLayout
+import dev.maradona.layout.TimelineDiagramLayout
+import dev.maradona.layout.TreemapDiagramLayout
+import dev.maradona.layout.XyChartDiagramLayout
+import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.render.DiagramZoom
 import dev.maradona.render.MaradonaDiagram
@@ -180,6 +191,349 @@ class AccessibilityAndClickTest {
             assertEquals("https://docs.example.com/auth", clicked[0].url)
         } finally {
             reqScene.close()
+        }
+    }
+
+    @Test
+    fun remainingElevenDiagramFamiliesDispatchOnNodeClickEvents() {
+        val clicked = mutableListOf<MaradonaNodeClickEvent>()
+
+        // 1. Pie (click legend item)
+        var pieLayout: PieDiagramLayout? = null
+        val pieScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    pie
+                      "Kotlin" : 75
+                      "Python" : 25
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onPieLayout = { pieLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> pieScene.render((frame + 1) * 16_000_000L) }
+            val pl = assertNotNull(pieLayout)
+            val ox = (800f - pl.width) / 2f
+            val oy = (600f - pl.height) / 2f
+            val li = pl.legendItems.first()
+            val pos = Offset(ox + li.labelRect.centerX, oy + li.labelRect.centerY)
+            pieScene.sendPointerEvent(PointerEventType.Press, pos)
+            pieScene.sendPointerEvent(PointerEventType.Release, pos)
+            pieScene.render(100_000_000L)
+            assertEquals("Kotlin", clicked.last().nodeId)
+        } finally {
+            pieScene.close()
+        }
+
+        // 2. GitGraph (click commit node)
+        var gitLayout: GitGraphDiagramLayout? = null
+        val gitScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    gitGraph
+                      commit id: "init-1"
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onGitGraphLayout = { gitLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> gitScene.render((frame + 1) * 16_000_000L) }
+            val gl = assertNotNull(gitLayout)
+            val ox = (800f - gl.width) / 2f
+            val oy = (600f - gl.height) / 2f
+            val cRect = gl.commits.first().nodeRect
+            val pos = Offset(ox + cRect.centerX, oy + cRect.centerY)
+            gitScene.sendPointerEvent(PointerEventType.Press, pos)
+            gitScene.sendPointerEvent(PointerEventType.Release, pos)
+            gitScene.render(100_000_000L)
+            assertEquals("init-1", clicked.last().nodeId)
+        } finally {
+            gitScene.close()
+        }
+
+        // 3. Timeline (click period card)
+        var timelineLayout: TimelineDiagramLayout? = null
+        val timelineScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    timeline
+                      2026 : Launch v1
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onTimelineLayout = { timelineLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> timelineScene.render((frame + 1) * 16_000_000L) }
+            val tl = assertNotNull(timelineLayout)
+            val ox = (800f - tl.width) / 2f
+            val oy = (600f - tl.height) / 2f
+            val pRect = tl.periods.first().rect
+            val pos = Offset(ox + pRect.centerX, oy + pRect.centerY)
+            timelineScene.sendPointerEvent(PointerEventType.Press, pos)
+            timelineScene.sendPointerEvent(PointerEventType.Release, pos)
+            timelineScene.render(100_000_000L)
+            assertEquals("2026", clicked.last().label)
+        } finally {
+            timelineScene.close()
+        }
+
+        // 4. Journey (click task card)
+        var journeyLayout: JourneyDiagramLayout? = null
+        val journeyScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    journey
+                      section Onboarding
+                        Sign up: 5: Alice
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onJourneyLayout = { journeyLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> journeyScene.render((frame + 1) * 16_000_000L) }
+            val jl = assertNotNull(journeyLayout)
+            val ox = (800f - jl.width) / 2f
+            val oy = (600f - jl.height) / 2f
+            val tRect = jl.tasks.first().cardRect
+            val pos = Offset(ox + tRect.centerX, oy + tRect.centerY)
+            journeyScene.sendPointerEvent(PointerEventType.Press, pos)
+            journeyScene.sendPointerEvent(PointerEventType.Release, pos)
+            journeyScene.render(100_000_000L)
+            assertEquals("Sign up", clicked.last().label)
+        } finally {
+            journeyScene.close()
+        }
+
+        // 5. Quadrant (click data point)
+        var quadrantLayout: QuadrantDiagramLayout? = null
+        val quadrantScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    quadrantChart
+                      Core Platform: [0.8, 0.9]
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onQuadrantLayout = { quadrantLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> quadrantScene.render((frame + 1) * 16_000_000L) }
+            val ql = assertNotNull(quadrantLayout)
+            val ox = (800f - ql.width) / 2f
+            val oy = (600f - ql.height) / 2f
+            val pt = ql.points.first()
+            val pos = Offset(ox + pt.center.x, oy + pt.center.y)
+            quadrantScene.sendPointerEvent(PointerEventType.Press, pos)
+            quadrantScene.sendPointerEvent(PointerEventType.Release, pos)
+            quadrantScene.render(100_000_000L)
+            assertEquals("Core Platform", clicked.last().label)
+        } finally {
+            quadrantScene.close()
+        }
+
+        // 6. XY Chart (click bar)
+        var xyLayout: XyChartDiagramLayout? = null
+        val xyScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    xychart-beta
+                      x-axis [Q1]
+                      y-axis 0 --> 100
+                      bar [80]
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onXyChartLayout = { xyLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> xyScene.render((frame + 1) * 16_000_000L) }
+            val xl = assertNotNull(xyLayout)
+            val ox = (800f - xl.width) / 2f
+            val oy = (600f - xl.height) / 2f
+            val bRect = xl.bars.first().rect
+            val pos = Offset(ox + bRect.centerX, oy + bRect.centerY)
+            xyScene.sendPointerEvent(PointerEventType.Press, pos)
+            xyScene.sendPointerEvent(PointerEventType.Release, pos)
+            xyScene.render(100_000_000L)
+            assertEquals("plot_0_0", clicked.last().nodeId)
+        } finally {
+            xyScene.close()
+        }
+
+        // 7. Sankey (click node bar)
+        var sankeyLayout: SankeyDiagramLayout? = null
+        val sankeyScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    sankey-beta
+                      Solar,Grid,100
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onSankeyLayout = { sankeyLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> sankeyScene.render((frame + 1) * 16_000_000L) }
+            val sl = assertNotNull(sankeyLayout)
+            val ox = (800f - sl.width) / 2f
+            val oy = (600f - sl.height) / 2f
+            val nRect = sl.nodes.first { it.node.id == "Solar" }.rect
+            val pos = Offset(ox + nRect.centerX, oy + nRect.centerY)
+            sankeyScene.sendPointerEvent(PointerEventType.Press, pos)
+            sankeyScene.sendPointerEvent(PointerEventType.Release, pos)
+            sankeyScene.render(100_000_000L)
+            assertEquals("Solar", clicked.last().nodeId)
+        } finally {
+            sankeyScene.close()
+        }
+
+        // 8. Packet (click packet field block)
+        var packetLayout: PacketDiagramLayout? = null
+        val packetScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    packet-beta
+                      0-15: "SrcPort"
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onPacketLayout = { packetLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> packetScene.render((frame + 1) * 16_000_000L) }
+            val pkl = assertNotNull(packetLayout)
+            val ox = (800f - pkl.width) / 2f
+            val oy = (600f - pkl.height) / 2f
+            val bRect = pkl.blocks.first().rect
+            val pos = Offset(ox + bRect.centerX, oy + bRect.centerY)
+            packetScene.sendPointerEvent(PointerEventType.Press, pos)
+            packetScene.sendPointerEvent(PointerEventType.Release, pos)
+            packetScene.render(100_000_000L)
+            assertEquals("SrcPort", clicked.last().label)
+        } finally {
+            packetScene.close()
+        }
+
+        // 9. Radar (click axis label)
+        var radarLayout: RadarDiagramLayout? = null
+        val radarScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    radar-beta
+                      axis speed["Speed"], rel["Reliability"], mem["Memory"]
+                      curve m["Maradona"]{90, 95, 88}
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onRadarLayout = { radarLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> radarScene.render((frame + 1) * 16_000_000L) }
+            val rdl = assertNotNull(radarLayout)
+            val ox = (800f - rdl.width) / 2f
+            val oy = (600f - rdl.height) / 2f
+            val axRect = rdl.axes.first().labelRect
+            val pos = Offset(ox + axRect.centerX, oy + axRect.centerY)
+            radarScene.sendPointerEvent(PointerEventType.Press, pos)
+            radarScene.sendPointerEvent(PointerEventType.Release, pos)
+            radarScene.render(100_000_000L)
+            assertEquals("speed", clicked.last().nodeId)
+        } finally {
+            radarScene.close()
+        }
+
+        // 10. Treemap (click leaf tile)
+        var treemapLayout: TreemapDiagramLayout? = null
+        val treemapScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    treemap-beta
+                    "Platform"
+                        "Core": 60
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onTreemapLayout = { treemapLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> treemapScene.render((frame + 1) * 16_000_000L) }
+            val tml = assertNotNull(treemapLayout)
+            val ox = (800f - tml.width) / 2f
+            val oy = (600f - tml.height) / 2f
+            val lRect = tml.leaves.first().rect
+            val pos = Offset(ox + lRect.centerX, oy + lRect.centerY)
+            treemapScene.sendPointerEvent(PointerEventType.Press, pos)
+            treemapScene.sendPointerEvent(PointerEventType.Release, pos)
+            treemapScene.render(100_000_000L)
+            assertEquals("Core", clicked.last().nodeId)
+        } finally {
+            treemapScene.close()
+        }
+
+        // 11. ZenUML (click participant card)
+        var zenLayout: ZenUmlDiagramLayout? = null
+        val zenScene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            MaradonaDiagram(
+                source = """
+                    zenuml
+                      Client->Server.ping() {
+                        return pong
+                      }
+                """.trimIndent(),
+                modifier = Modifier.fillMaxSize(),
+                zoomEnabled = false,
+                initialScale = 1f,
+                onZenUmlLayout = { zenLayout = it },
+                onNodeClick = { clicked += it },
+            )
+        }
+        try {
+            repeat(4) { frame -> zenScene.render((frame + 1) * 16_000_000L) }
+            val zl = assertNotNull(zenLayout)
+            val ox = (800f - zl.width) / 2f
+            val oy = (600f - zl.height) / 2f
+            val pRect = zl.participants.first { it.participant.id == "Client" }.topRect
+            val pos = Offset(ox + pRect.centerX, oy + pRect.centerY)
+            zenScene.sendPointerEvent(PointerEventType.Press, pos)
+            zenScene.sendPointerEvent(PointerEventType.Release, pos)
+            zenScene.render(100_000_000L)
+            assertEquals("Client", clicked.last().nodeId)
+        } finally {
+            zenScene.close()
         }
     }
 }

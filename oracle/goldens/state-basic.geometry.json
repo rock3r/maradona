@@ -1,0 +1,124 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  304,
+  716
+ ],
+ "content": [
+  14,
+  14,
+  260,
+  650
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-state-root_start-0",
+   "shape": "circle",
+   "label": "",
+   "box": [
+    138.0,
+    16.0,
+    28.0,
+    28.0
+   ],
+   "label_box": [
+    141,
+    19,
+    17,
+    22
+   ],
+   "centre": [
+    152.0,
+    30.0
+   ],
+   "svg_box": [
+    138.0,
+    16.0,
+    28.0,
+    28.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Idle-1",
+   "shape": "rect",
+   "label": "Idle",
+   "box": [
+    16.0,
+    124.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    19,
+    127,
+    254,
+    68
+   ],
+   "centre": [
+    152.0,
+    161.0
+   ],
+   "svg_box": [
+    16.0,
+    124.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Active-2",
+   "shape": "rect",
+   "label": "Active",
+   "box": [
+    16.0,
+    398.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    19,
+    401,
+    254,
+    68
+   ],
+   "centre": [
+    152.0,
+    435.0
+   ],
+   "svg_box": [
+    16.0,
+    398.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-root_end-2",
+   "shape": "path",
+   "label": "",
+   "box": [
+    132,
+    638,
+    24,
+    24
+   ],
+   "label_box": [
+    139,
+    645,
+    10,
+    10
+   ],
+   "centre": [
+    144.0,
+    650.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

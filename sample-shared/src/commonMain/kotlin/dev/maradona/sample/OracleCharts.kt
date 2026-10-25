@@ -12,6 +12,17 @@ object OracleCharts {
           C --> E([Composables])
           D --> E
         """.trimIndent(),
+        "class-basic" to """
+        classDiagram
+          class Order {
+            +String id
+            +process()
+          }
+          class LineItem {
+            +int qty
+          }
+          Order "1" *-- "*" LineItem : contains
+        """.trimIndent(),
         "edges-heads" to """
         flowchart TD
           A[Start] --> B[Arrow]
@@ -24,6 +35,30 @@ object OracleCharts {
           H -- inline label --> I[Inline label]
           I <--> J[Double arrow]
           J --> A
+        """.trimIndent(),
+        "er-basic" to """
+        erDiagram
+          CUSTOMER ||--o{ ORDER : places
+          CUSTOMER {
+            string id PK
+            string email
+          }
+          ORDER {
+            string id PK
+          }
+        """.trimIndent(),
+        "pie-basic" to """
+        pie title Runtime Split
+          "Parse" : 20
+          "Layout" : 45
+          "Render" : 35
+        """.trimIndent(),
+        "sequence-basic" to """
+        sequenceDiagram
+          participant Client
+          participant Server
+          Client->>Server: Request
+          Server-->>Client: Response
         """.trimIndent(),
         "shapes-lr" to """
         flowchart LR
@@ -39,6 +74,12 @@ object OracleCharts {
           J --> K[\Trapezoid alt/]
           K --> L[[Subroutine]]
           L --> M>Flag]
+        """.trimIndent(),
+        "state-basic" to """
+        stateDiagram-v2
+          [*] --> Idle
+          Idle --> Active : start
+          Active --> [*] : stop
         """.trimIndent(),
         "styling" to """
         flowchart TD

@@ -1,0 +1,9 @@
+classDiagram
+  class Order {
+    +String id
+    +process()
+  }
+  class LineItem {
+    +int qty
+  }
+  Order "1" *-- "*" LineItem : contains

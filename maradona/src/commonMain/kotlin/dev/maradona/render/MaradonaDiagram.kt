@@ -458,6 +458,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onPieLayout,
                                 modifier = contentModifier,
                             )
@@ -466,6 +467,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onGitGraphLayout,
                                 modifier = contentModifier,
                             )
@@ -474,6 +476,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onTimelineLayout,
                                 modifier = contentModifier,
                             )
@@ -482,6 +485,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onJourneyLayout,
                                 modifier = contentModifier,
                             )
@@ -490,6 +494,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onQuadrantLayout,
                                 modifier = contentModifier,
                             )
@@ -498,6 +503,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onXyChartLayout,
                                 modifier = contentModifier,
                             )
@@ -515,6 +521,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onSankeyLayout,
                                 modifier = contentModifier,
                             )
@@ -534,6 +541,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onPacketLayout,
                                 modifier = contentModifier,
                             )
@@ -542,6 +550,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onRadarLayout,
                                 modifier = contentModifier,
                             )
@@ -568,6 +577,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onTreemapLayout,
                                 modifier = contentModifier,
                             )
@@ -585,6 +595,7 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                onNodeClick = onNodeClick,
                                 onLayout = onZenUmlLayout,
                                 modifier = contentModifier,
                             )

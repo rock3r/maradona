@@ -236,7 +236,7 @@ def main():
               f"{len(bad_render)} drawn more than {MAX_RENDER_ERR:.0f}px off the IL")
     out = ROOT / "out" / "report-layout.json"
     out.write_text(json.dumps(report, indent=1))
-    print(f"\nlayout: {len(charts) - failures}/{len(charts)} charts within tolerance -> {out}")
+    print(f"\nlayout: {len(report) - failures}/{len(report)} charts within tolerance -> {out}")
     return 1 if failures else 0
 
 
