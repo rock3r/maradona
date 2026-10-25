@@ -213,6 +213,45 @@ class MaradonaSvgExporterTest {
                 }
             }
         }
+
+        // Repositioned cross-subgraph routes must be included in the normalized layout bounds.
+        val boundsEdgeMmd = """
+            flowchart TB
+                subgraph s1
+                    n0
+                    n3
+                    n6
+                end
+                subgraph s0
+                    n1
+                    n2
+                    n4
+                    n5
+                    n7
+                end
+                n0 -->|L| n3
+                n0 -->|L| n4
+                n0 -->|L| n5
+                n0 -->|L| n7
+                n2 -->|L| n6
+                n5 -->|L| n6
+                n5 -->|L| n7
+                n6 -->|L| n7
+        """.trimIndent()
+        val boundsChart = FlowchartParser.parse(boundsEdgeMmd)
+        val boundsLayout = FlowchartLayout.layout(
+            chart = boundsChart,
+            nodeSize = { DiagramSize(100f, 44f) },
+            edgeLabelSize = { DiagramSize(40f, 18f) },
+        )
+        for (pe in boundsLayout.edges) {
+            for (p in pe.points) {
+                assertTrue(
+                    p.x >= 0f && p.x <= boundsLayout.width && p.y >= 0f && p.y <= boundsLayout.height,
+                    "Edge ${pe.edge.from}->${pe.edge.to} point $p must fit within layout bounds (${boundsLayout.width}x${boundsLayout.height})",
+                )
+            }
+        }
     }
 
     @Test

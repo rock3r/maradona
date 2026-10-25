@@ -155,6 +155,7 @@ object FlowchartLayout {
             }
 
             var subgraphRects = buildSubgraphs(nodeRects, result.clusters)
+            var separatedChanged = false
             if (subgraphRects.isNotEmpty()) {
                 val separated = separateOverlappingSiblingSubgraphs(
                     nodeRects = nodeRects,
@@ -162,6 +163,7 @@ object FlowchartLayout {
                     subgraphs = subgraphRects,
                     membersOf = ::membersOf,
                 )
+                separatedChanged = separated.first !== positionedEdges || separated.second !== subgraphRects
                 positionedEdges = separated.first
                 subgraphRects = separated.second
             }
@@ -182,8 +184,20 @@ object FlowchartLayout {
             // Bounds come from nodes, clusters and edge labels - not from the
             // routed polylines: dagre positions from node and label geometry, so
             // counting a line that swings wide would shift the whole diagram.
+            // When sibling cluster separation shifts or deflects edge routes,
+            // include those repositioned waypoints so routes stay inside layout bounds.
             positionedEdges.forEach { edge ->
-                if (edge.edge.from != edge.edge.to) edge.labelRect?.let(::include)
+                if (edge.edge.from != edge.edge.to) {
+                    edge.labelRect?.let(::include)
+                    if (separatedChanged) {
+                        for (p in edge.points) {
+                            if (p.x < minX) minX = p.x
+                            if (p.y < minY) minY = p.y
+                            if (p.x > maxX) maxX = p.x
+                            if (p.y > maxY) maxY = p.y
+                        }
+                    }
+                }
             }
             val dx = options.padding - minX
             val dy = options.padding - minY
@@ -402,8 +416,8 @@ object FlowchartLayout {
                 .map { it.value }
             if (obstacles.isEmpty()) return rawPts
 
-            fun clearXAtY(x: Float, y: Float, clearance: Float): Float {
-                val bandObs = obstacles.filter { y >= it.y - clearance && y <= it.bottom + clearance }
+            fun clearXInYRange(x: Float, yMin: Float, yMax: Float, clearance: Float): Float {
+                val bandObs = obstacles.filter { yMax >= it.y - clearance && yMin <= it.bottom + clearance }
                 if (bandObs.none { x > it.x - clearance && x < it.right + clearance }) return x
                 val candidates = mutableListOf<Float>()
                 for (obs in bandObs) {
@@ -422,7 +436,7 @@ object FlowchartLayout {
             // 1. Push any interior waypoints that landed inside an unrelated node box outside it.
             for (k in 1 until pts.lastIndex) {
                 val p = pts[k]
-                val nx = clearXAtY(p.x, p.y, pad)
+                val nx = clearXInYRange(p.x, p.y, p.y, pad)
                 if (nx != p.x) {
                     pts[k] = DiagramPoint(nx, p.y)
                     changed = true
@@ -431,7 +445,7 @@ object FlowchartLayout {
 
             // 2. If any segment still crosses an unrelated node box, route around its top/bottom corners.
             val cornerMargin = 6f
-            repeat(4) {
+            repeat(6) {
                 val next = mutableListOf<DiagramPoint>()
                 var passChanged = false
                 for (i in 0 until pts.lastIndex) {
@@ -457,7 +471,7 @@ object FlowchartLayout {
                                     a.x + (b.x - a.x) * ((hit.centerY - a.y) / (b.y - a.y))
                                 else -> (a.x + b.x) * 0.5f
                             }
-                            val detourX = clearXAtY(refX, hit.centerY, pad)
+                            val detourX = clearXInYRange(refX, topY, botY, pad)
                             if (a.y <= b.y) {
                                 if (a.y < hit.y) next += DiagramPoint(detourX, topY)
                                 if (b.y > hit.bottom) next += DiagramPoint(detourX, botY)
