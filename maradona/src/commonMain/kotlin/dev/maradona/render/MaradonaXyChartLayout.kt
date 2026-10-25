@@ -168,7 +168,7 @@ fun MaradonaXyChartLayout(
                 } else if (diagram.showDataLabelOutsideBar || series.points.any { it.label == txt }) {
                     theme.nodeText
                 } else {
-                    contrastingTextColor(seriesCol, darkText = theme.nodeText, lightText = theme.accentText)
+                    contrastingTextColor(seriesCol)
                 }
                 BasicText(
                     text = annotatedLabel(txt),
