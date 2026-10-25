@@ -176,10 +176,22 @@ private val ICON_GLYPHS = mapOf(
 fun extractInlineImages(label: String): List<InlineImageSpec> =
     prepareLabelWithImagesAndIcons(label).second
 
+private fun decodeAttributeEntities(s: String): String =
+    s.replace("&\u200Blt;", "<")
+        .replace("&quot;", "\"").replace("#quot;", "\"")
+        .replace("&#39;", "'").replace("&apos;", "'")
+        .replace("&lt;", "<").replace("#lt;", "<")
+        .replace("&gt;", ">").replace("#gt;", ">")
+        .replace("&amp;", "&").replace("#amp;", "&")
+        .replace(Regex("&?#(\\d{1,5});")) { m ->
+            val code = m.groupValues[1].toIntOrNull()
+            if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
+        }
+
 private fun parseImgTag(match: MatchResult, inlineId: String): InlineImageSpec? {
     val attrMap = parseHtmlAttributes(match.groupValues[1])
-    val url = attrMap["src"]?.replace("&\u200Blt;", "<")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val alt = attrMap["alt"]?.replace("&\u200Blt;", "<")?.trim()?.takeIf { it.isNotEmpty() }
+    val url = attrMap["src"]?.let(::decodeAttributeEntities)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val alt = attrMap["alt"]?.let(::decodeAttributeEntities)?.trim()?.takeIf { it.isNotEmpty() }
         ?: url.substringAfterLast('/').substringBefore('?').ifEmpty { "image" }
     val w = attrMap["width"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 24f
     val h = attrMap["height"]?.trim()?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: w

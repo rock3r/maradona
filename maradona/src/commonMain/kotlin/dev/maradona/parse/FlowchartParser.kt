@@ -627,22 +627,54 @@ internal object NodeRefReader {
                 .replace(Regex("""(?i)</(u|ins|s|del|strike|sub|sup|code)\s*>""")) { "</${it.groupValues[1].lowercase()}>" }
                 .replace(Regex("""(?i)</?(?:span|div|p|font|small|mark)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "")
         }
-        val escapedTagGuard = "&\u200Blt;"
-        text = text
-            .replace(
-                Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
-                escapedTagGuard,
-            )
-            .replace("&quot;", "\"").replace("#quot;", "\"")
-            .replace("&#39;", "'").replace("&apos;", "'")
-            .replace("&lt;", "<").replace("#lt;", "<")
-            .replace("&gt;", ">").replace("#gt;", ">")
-            .replace("&amp;", "&").replace("#amp;", "&")
-            .replace(Regex("&?#(\\d{1,5});")) { m ->
-                val code = m.groupValues[1].toIntOrNull()
-                if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
-            }
+        text = transformOutsideImgTags(text) { segment ->
+            val escapedTagGuard = "&\u200Blt;"
+            segment
+                .replace(
+                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
+                    escapedTagGuard,
+                )
+                .replace("&quot;", "\"").replace("#quot;", "\"")
+                .replace("&#39;", "'").replace("&apos;", "'")
+                .replace("&lt;", "<").replace("#lt;", "<")
+                .replace("&gt;", ">").replace("#gt;", ">")
+                .replace("&amp;", "&").replace("#amp;", "&")
+                .replace(Regex("&?#(\\d{1,5});")) { m ->
+                    val code = m.groupValues[1].toIntOrNull()
+                    if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
+                }
+        }
         return text.trim()
+    }
+
+    private fun transformOutsideImgTags(s: String, transform: (String) -> String): String {
+        if ("<img" !in s.lowercase()) return transform(s)
+        val out = StringBuilder()
+        val buf = StringBuilder()
+        var i = 0
+        fun flush() {
+            if (buf.isNotEmpty()) {
+                out.append(transform(buf.toString()))
+                buf.clear()
+            }
+        }
+        while (i < s.length) {
+            if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
+                i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
+            ) {
+                val tagEnd = findTagClose(s, i + 4)
+                if (tagEnd >= 0) {
+                    flush()
+                    out.append(s, i, tagEnd + 1)
+                    i = tagEnd + 1
+                    continue
+                }
+            }
+            buf.append(s[i])
+            i++
+        }
+        flush()
+        return out.toString()
     }
 
     private val MD_IMAGE_SPAN_REGEX = Regex("""!\[([^\]]*)]\(((?:[^()\s]|\([^()\s]*\))+)\)""")
