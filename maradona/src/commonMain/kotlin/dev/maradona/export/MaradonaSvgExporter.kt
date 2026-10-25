@@ -571,8 +571,13 @@ object MaradonaSvgExporter {
                     height = layout.height,
                     theme = theme,
                     title = d.title to layout.titleRect,
-                    boxes = layout.bars.map { b ->
-                        SvgBox(b.rect, b.dataLabel.orEmpty(), theme.seriesColor(b.seriesIndex), theme.seriesColor(b.seriesIndex), theme.nodeText)
+                    boxes = layout.bars.flatMap { b ->
+                        listOfNotNull(
+                            SvgBox(b.rect, "", theme.seriesColor(b.seriesIndex), theme.seriesColor(b.seriesIndex), theme.nodeText, shape = NodeShape.Rect),
+                            b.dataLabelRect?.takeIf { !b.dataLabel.isNullOrBlank() }?.let { dlr ->
+                                SvgBox(dlr, b.dataLabel.orEmpty(), Color.Transparent, Color.Transparent, theme.nodeText)
+                            },
+                        )
                     } + layout.axisTitles.map { at ->
                         SvgBox(at.rect, at.text, Color.Transparent, Color.Transparent, theme.nodeText, rotationDeg = at.rotationDeg)
                     } + (layout.xTicks + layout.yTicks).map { tk ->
@@ -1437,10 +1442,6 @@ object MaradonaSvgExporter {
             ).append('\n')
         }
 
-        for (elem in extraSvgElements) {
-            sb.append(elem).append('\n')
-        }
-
         for (c in containers) {
             val r = c.rect
             sb.append(
@@ -1451,6 +1452,10 @@ object MaradonaSvgExporter {
                     """  <text x="${fmt(r.centerX)}" y="${fmt(r.y + 18f)}" text-anchor="middle" fill="${c.textColor.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.subgraphFontSize.value)}" font-weight="600">${escapeXml(plainTextLabel(c.label))}</text>""",
                 ).append('\n')
             }
+        }
+
+        for (elem in extraSvgElements) {
+            sb.append(elem).append('\n')
         }
 
         fun emitSvgLines(lineList: List<SvgLine>) {
