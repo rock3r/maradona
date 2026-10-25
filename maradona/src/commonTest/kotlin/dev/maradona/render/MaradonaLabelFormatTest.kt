@@ -70,11 +70,17 @@ class MaradonaLabelFormatTest {
         assertEquals("fa:fa-check and ![alt](https://example.com/a.png)", codeProtected.text)
         assertTrue(extractInlineImages("`![alt](https://example.com/a.png)`").isEmpty())
 
-        // Invalid <img/> without src is ignored without shifting subsequent valid <img/> indices
-        val mixedImgs = """<img alt="missing"/> then <img src="https://example.com/ok.png" alt="OK"/>"""
+        // Invalid <img/> without src is ignored without shifting subsequent valid <img/> indices,
+        // and data-src does not override src.
+        val mixedImgs = """<img alt="missing"/> then <img data-src="https://example.com/preview.png" src="https://example.com/ok.png" alt="OK"/>"""
         val extracted = extractInlineImages(mixedImgs)
         assertEquals(1, extracted.size)
+        assertEquals("https://example.com/ok.png", extracted[0].url)
         assertEquals("OK", extracted[0].alt)
         assertEquals("then [🖼 OK]", annotatedLabel(mixedImgs).text.trim())
+
+        // HTML <code> containing backticks and backticks containing </code> close only on their matching delimiter.
+        val nestedDelims = annotatedLabel("<code>echo `hostname`</code> and `literal </code> here`")
+        assertEquals("echo `hostname` and literal </code> here", nestedDelims.text)
     }
 }

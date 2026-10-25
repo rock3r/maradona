@@ -52,10 +52,10 @@ data class InlineImageSpec(
 )
 
 private val IMG_TAG_REGEX = Regex("""(?i)<img\b([^>]*)/?>""")
-private val IMG_SRC_REGEX = Regex("""(?i)\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
-private val IMG_ALT_REGEX = Regex("""(?i)\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
-private val IMG_WIDTH_REGEX = Regex("""(?i)\bwidth\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
-private val IMG_HEIGHT_REGEX = Regex("""(?i)\bheight\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
+private val IMG_SRC_REGEX = Regex("""(?i)(?:^|[\s"'/])src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
+private val IMG_ALT_REGEX = Regex("""(?i)(?:^|[\s"'/])alt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))""")
+private val IMG_WIDTH_REGEX = Regex("""(?i)(?:^|[\s"'/])width\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
+private val IMG_HEIGHT_REGEX = Regex("""(?i)(?:^|[\s"'/])height\s*=\s*(?:"(\d+(?:\.\d+)?)(?:px)?"|'(\d+(?:\.\d+)?)(?:px)?'|(\d+(?:\.\d+)?)(?:px)?)""")
 private val MD_IMAGE_REGEX = Regex("""!\[([^\]]*)]\(([^)\s]+)\)""")
 
 private val INLINE_ICON_CALL_REGEX = Regex("""(?i)::icon\(([^)]+)\)""")
@@ -337,12 +337,13 @@ fun annotatedLabel(
     var italic = false
     var underline = false
     var strike = false
-    var code = false
+    var codeDelimiter: String? = null // "`" or "</code>"
     var subscript = false
     var superscript = false
     val plain = StringBuilder()
 
     fun currentStyle(): SpanStyle? {
+        val code = codeDelimiter != null
         if (!bold && !italic && !underline && !strike && !code && !subscript && !superscript) {
             return null
         }
@@ -403,13 +404,14 @@ fun annotatedLabel(
                 continue
             }
         }
-        if (code) {
+        val activeCodeCloser = codeDelimiter
+        if (activeCodeCloser != null) {
             when {
-                prepared[i] == '`' -> {
-                    flush(); code = false; i += 1
+                activeCodeCloser == "`" && prepared[i] == '`' -> {
+                    flush(); codeDelimiter = null; i += 1
                 }
-                prepared.regionMatches(i, "</code>", 0, 7, ignoreCase = true) -> {
-                    flush(); code = false; i += 7
+                activeCodeCloser == "</code>" && prepared.regionMatches(i, "</code>", 0, 7, ignoreCase = true) -> {
+                    flush(); codeDelimiter = null; i += 7
                 }
                 else -> {
                     plain.append(prepared[i]); i += 1
@@ -419,11 +421,11 @@ fun annotatedLabel(
         }
         when {
             prepared[i] == '`' && prepared.indexOf('`', i + 1) > i -> {
-                flush(); code = true; i += 1
+                flush(); codeDelimiter = "`"; i += 1
             }
             prepared.regionMatches(i, "<code>", 0, 6, ignoreCase = true) &&
                 prepared.indexOf("</code>", i + 6, ignoreCase = true) >= 0 -> {
-                flush(); code = true; i += 6
+                flush(); codeDelimiter = "</code>"; i += 6
             }
             prepared.startsWith("**", i) && (bold || prepared.indexOf("**", i + 2) >= 0) -> {
                 flush(); bold = !bold; i += 2
