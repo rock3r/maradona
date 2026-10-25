@@ -49,8 +49,10 @@ private class LayoutHolder {
     var edgeLabelSizes: List<DiagramSize?> = emptyList()
     var lastDensity: Float = Float.NaN
     var lastFontScale: Float = Float.NaN
+    var lastResolvedImageUrls: Set<String> = emptySet()
     var lastAdaptedVertical: Boolean = false
     var lastBoundedWidthPx: Int = Int.MAX_VALUE
+    var boundedWidthObserved: Boolean = false
     var visibleViewport: DiagramRect? = null
 }
 
@@ -144,6 +146,22 @@ fun MaradonaLayout(
     val renderFontScale = densityObj.fontScale
     val imageResolver = LocalMaradonaImageResolver.current
     val uriHandler = LocalUriHandler.current
+    val distinctImageUrls = remember(chart) {
+        chart.nodes.asSequence()
+            .flatMap { extractInlineImages(it.label).asSequence() }
+            .map { it.url }
+            .distinct()
+            .toList()
+    }
+    val resolvedImageUrls = if (imageResolver == null || distinctImageUrls.isEmpty()) {
+        emptySet()
+    } else {
+        buildSet {
+            for (url in distinctImageUrls) {
+                if (imageResolver.resolve(url) != null) add(url)
+            }
+        }
+    }
     val effectiveAvailableWidthPx = minOf(availableWidthPx, holder.lastBoundedWidthPx)
 
     // Pre-compute or reuse the layout at the current renderDensity/fontScale so viewport-lazy
@@ -156,7 +174,8 @@ fun MaradonaLayout(
         if (
             cached != null &&
             abs(holder.lastDensity - renderDensity) < 1e-4f &&
-            abs(holder.lastFontScale - renderFontScale) < 1e-4f
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastResolvedImageUrls == resolvedImageUrls
         ) {
             val wantVertical = autoDirection &&
                 (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
@@ -174,13 +193,14 @@ fun MaradonaLayout(
                     availableWidthPx = effectiveAvailableWidthPx,
                     densityObj = densityObj,
                     textMeasurer = textMeasurer,
-                    hasImageResolver = imageResolver != null,
+                    resolvedImageUrls = resolvedImageUrls,
                 ).also { pre ->
                     holder.layout = pre.layout
                     holder.nodeSizes = pre.nodeSizes
                     holder.edgeLabelSizes = pre.edgeLabelSizes
                     holder.lastDensity = renderDensity
                     holder.lastFontScale = renderFontScale
+                    holder.lastResolvedImageUrls = resolvedImageUrls
                     holder.lastAdaptedVertical = pre.adaptedVertical
                 }.layout
             }
@@ -193,20 +213,27 @@ fun MaradonaLayout(
                 availableWidthPx = effectiveAvailableWidthPx,
                 densityObj = densityObj,
                 textMeasurer = textMeasurer,
-                hasImageResolver = imageResolver != null,
+                resolvedImageUrls = resolvedImageUrls,
             ).also { pre ->
                 holder.layout = pre.layout
                 holder.nodeSizes = pre.nodeSizes
                 holder.edgeLabelSizes = pre.edgeLabelSizes
                 holder.lastDensity = renderDensity
                 holder.lastFontScale = renderFontScale
+                holder.lastResolvedImageUrls = resolvedImageUrls
                 holder.lastAdaptedVertical = pre.adaptedVertical
             }.layout
         }
     }
     val effectiveViewport = visibleViewport
         ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
-    holder.visibleViewport = effectiveViewport
+    val needsParentWidthProbe = autoDirection &&
+        (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        availableWidthPx == Int.MAX_VALUE &&
+        !holder.boundedWidthObserved
+    val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
+    holder.visibleViewport = activeCullViewport
 
     val positionedNodeById = remember(precomputedLayout) {
         precomputedLayout.nodes.associateBy { it.node.id }
@@ -254,9 +281,9 @@ fun MaradonaLayout(
             },
         content = {
             for ((index, node) in chart.nodes.withIndex()) {
-                if (effectiveViewport != null) {
+                if (activeCullViewport != null) {
                     val pNode = positionedNodeById[node.id]
-                    if (pNode != null && !pNode.rect.intersects(effectiveViewport)) continue
+                    if (pNode != null && !pNode.rect.intersects(activeCullViewport)) continue
                 }
                 MaradonaNode(
                     node = node,
@@ -269,9 +296,9 @@ fun MaradonaLayout(
             }
             for ((index, edge) in chart.edges.withIndex()) {
                 val label = edge.label ?: continue
-                if (effectiveViewport != null) {
+                if (activeCullViewport != null) {
                     val lr = precomputedLayout.edges.getOrNull(index)?.labelRect
-                    if (lr != null && !lr.intersects(effectiveViewport)) continue
+                    if (lr != null && !lr.intersects(activeCullViewport)) continue
                 }
                 BasicText(
                     text = annotatedLabel(label, theme.monospaceFontFamily),
@@ -292,7 +319,7 @@ fun MaradonaLayout(
                 )
             }
             for (sg in chart.subgraphs) {
-                if (effectiveViewport != null) {
+                if (activeCullViewport != null) {
                     val psg = positionedSubgraphById[sg.id]
                     if (psg != null) {
                         val hdrRect = DiagramRect(
@@ -301,7 +328,7 @@ fun MaradonaLayout(
                             width = psg.rect.width,
                             height = 36f * renderDensity,
                         )
-                        if (!hdrRect.intersects(effectiveViewport)) continue
+                        if (!hdrRect.intersects(activeCullViewport)) continue
                     }
                 }
                 BasicText(
@@ -337,6 +364,7 @@ fun MaradonaLayout(
 
         val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
         holder.lastBoundedWidthPx = boundedWidth
+        holder.boundedWidthObserved = true
         val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
         var result = precomputedLayout
@@ -372,19 +400,19 @@ fun MaradonaLayout(
 
         val edgeCullMargin = 20f * density
         val totalVisibleEdges = result.edges.count { it.edge.stroke != EdgeStroke.Invisible && it.points.size >= 2 }
-        val drawnEdges = if (effectiveViewport == null) {
+        val drawnEdges = if (activeCullViewport == null) {
             totalVisibleEdges
         } else {
             result.edges.count {
                 it.edge.stroke != EdgeStroke.Invisible &&
                     it.points.size >= 2 &&
-                    it.bounds(edgeCullMargin).intersects(effectiveViewport)
+                    it.bounds(edgeCullMargin).intersects(activeCullViewport)
             }
         }
-        val drawnSubgraphs = if (effectiveViewport == null) {
+        val drawnSubgraphs = if (activeCullViewport == null) {
             result.subgraphs.size
         } else {
-            result.subgraphs.count { it.rect.intersects(effectiveViewport) }
+            result.subgraphs.count { it.rect.intersects(activeCullViewport) }
         }
         val totalEdgeLabels = chart.edges.count { it.label != null }
         onViewportStats(
@@ -441,7 +469,7 @@ private fun computePremeasuredFlowchartLayout(
     availableWidthPx: Int,
     densityObj: Density,
     textMeasurer: TextMeasurer,
-    hasImageResolver: Boolean,
+    resolvedImageUrls: Set<String>,
 ): PremeasuredFlowchartResult {
     val renderDensity = densityObj.density
     val wrapPx = with(densityObj) { NodeSizing.WRAPPING_WIDTH.dp.roundToPx() }
@@ -455,7 +483,11 @@ private fun computePremeasuredFlowchartLayout(
     )
     val nodeSizes = HashMap<String, DiagramSize>(chart.nodes.size)
     for (node in chart.nodes) {
-        val inlineImages = if (hasImageResolver) extractInlineImages(node.label) else emptyList()
+        val inlineImages = if (resolvedImageUrls.isNotEmpty()) {
+            extractInlineImages(node.label).filter { it.url in resolvedImageUrls }
+        } else {
+            emptyList()
+        }
         val inlineIds = if (inlineImages.isEmpty()) emptySet() else inlineImages.map { it.inlineId }.toSet()
         val wrappedLabel = annotatedLabel(node.label, theme.monospaceFontFamily, inlineIds)
         val placeholderRanges = if (inlineImages.isEmpty()) {
