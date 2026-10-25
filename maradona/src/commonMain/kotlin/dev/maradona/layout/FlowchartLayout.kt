@@ -135,7 +135,7 @@ object FlowchartLayout {
                 nodeRects[id] = DiagramRect(box.left, box.top, box.width, box.height)
             }
 
-            val positionedEdges = chart.edges.mapIndexed { index, edge ->
+            var positionedEdges = chart.edges.mapIndexed { index, edge ->
                 if (edge.from == edge.to) {
                     val size = edgeLabelSize(edge)
                     val rect = size?.let { DiagramRect(0f, 0f, it.width, it.height) }
@@ -154,7 +154,19 @@ object FlowchartLayout {
                 dev.maradona.layout.PositionedEdge(edge, waypoints, labelRect)
             }
 
-            val subgraphRects = buildSubgraphs(nodeRects, result.clusters)
+            var subgraphRects = buildSubgraphs(nodeRects, result.clusters)
+            var separatedChanged = false
+            if (subgraphRects.isNotEmpty()) {
+                val separated = separateOverlappingSiblingSubgraphs(
+                    nodeRects = nodeRects,
+                    edges = positionedEdges,
+                    subgraphs = subgraphRects,
+                    membersOf = ::membersOf,
+                )
+                separatedChanged = separated.first !== positionedEdges || separated.second !== subgraphRects
+                positionedEdges = separated.first
+                subgraphRects = separated.second
+            }
 
             // Normalise so the minimum coordinate sits at [options.padding].
             var minX = Float.MAX_VALUE
@@ -172,8 +184,20 @@ object FlowchartLayout {
             // Bounds come from nodes, clusters and edge labels - not from the
             // routed polylines: dagre positions from node and label geometry, so
             // counting a line that swings wide would shift the whole diagram.
+            // When sibling cluster separation shifts or deflects edge routes,
+            // include those repositioned waypoints so routes stay inside layout bounds.
             positionedEdges.forEach { edge ->
-                if (edge.edge.from != edge.edge.to) edge.labelRect?.let(::include)
+                if (edge.edge.from != edge.edge.to) {
+                    edge.labelRect?.let(::include)
+                    if (separatedChanged) {
+                        for (p in edge.points) {
+                            if (p.x < minX) minX = p.x
+                            if (p.y < minY) minY = p.y
+                            if (p.x > maxX) maxX = p.x
+                            if (p.y > maxY) maxY = p.y
+                        }
+                    }
+                }
             }
             val dx = options.padding - minX
             val dy = options.padding - minY
@@ -240,6 +264,232 @@ object FlowchartLayout {
                 val rect = buildOne(sg) ?: return@mapNotNull null
                 PositionedSubgraph(sg, rect)
             }
+        }
+
+        private data class ScopeItem(
+            val id: String,
+            val isSubgraph: Boolean,
+            val rect: DiagramRect,
+            val memberNodeIds: List<String>,
+        )
+
+        private fun separateOverlappingSiblingSubgraphs(
+            nodeRects: HashMap<String, DiagramRect>,
+            edges: List<PositionedEdge>,
+            subgraphs: List<PositionedSubgraph>,
+            membersOf: (String) -> List<String>,
+        ): Pair<List<PositionedEdge>, List<PositionedSubgraph>> {
+            val minGap = options.nodeGap * 0.4f
+            val origNodeX = nodeRects.mapValues { it.value.x }
+            val origSgX = subgraphs.associate { it.subgraph.id to it.rect.x }
+            val sgById = chart.subgraphs.associateBy { it.id }
+
+            fun depthOf(parentId: String?): Int {
+                var d = 0
+                var cur = parentId
+                val seen = HashSet<String>()
+                while (cur != null && seen.add(cur)) {
+                    d++
+                    cur = sgById[cur]?.parentId
+                }
+                return d
+            }
+
+            // Process scopes bottom-up (deepest parentId first, root null last) so expanding a
+            // nested subgraph updates its parent's bounding box before parent siblings separate.
+            val parentScopes = chart.subgraphs.map { it.parentId }.distinct()
+                .sortedByDescending { depthOf(it) }
+
+            var anyMoved = false
+            for (parentId in parentScopes) {
+                val currentSubgraphs = buildSubgraphs(nodeRects, emptyMap())
+                val childSgs = currentSubgraphs.filter { it.subgraph.parentId == parentId }
+                if (childSgs.isEmpty()) continue
+
+                val items = mutableListOf<ScopeItem>()
+                for (psg in childSgs) {
+                    items += ScopeItem(
+                        id = psg.subgraph.id,
+                        isSubgraph = true,
+                        rect = psg.rect,
+                        memberNodeIds = membersOf(psg.subgraph.id),
+                    )
+                }
+                for (node in chart.nodes) {
+                    if (node.subgraphId != parentId) continue
+                    val r = nodeRects[node.id] ?: continue
+                    items += ScopeItem(
+                        id = node.id,
+                        isSubgraph = false,
+                        rect = r,
+                        memberNodeIds = listOf(node.id),
+                    )
+                }
+                if (items.size < 2) continue
+
+                val ordered = items.sortedWith(compareBy<ScopeItem> { it.rect.centerX }.thenBy { it.rect.x })
+                val shifts = FloatArray(ordered.size)
+                var scopeMoved = false
+
+                for (i in ordered.indices) {
+                    val cur = ordered[i]
+                    var requiredShift = 0f
+                    for (j in 0 until i) {
+                        val prev = ordered[j]
+                        if (!cur.isSubgraph && !prev.isSubgraph && shifts[j] <= 0f) continue
+                        val overlapsVertically =
+                            cur.rect.y < prev.rect.bottom - 1f && cur.rect.bottom > prev.rect.y + 1f
+                        if (!overlapsVertically) continue
+                        val prevShiftedRight = prev.rect.right + shifts[j]
+                        val curLeft = cur.rect.x + requiredShift
+                        if (curLeft < prevShiftedRight + minGap) {
+                            requiredShift = (prevShiftedRight + minGap) - cur.rect.x
+                        }
+                    }
+                    shifts[i] = requiredShift
+                    if (requiredShift > 0f) {
+                        scopeMoved = true
+                        for (mId in cur.memberNodeIds) {
+                            nodeRects[mId]?.let { r -> nodeRects[mId] = r.copy(x = r.x + requiredShift) }
+                        }
+                    }
+                }
+                if (scopeMoved) anyMoved = true
+            }
+
+            if (!anyMoved) return edges to subgraphs
+
+            val updatedSubgraphs = buildSubgraphs(nodeRects, emptyMap())
+            val nodeShiftX = nodeRects.mapValues { (id, r) -> r.x - (origNodeX[id] ?: r.x) }
+            val sgShiftX = updatedSubgraphs.associate { newSg ->
+                val oldX = origSgX[newSg.subgraph.id] ?: newSg.rect.x
+                newSg.subgraph.id to (newSg.rect.x - oldX)
+            }
+            fun endpointShift(id: String): Float = nodeShiftX[id] ?: sgShiftX[id] ?: 0f
+
+            val pad = 14f * options.density
+            val updatedEdges = edges.map { pe ->
+                val dxFrom = endpointShift(pe.edge.from)
+                val dxTo = endpointShift(pe.edge.to)
+                val baseEdge = if (dxFrom == 0f && dxTo == 0f) {
+                    pe
+                } else if (dxFrom == dxTo) {
+                    pe.copy(
+                        points = pe.points.map { p -> DiagramPoint(p.x + dxFrom, p.y) },
+                        labelRect = pe.labelRect?.let { it.copy(x = it.x + dxFrom) },
+                    )
+                } else {
+                    val n = pe.points.size
+                    val pts = pe.points.mapIndexed { i, p ->
+                        val t = if (n <= 1) 0.5f else i.toFloat() / (n - 1).toFloat()
+                        val dx = dxFrom + (dxTo - dxFrom) * t
+                        DiagramPoint(p.x + dx, p.y)
+                    }
+                    val midDx = (dxFrom + dxTo) * 0.5f
+                    pe.copy(
+                        points = pts,
+                        labelRect = pe.labelRect?.let { it.copy(x = it.x + midDx) },
+                    )
+                }
+                val deflectedPts = deflectEdgeAroundNodes(
+                    rawPts = baseEdge.points,
+                    fromId = pe.edge.from,
+                    toId = pe.edge.to,
+                    nodeRects = nodeRects,
+                    pad = pad,
+                )
+                if (deflectedPts === baseEdge.points) baseEdge else baseEdge.copy(points = deflectedPts)
+            }
+            return updatedEdges to updatedSubgraphs
+        }
+
+        private fun deflectEdgeAroundNodes(
+            rawPts: List<DiagramPoint>,
+            fromId: String,
+            toId: String,
+            nodeRects: Map<String, DiagramRect>,
+            pad: Float,
+        ): List<DiagramPoint> {
+            if (rawPts.size < 2 || fromId == toId) return rawPts
+            val obstacles = nodeRects.entries
+                .filter { it.key != fromId && it.key != toId }
+                .map { it.value }
+            if (obstacles.isEmpty()) return rawPts
+
+            fun clearXInYRange(x: Float, yMin: Float, yMax: Float, clearance: Float): Float {
+                val bandObs = obstacles.filter { yMax >= it.y - clearance && yMin <= it.bottom + clearance }
+                if (bandObs.none { x > it.x - clearance && x < it.right + clearance }) return x
+                val candidates = mutableListOf<Float>()
+                for (obs in bandObs) {
+                    candidates += obs.x - clearance
+                    candidates += obs.right + clearance
+                }
+                val valid = candidates.filter { cand ->
+                    bandObs.none { cand > it.x - clearance + 0.5f && cand < it.right + clearance - 0.5f }
+                }
+                return valid.minByOrNull { kotlin.math.abs(it - x) } ?: x
+            }
+
+            var pts = rawPts.toMutableList()
+            var changed = false
+
+            // 1. Push any interior waypoints that landed inside an unrelated node box outside it.
+            for (k in 1 until pts.lastIndex) {
+                val p = pts[k]
+                val nx = clearXInYRange(p.x, p.y, p.y, pad)
+                if (nx != p.x) {
+                    pts[k] = DiagramPoint(nx, p.y)
+                    changed = true
+                }
+            }
+
+            // 2. If any segment still crosses an unrelated node box, route around its top/bottom corners.
+            val cornerMargin = 6f
+            repeat(6) {
+                val next = mutableListOf<DiagramPoint>()
+                var passChanged = false
+                for (i in 0 until pts.lastIndex) {
+                    val a = pts[i]
+                    val b = pts[i + 1]
+                    next += a
+                    val hit = obstacles.firstOrNull { obs ->
+                        ClassLayout.segmentIntersectsRect(a, b, obs)
+                    }
+                    if (hit != null) {
+                        val topY = hit.y - cornerMargin
+                        val botY = hit.bottom + cornerMargin
+                        val aInY = a.y >= hit.y && a.y <= hit.bottom
+                        val bInY = b.y >= hit.y && b.y <= hit.bottom
+                        if (aInY && bInY) {
+                            next += DiagramPoint(a.x, topY)
+                            next += DiagramPoint(b.x, topY)
+                        } else {
+                            val refX = when {
+                                aInY -> a.x
+                                bInY -> b.x
+                                kotlin.math.abs(b.y - a.y) > 1e-3f ->
+                                    a.x + (b.x - a.x) * ((hit.centerY - a.y) / (b.y - a.y))
+                                else -> (a.x + b.x) * 0.5f
+                            }
+                            val detourX = clearXInYRange(refX, topY, botY, pad)
+                            if (a.y <= b.y) {
+                                if (a.y < hit.y) next += DiagramPoint(detourX, topY)
+                                if (b.y > hit.bottom) next += DiagramPoint(detourX, botY)
+                            } else {
+                                if (a.y > hit.bottom) next += DiagramPoint(detourX, botY)
+                                if (b.y < hit.y) next += DiagramPoint(detourX, topY)
+                            }
+                        }
+                        passChanged = true
+                        changed = true
+                    }
+                }
+                next += pts.last()
+                pts = next
+                if (!passChanged) return@repeat
+            }
+
+            return if (changed) pts else rawPts
         }
     }
 }

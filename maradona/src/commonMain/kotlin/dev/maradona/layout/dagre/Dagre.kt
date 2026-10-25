@@ -109,7 +109,7 @@ internal object Dagre {
         val dummyChains = normalize(g)
         if (compound) g.parentDummyChains(dummyChains)
         if (compound) g.addBorderSegments()
-        if (compound) orderCompound(g) else order(g)
+        if (compound) orderCompound(g) else order(g, clusterOf)
         adjustCoordinateSystem(g)
         position(g)
         if (compound) g.removeBorderNodes()

@@ -96,6 +96,13 @@ enum class DiagramZoom {
  *
  * On a parse error the last good diagram stays visible, dimmed, with the
  * error shown at the bottom — matching Pele's behaviour.
+ *
+ * **Scalability & limits:** Sources are bounded to 50,000 characters, 5,000
+ * nodes, and 5,000 edges so untrusted inputs cannot exhaust memory. Every node
+ * is rendered through the standard Compose layout pipeline (preserving native
+ * text measurement, `click` actions, and accessibility semantics without a
+ * separate Canvas-only fast path); layout and frame times vary with graph
+ * density and may slow down when thousands of nodes are visible simultaneously.
  */
 @Composable
 fun MaradonaDiagram(
