@@ -517,7 +517,7 @@ object MaradonaSvgExporter {
                         SvgBox(q.rect, q.text.orEmpty(), theme.seriesFill(q.quadrantNumber - 1), theme.subgraphBorder, theme.subgraphText)
                     },
                     boxes = layout.axisLabels.map { al ->
-                        SvgBox(al.rect, al.text, Color.Transparent, Color.Transparent, theme.edgeLabelText)
+                        SvgBox(al.rect, al.text, Color.Transparent, Color.Transparent, theme.edgeLabelText, rotationDeg = al.rotationDeg)
                     } + layout.points.map { pt ->
                         SvgBox(pt.labelRect, pt.point.label, Color.Transparent, Color.Transparent, theme.nodeText)
                     },
@@ -527,6 +527,20 @@ object MaradonaSvgExporter {
             is MaradonaDiagramModel.XyChartModel -> {
                 val d = model.diagram
                 val layout = XyChartLayout.layout(diagram = d, options = options)
+                val linePointElements = layout.lines.flatMap { ls ->
+                    val fillHex = theme.seriesColor(ls.seriesIndex).toSvgHex()
+                    val strokeHex = theme.background.toSvgHex()
+                    ls.points.flatMap { pt ->
+                        buildList {
+                            add("""  <circle class="xy-line-point" cx="${fmt(pt.position.x)}" cy="${fmt(pt.position.y)}" r="3.5" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""")
+                            val lbl = pt.label
+                            val lr = pt.labelRect
+                            if (!lbl.isNullOrBlank() && lr != null) {
+                                add("""  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.nodeText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""")
+                            }
+                        }
+                    }
+                }
                 buildGenericBoxSvg(
                     width = layout.width,
                     height = layout.height,
@@ -535,7 +549,7 @@ object MaradonaSvgExporter {
                     boxes = layout.bars.map { b ->
                         SvgBox(b.rect, b.dataLabel.orEmpty(), theme.seriesColor(b.seriesIndex), theme.seriesColor(b.seriesIndex), theme.nodeText)
                     } + layout.axisTitles.map { at ->
-                        SvgBox(at.rect, at.text, Color.Transparent, Color.Transparent, theme.nodeText)
+                        SvgBox(at.rect, at.text, Color.Transparent, Color.Transparent, theme.nodeText, rotationDeg = at.rotationDeg)
                     } + (layout.xTicks + layout.yTicks).map { tk ->
                         SvgBox(tk.labelRect, tk.label, Color.Transparent, Color.Transparent, theme.edgeLabelText)
                     } + layout.legendItems.map { li ->
@@ -546,9 +560,11 @@ object MaradonaSvgExporter {
                         SvgLine(listOf(layout.yAxisLineStart, layout.yAxisLineEnd), theme.nodeBorder, false, null to null),
                     ) + (layout.xTicks + layout.yTicks).map { tk ->
                         SvgLine(listOf(tk.lineStart, tk.lineEnd), theme.nodeBorder, false, null to null)
-                    } + layout.lines.map { ls ->
+                    },
+                    overlayLines = layout.lines.map { ls ->
                         SvgLine(ls.points.map { it.position }, theme.seriesColor(ls.seriesIndex), false, null to null)
                     },
+                    overlaySvgElements = linePointElements,
                 )
             }
             is MaradonaDiagramModel.KanbanModel -> {
@@ -1278,6 +1294,7 @@ object MaradonaSvgExporter {
         val url: String? = null,
         val tooltip: String? = null,
         val shape: NodeShape = NodeShape.RoundedRect,
+        val rotationDeg: Float = 0f,
     )
 
     private data class SvgLine(
@@ -1300,6 +1317,8 @@ object MaradonaSvgExporter {
         boxes: List<SvgBox> = emptyList(),
         lines: List<SvgLine> = emptyList(),
         extraSvgElements: List<String> = emptyList(),
+        overlayLines: List<SvgLine> = emptyList(),
+        overlaySvgElements: List<String> = emptyList(),
     ): String {
         val w = width.roundToInt().coerceAtLeast(1)
         val h = height.roundToInt().coerceAtLeast(1)
@@ -1331,26 +1350,30 @@ object MaradonaSvgExporter {
             }
         }
 
-        for (ln in lines) {
-            if (ln.points.size < 2) continue
-            val d = buildSvgEdgePath(ln.points)
-            val dashAttr = if (ln.dashed) """ stroke-dasharray="5,4"""" else ""
-            val lineColorHex = ln.color.toSvgHex()
-            sb.append("""  <path d="$d" fill="none" stroke="$lineColorHex" stroke-width="1.6"$dashAttr/>""").append('\n')
-            if (ln.startMarker != SvgMarker.None) {
-                appendSvgMarker(sb, ln.points.first(), ln.points[1], ln.startMarker, lineColorHex, bgHex)
-            }
-            if (ln.endMarker != SvgMarker.None) {
-                appendSvgMarker(sb, ln.points.last(), ln.points[ln.points.size - 2], ln.endMarker, lineColorHex, bgHex)
-            }
-            for ((lbl, lr) in listOf(ln.label, ln.startLabel, ln.endLabel)) {
-                if (!lbl.isNullOrBlank() && lr != null) {
-                    sb.append(
-                        """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""",
-                    ).append('\n')
+        fun emitSvgLines(lineList: List<SvgLine>) {
+            for (ln in lineList) {
+                if (ln.points.size < 2) continue
+                val d = buildSvgEdgePath(ln.points)
+                val dashAttr = if (ln.dashed) """ stroke-dasharray="5,4"""" else ""
+                val lineColorHex = ln.color.toSvgHex()
+                sb.append("""  <path d="$d" fill="none" stroke="$lineColorHex" stroke-width="1.6"$dashAttr/>""").append('\n')
+                if (ln.startMarker != SvgMarker.None) {
+                    appendSvgMarker(sb, ln.points.first(), ln.points[1], ln.startMarker, lineColorHex, bgHex)
+                }
+                if (ln.endMarker != SvgMarker.None) {
+                    appendSvgMarker(sb, ln.points.last(), ln.points[ln.points.size - 2], ln.endMarker, lineColorHex, bgHex)
+                }
+                for ((lbl, lr) in listOf(ln.label, ln.startLabel, ln.endLabel)) {
+                    if (!lbl.isNullOrBlank() && lr != null) {
+                        sb.append(
+                            """  <text x="${fmt(lr.centerX)}" y="${fmt(lr.centerY + 4f)}" text-anchor="middle" fill="${theme.edgeLabelText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(theme.edgeLabelFontSize.value)}">${escapeXml(plainTextLabel(lbl))}</text>""",
+                        ).append('\n')
+                    }
                 }
             }
         }
+
+        emitSvgLines(lines)
 
         for (b in boxes) {
             val r = b.rect
@@ -1368,10 +1391,15 @@ object MaradonaSvgExporter {
                 val textLines = plainTextLabel(b.label).split('\n')
                 val lineH = fontSize * 1.35f
                 val startY = r.centerY - ((textLines.size - 1) * lineH) / 2f + fontSize * 0.35f
+                val rotateAttr = if (b.rotationDeg != 0f) {
+                    """ transform="rotate(${fmt(b.rotationDeg)} ${fmt(r.centerX)} ${fmt(r.centerY)})""""
+                } else {
+                    ""
+                }
                 for ((idx, textLine) in textLines.withIndex()) {
                     val ly = startY + idx * lineH
                     sb.append(
-                        """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${b.textColor.toSvgHex()}" font-family="sans-serif" font-size="${fmt(fontSize)}">${escapeXml(textLine)}</text>""",
+                        """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${b.textColor.toSvgHex()}" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>${escapeXml(textLine)}</text>""",
                     ).append('\n')
                 }
             }
@@ -1379,6 +1407,11 @@ object MaradonaSvgExporter {
             if (url != null) {
                 sb.append("""  </a>""").append('\n')
             }
+        }
+
+        emitSvgLines(overlayLines)
+        for (elem in overlaySvgElements) {
+            sb.append(elem).append('\n')
         }
 
         sb.append("</svg>")

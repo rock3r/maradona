@@ -180,10 +180,13 @@ class MaradonaSvgExporterTest {
                 x-axis "Quarter" [Q1, Q2, Q3]
                 y-axis "Revenue (M)" 0 --> 100
                 bar [30, 60, 90]
+                line [50, 70, 85]
             """.trimIndent(),
         )
         assertTrue(xySvg.contains("Quarter"), "Expected XY chart X-axis title in SVG")
         assertTrue(xySvg.contains("Revenue (M)"), "Expected XY chart Y-axis title in SVG")
+        assertTrue(xySvg.contains("transform=\"rotate(-90 "), "Expected rotated Y-axis title in SVG")
+        assertTrue(xySvg.contains("class=\"xy-line-point\""), "Expected XY line point markers in SVG")
         assertTrue(xySvg.contains("Q1") && xySvg.contains("Q2") && xySvg.contains("Q3"), "Expected XY chart X-axis tick labels in SVG")
 
         val classSvg = MaradonaSvgExporter.exportToSvg(
