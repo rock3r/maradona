@@ -260,10 +260,17 @@ object FlowchartParser {
 
         private fun subgraph(rest: String, lineNo: Int) {
             if (rest.isEmpty()) throw MaradonaParseException(lineNo, "Subgraph needs an id")
-            val ref = NodeRefReader.read(rest, 0, lineNo)
+            val normalized = rest.replaceFirst(Regex("^([A-Za-z0-9_-]+)\\s+\\["), "$1[")
+            val ref = NodeRefReader.read(normalized, 0, lineNo)
+            val tail = normalized.substring(ref.endPos).trim()
+            val label = when {
+                ref.label != null -> ref.label
+                tail.isNotEmpty() -> NodeRefReader.cleanLabel(rest)
+                else -> ref.id
+            }
             val sg = Subgraph(
                 id = ref.id,
-                label = ref.label ?: ref.id,
+                label = label,
                 parentId = subgraphStack.lastOrNull(),
             )
             subgraphs += sg
@@ -420,16 +427,18 @@ object FlowchartParser {
                 if (ref.className !in list) list += ref.className
             }
             val existing = nodes[ref.id]
+            val currentSubgraph = subgraphStack.lastOrNull()
             val node = when {
                 existing == null -> FlowNode(
                     id = ref.id,
                     label = ref.label ?: ref.id,
                     shape = ref.shape ?: NodeShape.Rect,
-                    subgraphId = subgraphStack.lastOrNull(),
+                    subgraphId = currentSubgraph,
                 )
-                ref.label != null || ref.shape != null -> existing.copy(
+                ref.label != null || ref.shape != null || (existing.subgraphId == null && currentSubgraph != null) -> existing.copy(
                     label = ref.label ?: existing.label,
                     shape = ref.shape ?: existing.shape,
+                    subgraphId = existing.subgraphId ?: currentSubgraph,
                 )
                 else -> existing
             }

@@ -12,12 +12,19 @@ private class Entry(val v: String, val i: Int) {
     var vs: MutableList<String> = mutableListOf(v)
 }
 
-internal fun order(g: DagreGraph) {
+internal fun order(g: DagreGraph, clusterOf: (String) -> String? = { null }) {
+    fun effectiveCluster(v: String): String? {
+        clusterOf(v)?.let { return it }
+        val edgeObj = g.node(v).edgeObj ?: return null
+        val cFrom = clusterOf(edgeObj.v) ?: return null
+        val cTo = clusterOf(edgeObj.w) ?: return null
+        return if (cFrom == cTo) cFrom else null
+    }
     val max = g.maxRank()
     val downLayerGraphs = (1..max).map { LayerGraph(g, it, incoming = true) }
     val upLayerGraphs = (max - 1 downTo 0).map { LayerGraph(g, it, incoming = false) }
 
-    var layering = initOrder(g)
+    var layering = initOrder(g, ::effectiveCluster)
     assignOrder(g, layering)
 
     var bestCrossings = Int.MAX_VALUE
@@ -25,7 +32,11 @@ internal fun order(g: DagreGraph) {
     var i = 0
     var lastBest = 0
     while (lastBest < 4) {
-        sweep(if (i % 2 == 1) downLayerGraphs else upLayerGraphs, biasRight = i % 4 >= 2)
+        sweep(
+            graphs = if (i % 2 == 1) downLayerGraphs else upLayerGraphs,
+            biasRight = i % 4 >= 2,
+            clusterOf = ::effectiveCluster,
+        )
         layering = g.layerMatrix()
         val cc = crossCount(g, layering)
         if (cc < bestCrossings) {
@@ -60,14 +71,21 @@ private class LayerGraph(
         }
 }
 
-private fun sweep(graphs: List<LayerGraph>, biasRight: Boolean) {
+private fun sweep(
+    graphs: List<LayerGraph>,
+    biasRight: Boolean,
+    clusterOf: (String) -> String?,
+) {
     for (lg in graphs) {
-        val sorted = sortSubgraph(lg, biasRight)
+        val sorted = sortSubgraph(lg, biasRight, clusterOf)
         for ((index, v) in sorted.vs.withIndex()) lg.g.node(v).order = index
     }
 }
 
-private fun initOrder(g: DagreGraph): List<List<String>> {
+private fun initOrder(
+    g: DagreGraph,
+    clusterOf: (String) -> String?,
+): List<List<String>> {
     val visited = HashSet<String>()
     val maxRank = g.nodes.values.mapNotNull { it.rank }.maxOrNull() ?: 0
     val layers = MutableList(maxRank + 1) { mutableListOf<String>() }
@@ -79,14 +97,80 @@ private fun initOrder(g: DagreGraph): List<List<String>> {
     }
 
     for (v in g.nodes.keys.sortedBy { g.node(it).rank ?: 0 }) dfs(v)
-    return layers
+    // Group same-subgraph members contiguously within each rank's initial order.
+    return layers.map { layer ->
+        if (layer.size <= 2) {
+            layer
+        } else {
+            val grouped = ArrayList<String>(layer.size)
+            val consumedClusters = HashSet<String>()
+            for (v in layer) {
+                val cId = clusterOf(v)
+                if (cId == null) {
+                    grouped += v
+                } else if (consumedClusters.add(cId)) {
+                    for (u in layer) {
+                        if (clusterOf(u) == cId) grouped += u
+                    }
+                }
+            }
+            grouped
+        }
+    }
 }
 
-private fun sortSubgraph(lg: LayerGraph, biasRight: Boolean): Entry {
-    val entries = lg.movable.mapIndexed { index, v -> barycenter(lg, v, index) }
-    // Without cluster constraints there is nothing to resolve; dagre's
-    // resolveConflicts is a pass-through when the constraint graph is empty.
-    return sort(entries, biasRight)
+private fun sortSubgraph(
+    lg: LayerGraph,
+    biasRight: Boolean,
+    clusterOf: (String) -> String?,
+): Entry {
+    val rawEntries = lg.movable.mapIndexed { index, v -> barycenter(lg, v, index) }
+    val clusterCounts = HashMap<String, Int>()
+    for (v in lg.movable) {
+        val cId = clusterOf(v) ?: continue
+        clusterCounts[cId] = (clusterCounts[cId] ?: 0) + 1
+    }
+    if (clusterCounts.values.none { it >= 2 }) {
+        return sort(rawEntries, biasRight)
+    }
+
+    // Coalesce entries belonging to the same subgraph into a single composite Entry
+    // so members of a subgraph remain contiguous on the rank.
+    val entriesByCluster = HashMap<String, MutableList<Entry>>()
+    for (e in rawEntries) {
+        val cId = clusterOf(e.v) ?: continue
+        if ((clusterCounts[cId] ?: 0) >= 2) {
+            entriesByCluster.getOrPut(cId) { mutableListOf() } += e
+        }
+    }
+    val coalesced = ArrayList<Entry>()
+    val emittedClusters = HashSet<String>()
+    var nextSlot = 0
+    for (e in rawEntries) {
+        val cId = clusterOf(e.v)
+        if (cId == null || (clusterCounts[cId] ?: 0) < 2) {
+            val copy = Entry(e.v, nextSlot++)
+            copy.barycenter = e.barycenter
+            copy.weight = e.weight
+            copy.vs = e.vs
+            coalesced += copy
+        } else if (emittedClusters.add(cId)) {
+            val members = entriesByCluster.getValue(cId).mapIndexed { idx, me ->
+                Entry(me.v, idx).also {
+                    it.barycenter = me.barycenter
+                    it.weight = me.weight
+                    it.vs = me.vs
+                }
+            }
+            val sortedCluster = sort(members, biasRight)
+            val groupEntry = Entry(cId, nextSlot++)
+            groupEntry.vs = sortedCluster.vs
+            groupEntry.barycenter = sortedCluster.barycenter
+            groupEntry.weight = sortedCluster.weight
+            coalesced += groupEntry
+        }
+    }
+    return sort(coalesced, biasRight)
 }
 
 private fun barycenter(lg: LayerGraph, v: String, index: Int): Entry {

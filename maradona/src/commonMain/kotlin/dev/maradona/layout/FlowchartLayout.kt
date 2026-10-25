@@ -135,7 +135,7 @@ object FlowchartLayout {
                 nodeRects[id] = DiagramRect(box.left, box.top, box.width, box.height)
             }
 
-            val positionedEdges = chart.edges.mapIndexed { index, edge ->
+            var positionedEdges = chart.edges.mapIndexed { index, edge ->
                 if (edge.from == edge.to) {
                     val size = edgeLabelSize(edge)
                     val rect = size?.let { DiagramRect(0f, 0f, it.width, it.height) }
@@ -154,7 +154,17 @@ object FlowchartLayout {
                 dev.maradona.layout.PositionedEdge(edge, waypoints, labelRect)
             }
 
-            val subgraphRects = buildSubgraphs(nodeRects, result.clusters)
+            var subgraphRects = buildSubgraphs(nodeRects, result.clusters)
+            if (subgraphRects.isNotEmpty()) {
+                val separated = separateOverlappingSiblingSubgraphs(
+                    nodeRects = nodeRects,
+                    edges = positionedEdges,
+                    subgraphs = subgraphRects,
+                    membersOf = ::membersOf,
+                )
+                positionedEdges = separated.first
+                subgraphRects = separated.second
+            }
 
             // Normalise so the minimum coordinate sits at [options.padding].
             var minX = Float.MAX_VALUE
@@ -240,6 +250,134 @@ object FlowchartLayout {
                 val rect = buildOne(sg) ?: return@mapNotNull null
                 PositionedSubgraph(sg, rect)
             }
+        }
+
+        private data class ScopeItem(
+            val id: String,
+            val isSubgraph: Boolean,
+            val rect: DiagramRect,
+            val memberNodeIds: List<String>,
+        )
+
+        private fun separateOverlappingSiblingSubgraphs(
+            nodeRects: HashMap<String, DiagramRect>,
+            edges: List<PositionedEdge>,
+            subgraphs: List<PositionedSubgraph>,
+            membersOf: (String) -> List<String>,
+        ): Pair<List<PositionedEdge>, List<PositionedSubgraph>> {
+            val minGap = options.nodeGap * 0.4f
+            val origNodeX = nodeRects.mapValues { it.value.x }
+            val origSgX = subgraphs.associate { it.subgraph.id to it.rect.x }
+            val sgById = chart.subgraphs.associateBy { it.id }
+
+            fun depthOf(parentId: String?): Int {
+                var d = 0
+                var cur = parentId
+                val seen = HashSet<String>()
+                while (cur != null && seen.add(cur)) {
+                    d++
+                    cur = sgById[cur]?.parentId
+                }
+                return d
+            }
+
+            // Process scopes bottom-up (deepest parentId first, root null last) so expanding a
+            // nested subgraph updates its parent's bounding box before parent siblings separate.
+            val parentScopes = chart.subgraphs.map { it.parentId }.distinct()
+                .sortedByDescending { depthOf(it) }
+
+            var anyMoved = false
+            for (parentId in parentScopes) {
+                val currentSubgraphs = buildSubgraphs(nodeRects, emptyMap())
+                val childSgs = currentSubgraphs.filter { it.subgraph.parentId == parentId }
+                if (childSgs.isEmpty()) continue
+
+                val items = mutableListOf<ScopeItem>()
+                for (psg in childSgs) {
+                    items += ScopeItem(
+                        id = psg.subgraph.id,
+                        isSubgraph = true,
+                        rect = psg.rect,
+                        memberNodeIds = membersOf(psg.subgraph.id),
+                    )
+                }
+                for (node in chart.nodes) {
+                    if (node.subgraphId != parentId) continue
+                    val r = nodeRects[node.id] ?: continue
+                    items += ScopeItem(
+                        id = node.id,
+                        isSubgraph = false,
+                        rect = r,
+                        memberNodeIds = listOf(node.id),
+                    )
+                }
+                if (items.size < 2) continue
+
+                val ordered = items.sortedWith(compareBy<ScopeItem> { it.rect.centerX }.thenBy { it.rect.x })
+                val shifts = FloatArray(ordered.size)
+                var scopeMoved = false
+
+                for (i in ordered.indices) {
+                    val cur = ordered[i]
+                    var requiredShift = 0f
+                    for (j in 0 until i) {
+                        val prev = ordered[j]
+                        if (!cur.isSubgraph && !prev.isSubgraph) continue
+                        val overlapsVertically =
+                            cur.rect.y < prev.rect.bottom - 1f && cur.rect.bottom > prev.rect.y + 1f
+                        if (!overlapsVertically) continue
+                        val prevShiftedRight = prev.rect.right + shifts[j]
+                        val curLeft = cur.rect.x + requiredShift
+                        if (curLeft < prevShiftedRight + minGap) {
+                            requiredShift = (prevShiftedRight + minGap) - cur.rect.x
+                        }
+                    }
+                    shifts[i] = requiredShift
+                    if (requiredShift > 0f) {
+                        scopeMoved = true
+                        for (mId in cur.memberNodeIds) {
+                            nodeRects[mId]?.let { r -> nodeRects[mId] = r.copy(x = r.x + requiredShift) }
+                        }
+                    }
+                }
+                if (scopeMoved) anyMoved = true
+            }
+
+            if (!anyMoved) return edges to subgraphs
+
+            val updatedSubgraphs = buildSubgraphs(nodeRects, emptyMap())
+            val nodeShiftX = nodeRects.mapValues { (id, r) -> r.x - (origNodeX[id] ?: r.x) }
+            val sgShiftX = updatedSubgraphs.associate { newSg ->
+                val oldX = origSgX[newSg.subgraph.id] ?: newSg.rect.x
+                newSg.subgraph.id to (newSg.rect.x - oldX)
+            }
+            fun endpointShift(id: String): Float = nodeShiftX[id] ?: sgShiftX[id] ?: 0f
+
+            val updatedEdges = edges.map { pe ->
+                val dxFrom = endpointShift(pe.edge.from)
+                val dxTo = endpointShift(pe.edge.to)
+                if (dxFrom == 0f && dxTo == 0f) {
+                    pe
+                } else if (dxFrom == dxTo) {
+                    pe.copy(
+                        points = pe.points.map { p -> DiagramPoint(p.x + dxFrom, p.y) },
+                        labelRect = pe.labelRect?.let { it.copy(x = it.x + dxFrom) },
+                    )
+                } else {
+                    val n = pe.points.size
+                    val pts = pe.points.mapIndexed { i, p ->
+                        val t = if (n <= 1) 0.5f else i.toFloat() / (n - 1).toFloat()
+                        val dx = dxFrom + (dxTo - dxFrom) * t
+                        DiagramPoint(p.x + dx, p.y)
+                    }
+                    val midDx = (dxFrom + dxTo) * 0.5f
+                    pe.copy(
+                        points = pts,
+                        labelRect = pe.labelRect?.let { it.copy(x = it.x + midDx) },
+                    )
+                }
+            }
+            return updatedEdges to updatedSubgraphs
         }
     }
 }

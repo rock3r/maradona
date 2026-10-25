@@ -1216,4 +1216,33 @@ class RenderScreenshotTest {
         }
         assertTrue(inlinePurplePixels > 400, "Inline <img/> Painter #9333EA not rendered ($inlinePurplePixels px)")
     }
+
+    @Test
+    fun parallelSubgraphClustersRendersDisjointClusters() {
+        val mmd = """
+            flowchart TB
+                Gateway(["fa:fa-globe API Gateway"]) --> A1["Auth Check"]
+                Gateway --> B1["Order Parse"]
+                Gateway --> A2["Token Refresh"]
+                Gateway --> B2["Inventory Lock"]
+                A1 --> A3["Session Store"]
+                A2 --> A3
+                B1 --> B3["Payment Dispatch"]
+                B2 --> B3
+                A3 --> Done(["200 OK"])
+                B3 --> Done
+                subgraph sgAuth ["Security & Auth Cluster"]
+                    A1
+                    A2
+                    A3
+                end
+                subgraph sgOrder ["Order Fulfillment Cluster"]
+                    B1
+                    B2
+                    B3
+                end
+        """.trimIndent()
+        val out = renderToPng("subgraph-clusters", mmd, MaradonaTheme.light(), width = 920, height = 560)
+        assertTrue(out.exists() && out.length() > 5_000, "Expected subgraph-clusters screenshot")
+    }
 }
