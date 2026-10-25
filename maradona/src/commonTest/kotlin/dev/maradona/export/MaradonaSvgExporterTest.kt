@@ -243,7 +243,7 @@ class MaradonaSvgExporterTest {
                 title Order Service
                 @Actor Client
                 @Database OrderDb
-                // Validate incoming request
+                // Validate incoming request payload and verify signature before querying the database
                 Client->OrderDb.findOrder(id) {
                     if (found) {
                         return order
@@ -255,7 +255,10 @@ class MaradonaSvgExporterTest {
         )
         assertTrue(zenSvg.contains("«Actor»"), "Expected ZenUML Actor stereotype")
         assertTrue(zenSvg.contains("«Database»"), "Expected ZenUML Database stereotype")
-        assertTrue(zenSvg.contains("Validate incoming request"), "Expected ZenUML comment note")
+        assertFalse(
+            zenSvg.contains(">Validate incoming request payload and verify signature before querying the database</text>"),
+            "Expected long ZenUML comment to wrap across multiple SVG text lines",
+        )
         assertTrue(zenSvg.contains("findOrder(id)"), "Expected ZenUML message")
     }
 

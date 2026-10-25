@@ -13,15 +13,18 @@ import dev.maradona.layout.DiagramPoint
 import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.ErDiagramLayout
+import dev.maradona.layout.ErEntityMetrics
 import dev.maradona.layout.ErLayout
 import dev.maradona.layout.FlowchartLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.NodeOutline
 import dev.maradona.layout.NodeSizing
+import dev.maradona.layout.RequirementBoxMetrics
 import dev.maradona.layout.RequirementDiagramLayout
 import dev.maradona.layout.RequirementLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.SequenceLayout
+import dev.maradona.layout.StateBoxMetrics
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.StateLayout
 import dev.maradona.layout.ZenUmlDiagramLayout
@@ -160,8 +163,43 @@ object MaradonaSvgExporter {
             }
             is MaradonaDiagramModel.StateModel -> {
                 val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
+                val compositeIds = d.states
+                    .filter { s ->
+                        s.kind == StateKind.Composite ||
+                            d.states.any { it.parentId == s.id } ||
+                            d.notes.any { it.parentId == s.id }
+                    }
+                    .map { it.id }
+                    .toSet()
                 val layout = StateLayout.layout(
                     diagram = d,
+                    stateBoxSize = { s ->
+                        val isComp = s.id in compositeIds
+                        if (!isComp && s.kind != StateKind.Normal) {
+                            StateLayout.defaultStateMetrics(s, dens)
+                        } else {
+                            val hdrFont = if (isComp) theme.subgraphFontSize.value else theme.nodeFontSize.value
+                            val hdrSz = defaultTextSize(s.label, hdrFont)
+                            val hdrH = max(28f * dens, hdrSz.height + 16f * dens)
+                            if (isComp || s.descriptions.isEmpty()) {
+                                val w = max(84f * dens, hdrSz.width + 28f * dens)
+                                StateBoxMetrics(width = w, height = hdrH, headerHeight = hdrH, descriptionHeight = 0f)
+                            } else {
+                                val descSz = defaultTextSize(s.descriptions.joinToString("\n"), theme.edgeLabelFontSize.value)
+                                val descH = descSz.height + 12f * dens
+                                val w = maxOf(84f * dens, hdrSz.width + 28f * dens, descSz.width + 28f * dens)
+                                StateBoxMetrics(width = w, height = hdrH + descH, headerHeight = hdrH, descriptionHeight = descH)
+                            }
+                        }
+                    },
+                    transitionLabelSize = { _, tr ->
+                        tr.label?.takeIf { it.isNotEmpty() }?.let { defaultTextSize(it, theme.edgeLabelFontSize.value) }
+                    },
+                    noteBoxSize = { _, note ->
+                        val sz = defaultTextSize(note.text, theme.edgeLabelFontSize.value)
+                        DiagramSize(max(80f * dens, sz.width + 20f * dens), max(32f * dens, sz.height + 12f * dens))
+                    },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -169,8 +207,34 @@ object MaradonaSvgExporter {
             }
             is MaradonaDiagramModel.ErModel -> {
                 val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
                 val layout = ErLayout.layout(
                     diagram = d,
+                    entityBoxSize = { e ->
+                        val hdrSz = defaultTextSize(e.label, theme.nodeFontSize.value)
+                        val hdrH = max(32f * dens, hdrSz.height + 14f * dens)
+                        if (e.attributes.isEmpty()) {
+                            ErEntityMetrics(max(100f * dens, hdrSz.width + 28f * dens), hdrH, hdrH)
+                        } else {
+                            val rowSizes = e.attributes.map { attr ->
+                                val rowText = listOfNotNull(
+                                    attr.type,
+                                    attr.name,
+                                    attr.keys.takeIf { it.isNotEmpty() }?.joinToString(","),
+                                    attr.comment?.takeIf { it.isNotBlank() }?.let { "\"$it\"" },
+                                ).joinToString(" ")
+                                defaultTextSize(rowText, theme.edgeLabelFontSize.value)
+                            }
+                            val rowHeights = rowSizes.map { max(22f * dens, it.height + 6f * dens) }
+                            val maxRowW = rowSizes.maxOfOrNull { it.width } ?: 0f
+                            val w = max(120f * dens, max(hdrSz.width, maxRowW) + 24f * dens)
+                            ErEntityMetrics(w, hdrH + rowHeights.sum(), hdrH, rowHeights)
+                        }
+                    },
+                    relationshipLabelSize = { _, rel ->
+                        rel.label?.takeIf { it.isNotEmpty() }?.let { defaultTextSize(it, theme.edgeLabelFontSize.value) }
+                    },
+                    subgraphLabelSize = { sg -> defaultTextSize(sg.label, theme.subgraphFontSize.value) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -178,8 +242,28 @@ object MaradonaSvgExporter {
             }
             is MaradonaDiagramModel.RequirementModel -> {
                 val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
                 val layout = RequirementLayout.layout(
                     diagram = d,
+                    itemBoxSize = { item ->
+                        val hdrLines = listOf("<<${item.stereotype}>>") + plainTextLabel(item.name).split('\n')
+                        val hdrSz = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
+                        val hdrH = max(44f * dens, hdrSz.height + 16f * dens)
+                        val bodySizes = item.bodyLines.map { defaultTextSize(it, theme.edgeLabelFontSize.value) }
+                        val bodyHeights = bodySizes.map { max(18f * dens, it.height) }
+                        val bodyH = if (bodyHeights.isEmpty()) 0f else bodyHeights.sum() + 14f * dens
+                        val maxBodyW = bodySizes.maxOfOrNull { it.width } ?: 0f
+                        val w = maxOf(150f * dens, hdrSz.width + 24f * dens, maxBodyW + 24f * dens)
+                        RequirementBoxMetrics(
+                            width = w,
+                            height = hdrH + bodyH,
+                            headerHeight = hdrH,
+                            stereotypeHeight = hdrH * 0.45f,
+                            titleHeight = hdrH * 0.55f,
+                            bodyLineHeights = bodyHeights,
+                        )
+                    },
+                    relationLabelSize = { _, rel -> defaultTextSize(rel.label, theme.edgeLabelFontSize.value) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -200,9 +284,26 @@ object MaradonaSvgExporter {
                     val neededH = max(defaultSz.height, wrappedLines.size * fontSize * 1.38f + 28f * dens + personExtra + dbExtra)
                     el.id to DiagramSize(neededW, neededH)
                 }
+                val boundaryHeaderSizes = d.boundaries.associate { b ->
+                    val hdr = listOfNotNull(
+                        plainTextLabel(b.label),
+                        b.type.takeIf { it.isNotBlank() }?.let { "[$it]" },
+                    ).joinToString(" ")
+                    b.id to defaultTextSize(hdr, theme.subgraphFontSize.value)
+                }
+                val relLabelSizes = d.relationships.mapIndexedNotNull { idx, rel ->
+                    val indexedLabel = if (!rel.index.isNullOrBlank()) "${rel.index}: ${rel.label}" else rel.label
+                    val lines = buildList {
+                        if (indexedLabel.isNotBlank()) addAll(plainTextLabel(indexedLabel).split('\n'))
+                        if (!rel.technology.isNullOrBlank()) add("[${plainTextLabel(rel.technology)}]")
+                    }
+                    if (lines.isEmpty()) null else idx to defaultTextSize(lines.joinToString("\n"), theme.edgeLabelFontSize.value)
+                }.toMap()
                 val layout = C4Layout.layout(
                     diagram = d,
                     elementSizes = elementSizes,
+                    boundaryHeaderSizes = boundaryHeaderSizes,
+                    relLabelSizes = relLabelSizes,
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -212,6 +313,9 @@ object MaradonaSvgExporter {
                 val d = model.diagram
                 val layout = ArchitectureLayout.layout(
                     diagram = d,
+                    serviceLabelSize = { _, lbl -> defaultTextSize(lbl, theme.nodeFontSize.value) },
+                    groupLabelSize = { _, lbl -> defaultTextSize(lbl, theme.subgraphFontSize.value) },
+                    edgeLabelSize = { lbl -> defaultTextSize(lbl, theme.edgeLabelFontSize.value) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -219,8 +323,50 @@ object MaradonaSvgExporter {
             }
             is MaradonaDiagramModel.ZenUmlModel -> {
                 val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
+                val (msgSpecs, blockSpecs) = ZenUmlLayout.collectSpecs(d)
+                val participantSizes = d.participants.associate { p ->
+                    val lines = zenUmlParticipantLines(p)
+                    val sz = defaultTextSize(lines.joinToString("\n"), theme.nodeFontSize.value)
+                    p.id to DiagramSize(max(116f * dens, sz.width + 28f * dens), max(48f * dens, sz.height + 16f * dens))
+                }
+                val groupHeaderSizes = d.groups.mapIndexed { idx, grp ->
+                    idx to defaultTextSize(grp.name, theme.subgraphFontSize.value)
+                }.toMap()
+                val messageLabelSizes = msgSpecs.mapNotNull { spec ->
+                    if (spec.displayText.isBlank()) null else spec.index to defaultTextSize(spec.displayText, theme.edgeLabelFontSize.value)
+                }.toMap()
+                val commentWrapW = 216f * dens
+                val commentFont = theme.captionFontSize.value
+                val commentSizes = msgSpecs.mapNotNull { spec ->
+                    val ct = spec.commentText?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val wrapped = wrapSvgLines(plainTextLabel(ct), commentFont, commentWrapW)
+                    val maxCols = wrapped.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                    val w = min(240f * dens, max(64f * dens, maxCols * commentFont * 0.62f + 16f * dens))
+                    val h = max(24f * dens, wrapped.size * commentFont * 1.4f + 10f * dens)
+                    spec.index to DiagramSize(w, h)
+                }.toMap()
+                val blockTabSizes = blockSpecs.associate { blk ->
+                    blk.index to defaultTextSize(blk.keyword, theme.edgeLabelFontSize.value)
+                }
+                val blockCondSizes = blockSpecs.mapNotNull { blk ->
+                    val cond = blk.condition?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    blk.index to defaultTextSize("[$cond]", theme.edgeLabelFontSize.value)
+                }.toMap()
+                val blockDividerSizes = blockSpecs.flatMap { blk ->
+                    blk.dividerLabels.mapIndexed { dIdx, lbl ->
+                        (blk.index to dIdx) to defaultTextSize(lbl, theme.edgeLabelFontSize.value)
+                    }
+                }.toMap()
                 val layout = ZenUmlLayout.layout(
                     diagram = d,
+                    participantSizes = participantSizes,
+                    groupHeaderSizes = groupHeaderSizes,
+                    messageLabelSizes = messageLabelSizes,
+                    commentSizes = commentSizes,
+                    blockTabSizes = blockTabSizes,
+                    blockCondSizes = blockCondSizes,
+                    blockDividerSizes = blockDividerSizes,
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -1179,22 +1325,6 @@ object MaradonaSvgExporter {
         }
 
         // 5. Participant headers (top and optional mirrored bottom)
-        fun zenUmlParticipantLines(p: ZenUmlParticipant): List<String> {
-            val stereo = p.rawAnnotation ?: when (p.stereotype) {
-                ZenUmlParticipantStereotype.DEFAULT -> null
-                ZenUmlParticipantStereotype.ACTOR -> "Actor"
-                ZenUmlParticipantStereotype.BOUNDARY -> "Boundary"
-                ZenUmlParticipantStereotype.CONTROL -> "Control"
-                ZenUmlParticipantStereotype.ENTITY -> "Entity"
-                ZenUmlParticipantStereotype.DATABASE -> "Database"
-                ZenUmlParticipantStereotype.COLLECTIONS -> "Collections"
-                ZenUmlParticipantStereotype.QUEUE -> "Queue"
-            }
-            return buildList {
-                if (!stereo.isNullOrBlank()) add("«$stereo»")
-                addAll(plainTextLabel(p.label).split('\n'))
-            }
-        }
         for (pp in layout.participants) {
             val lines = zenUmlParticipantLines(pp.participant)
             for (r in listOfNotNull(pp.topRect, pp.bottomRect)) {
@@ -1209,7 +1339,8 @@ object MaradonaSvgExporter {
             val cr = pm.commentRect
             if (!ct.isNullOrBlank() && cr != null) {
                 sb.append("""  <rect x="${fmt(cr.x)}" y="${fmt(cr.y)}" width="${fmt(cr.width)}" height="${fmt(cr.height)}" rx="4" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
-                appendMultilineText(sb, "  ", cr.centerX, cr.centerY, plainTextLabel(ct).split('\n'), theme.noteText.toSvgHex(), theme.captionFontSize.value)
+                val commentLines = wrapSvgLines(plainTextLabel(ct), theme.captionFontSize.value, (cr.width - 12f).coerceAtLeast(80f))
+                appendMultilineText(sb, "  ", cr.centerX, cr.centerY, commentLines, theme.noteText.toSvgHex(), theme.captionFontSize.value)
             }
             if (pm.displayText.isBlank() && cr != null) continue
 
@@ -1245,6 +1376,23 @@ object MaradonaSvgExporter {
 
         sb.append("</svg>")
         return sb.toString()
+    }
+
+    private fun zenUmlParticipantLines(p: ZenUmlParticipant): List<String> {
+        val stereo = p.rawAnnotation ?: when (p.stereotype) {
+            ZenUmlParticipantStereotype.DEFAULT -> null
+            ZenUmlParticipantStereotype.ACTOR -> "Actor"
+            ZenUmlParticipantStereotype.BOUNDARY -> "Boundary"
+            ZenUmlParticipantStereotype.CONTROL -> "Control"
+            ZenUmlParticipantStereotype.ENTITY -> "Entity"
+            ZenUmlParticipantStereotype.DATABASE -> "Database"
+            ZenUmlParticipantStereotype.COLLECTIONS -> "Collections"
+            ZenUmlParticipantStereotype.QUEUE -> "Queue"
+        }
+        return buildList {
+            if (!stereo.isNullOrBlank()) add("«$stereo»")
+            addAll(plainTextLabel(p.label).split('\n'))
+        }
     }
 
     private fun c4WrappedCardLines(
