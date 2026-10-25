@@ -358,12 +358,25 @@ object MaradonaSvgExporter {
                     boxes = layout.sections.map { s ->
                         SvgBox(s.labelRect, s.name, Color.Transparent, Color.Transparent, theme.nodeText)
                     } + layout.tasks.flatMap { pt ->
+                        val t = pt.task
                         val idx = pt.sectionIndex.coerceAtLeast(0)
+                        val defaultFill = theme.seriesFill(idx)
+                        val defaultStroke = theme.seriesColor(idx)
+                        val (fill, border) = when {
+                            t.isCritical && t.status == dev.maradona.model.GanttTaskStatus.Done ->
+                                theme.criticalFill.copy(alpha = 0.78f) to theme.criticalBorder
+                            t.isCritical && t.status == dev.maradona.model.GanttTaskStatus.Active ->
+                                androidx.compose.ui.graphics.lerp(theme.criticalFill, theme.criticalBorder, 0.24f) to theme.criticalBorder
+                            t.isCritical -> theme.criticalFill to theme.criticalBorder
+                            t.status == dev.maradona.model.GanttTaskStatus.Done -> theme.mutedFill to theme.mutedBorder
+                            t.status == dev.maradona.model.GanttTaskStatus.Active -> theme.accentFill to theme.accentBorder
+                            else -> defaultFill to defaultStroke
+                        }
                         val barBox = SvgBox(
                             rect = pt.barRect,
                             label = "",
-                            fill = theme.seriesFill(idx),
-                            stroke = theme.seriesColor(idx),
+                            fill = fill,
+                            stroke = border,
                             textColor = theme.nodeText,
                             url = pt.task.action?.url,
                             tooltip = pt.task.action?.tooltip,
@@ -666,7 +679,8 @@ object MaradonaSvgExporter {
                             color = theme.edge,
                             dashed = !pr.relation.isContains,
                             label = pr.relation.label to pr.labelRect,
-                            endMarker = if (pr.relation.isContains) SvgMarker.Circle else SvgMarker.OpenArrow,
+                            startMarker = if (pr.relation.isContains) SvgMarker.ContainsCircleCross else SvgMarker.None,
+                            endMarker = if (pr.relation.isContains) SvgMarker.None else SvgMarker.OpenArrow,
                         )
                     },
                 )
@@ -1118,32 +1132,32 @@ object MaradonaSvgExporter {
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.Hexagon -> {
-                val inset = r.height / 4f
+                val inset = r.height / 3.5f
                 val pts = "${fmt(r.x + inset)},$y ${fmt(r.right - inset)},$y ${fmt(r.right)},${fmt(r.centerY)} ${fmt(r.right - inset)},${fmt(r.bottom)} ${fmt(r.x + inset)},${fmt(r.bottom)} $x,${fmt(r.centerY)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.Parallelogram -> {
-                val skew = r.height * 0.3f
+                val skew = r.height / 2f
                 val pts = "${fmt(r.x + skew)},$y ${fmt(r.right)},$y ${fmt(r.right - skew)},${fmt(r.bottom)} $x,${fmt(r.bottom)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.ParallelogramAlt -> {
-                val skew = r.height * 0.3f
+                val skew = r.height / 2f
                 val pts = "$x,$y ${fmt(r.right - skew)},$y ${fmt(r.right)},${fmt(r.bottom)} ${fmt(r.x + skew)},${fmt(r.bottom)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.Trapezoid -> {
-                val skew = r.height * 0.3f
+                val skew = r.height / 2f
                 val pts = "${fmt(r.x + skew)},$y ${fmt(r.right - skew)},$y ${fmt(r.right)},${fmt(r.bottom)} $x,${fmt(r.bottom)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.TrapezoidAlt -> {
-                val skew = r.height * 0.3f
+                val skew = r.height / 2f
                 val pts = "$x,$y ${fmt(r.right)},$y ${fmt(r.right - skew)},${fmt(r.bottom)} ${fmt(r.x + skew)},${fmt(r.bottom)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
             NodeShape.Asymmetric -> {
-                val notch = r.height / 2f
+                val notch = r.height / 4f
                 val pts = "$x,$y ${fmt(r.right)},$y ${fmt(r.right)},${fmt(r.bottom)} $x,${fmt(r.bottom)} ${fmt(r.x + notch)},${fmt(r.centerY)}"
                 sb.append("""    <polygon points="$pts" fill="$fill" stroke="$stroke" stroke-width="$sw"/>""").append('\n')
             }
@@ -1201,6 +1215,7 @@ object MaradonaSvgExporter {
         Cross,
         Circle,
         Lollipop,
+        ContainsCircleCross,
         ErExactlyOne,
         ErZeroOrOne,
         ErOneOrMore,
@@ -1327,6 +1342,18 @@ object MaradonaSvgExporter {
             SvgMarker.Circle, SvgMarker.Lollipop -> {
                 val tag = if (marker == SvgMarker.Lollipop) "lollipop" else "circle"
                 sb.append("""  <circle class="edge-marker" data-marker="$tag" cx="${fmt(tip.x)}" cy="${fmt(tip.y)}" r="4.5" fill="$bgColor" stroke="$color" stroke-width="1.5"/>""").append('\n')
+            }
+            SvgMarker.ContainsCircleCross -> {
+                val ux = -cos(angle).toFloat()
+                val uy = -sin(angle).toFloat()
+                val rad = 5.5f
+                val cx = tip.x + ux * rad
+                val cy = tip.y + uy * rad
+                sb.append("""  <g class="edge-marker" data-marker="contains-circle-cross">""").append('\n')
+                sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad)}" fill="$bgColor" stroke="$color" stroke-width="1.5"/>""").append('\n')
+                sb.append("""    <line x1="${fmt(cx - rad)}" y1="${fmt(cy)}" x2="${fmt(cx + rad)}" y2="${fmt(cy)}" stroke="$color" stroke-width="1.5"/>""").append('\n')
+                sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(cy - rad)}" x2="${fmt(cx)}" y2="${fmt(cy + rad)}" stroke="$color" stroke-width="1.5"/>""").append('\n')
+                sb.append("""  </g>""").append('\n')
             }
             SvgMarker.Cross -> {
                 val d = 4f

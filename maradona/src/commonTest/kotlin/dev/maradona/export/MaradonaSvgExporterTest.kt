@@ -191,11 +191,29 @@ class MaradonaSvgExporterTest {
                 title Release Plan
                 dateFormat YYYY-MM-DD
                 section Phase 1
-                Design :a1, 2026-01-01, 2d
-                Ship :milestone, m1, 2026-01-03, 0d
+                Design :done, a1, 2026-01-01, 2d
+                CriticalBuild :crit, a2, 2026-01-02, 2d
+                Ship :milestone, m1, 2026-01-04, 0d
             """.trimIndent(),
         )
         assertTrue(ganttSvg.contains("Phase 1") && ganttSvg.contains("Design") && ganttSvg.contains("Ship"), "Expected Gantt section and task labels in SVG")
+        assertTrue(ganttSvg.contains("fill=\"#FEE2E2\""), "Expected Gantt critical task fill in SVG")
+
+        val reqSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            requirementDiagram
+                requirement parentReq {
+                    id: 1
+                    text: Parent
+                }
+                requirement childReq {
+                    id: 2
+                    text: Child
+                }
+                parentReq - contains -> childReq
+            """.trimIndent(),
+        )
+        assertTrue(reqSvg.contains("data-marker=\"contains-circle-cross\""), "Expected requirement contains-circle-cross marker in SVG")
 
         val gitHiddenLabelsSvg = MaradonaSvgExporter.exportToSvg(
             """
