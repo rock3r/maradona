@@ -367,6 +367,8 @@ object MaradonaSvgExporter {
                     title = d.title to layout.titleRect,
                     containers = layout.sections.map { s ->
                         SvgBox(s.rect, "", theme.seriesFill(s.sectionIndex.coerceAtLeast(0)), theme.subgraphBorder, theme.nodeText)
+                    } + layout.excludedBands.map { eb ->
+                        SvgBox(eb, "", theme.mutedFill.copy(alpha = 0.55f), Color.Transparent, theme.nodeText, shape = NodeShape.Rect)
                     },
                     boxes = layout.sections.map { s ->
                         SvgBox(s.labelRect, s.name, Color.Transparent, Color.Transparent, theme.nodeText)

@@ -199,14 +199,16 @@ class MaradonaSvgExporterTest {
             gantt
                 title Release Plan
                 dateFormat YYYY-MM-DD
+                excludes weekends
                 section Phase 1
-                Design :done, a1, 2026-01-01, 2d
+                Design :done, a1, 2026-01-01, 5d
                 CriticalBuild :crit, a2, 2026-01-02, 2d
-                Ship :milestone, m1, 2026-01-04, 0d
+                Ship :milestone, m1, 2026-01-08, 0d
             """.trimIndent(),
         )
         assertTrue(ganttSvg.contains("Phase 1") && ganttSvg.contains("Design") && ganttSvg.contains("Ship"), "Expected Gantt section and task labels in SVG")
         assertTrue(ganttSvg.contains("fill=\"#FFEBE9\"") && ganttSvg.contains("stroke=\"#D14D41\""), "Expected Gantt critical task fill and border in SVG")
+        assertTrue(ganttSvg.contains("0.55)"), "Expected Gantt excluded-weekend shading band in SVG")
 
         val reqSvg = MaradonaSvgExporter.exportToSvg(
             """
