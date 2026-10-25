@@ -58,7 +58,7 @@ class MaradonaSvgExporterTest {
     }
 
     @Test
-    fun wrapsLongLabelsStripsIllegalXmlCharsAndRejectsNonFlowchart() {
+    fun wrapsLongLabelsStripsIllegalXmlCharsAndExportsAll23DiagramFamilies() {
         val wrappedAndControlSvg = MaradonaSvgExporter.exportToSvg(
             "flowchart TD\n    Long[\"Open https://example.com/a/very/long/unbroken/resource/path/that/exceeds/wrapping/width\u0001 and wraps onto multiple SVG text lines\"]",
         )
@@ -66,9 +66,204 @@ class MaradonaSvgExporterTest {
         val textTagCount = Regex("<text ").findAll(wrappedAndControlSvg).count()
         assertTrue(textTagCount >= 3, "Expected long flowchart label with oversized second token to wrap into at least 3 <text> lines, got $textTagCount")
 
-        assertFailsWith<UnsupportedOperationException> {
-            MaradonaSvgExporter.exportToSvg("pie\n    \"A\" : 50")
-        }
+        // 9. Mindmap
+        val mindmapSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            mindmap
+              root((Maradona))
+                Core[Flowcharts]
+                :::urgent
+                Extended{{All 23}}
+            """.trimIndent(),
+        )
+        assertTrue(mindmapSvg.contains("class=\"mindmap-node\""), "Expected mindmap nodes")
+        assertTrue(mindmapSvg.contains("class=\"mindmap-edge\""), "Expected mindmap edges")
+
+        // 10. Gantt (with excludes weekends, critical/done/active status, and external task label)
+        val ganttSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            gantt
+                title Release Plan
+                dateFormat YYYY-MM-DD
+                excludes weekends
+                section Phase 1
+                Critical Task :crit, active, t1, 2026-10-01, 5d
+                Milestone 1   :milestone, m1, after t1, 0d
+                click t1 href "https://example.com/t1"
+            """.trimIndent(),
+        )
+        assertTrue(ganttSvg.contains("class=\"gantt-excluded-band\""), "Expected Gantt excluded-day shading")
+        assertTrue(ganttSvg.contains("class=\"gantt-task\" data-id=\"t1\""), "Expected Gantt task t1")
+        assertTrue(ganttSvg.contains("<a href=\"https://example.com/t1\">"), "Expected Gantt task click link")
+
+        // 11. Pie (including single-slice donut annulus)
+        val pieDonutSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            ---
+            config:
+              pie:
+                donutHole: 0.4
+            ---
+            pie showData
+                title Single Slice Donut
+                "Only" : 100
+            """.trimIndent(),
+        )
+        assertTrue(pieDonutSvg.contains("fill-rule=\"evenodd\""), "Expected single-slice donut to render annulus with evenodd")
+
+        // 12. GitGraph (with HIGHLIGHT, REVERSE, MERGE, and showCommitLabel: false)
+        val gitSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            gitGraph
+                commit id: "c1" tag: "v1.0"
+                branch feat
+                commit id: "c2" type: HIGHLIGHT
+                checkout main
+                commit id: "c3" type: REVERSE
+                merge feat id: "m1"
+            """.trimIndent(),
+        )
+        assertTrue(gitSvg.contains("data-commit-type=\"highlight\""), "Expected HIGHLIGHT commit marker")
+        assertTrue(gitSvg.contains("data-commit-type=\"reverse\""), "Expected REVERSE commit marker")
+        assertTrue(gitSvg.contains("data-commit-type=\"merge\""), "Expected MERGE commit marker")
+
+        val gitHiddenLabelsSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            ---
+            config:
+              gitGraph:
+                showCommitLabel: false
+            ---
+            gitGraph
+                commit id: "secret-sha"
+            """.trimIndent(),
+        )
+        assertFalse(gitHiddenLabelsSvg.contains(">secret-sha</text>"), "Expected showCommitLabel: false to omit commit label text")
+
+        // 13. Timeline (with sections, periods, and events)
+        val timelineSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            timeline
+                title Product Roadmap
+                section Q4
+                    2026 : Launch : Scale
+            """.trimIndent(),
+        )
+        assertTrue(timelineSvg.contains(">2026</text>"), "Expected timeline period")
+        assertTrue(timelineSvg.contains(">Launch</text>") && timelineSvg.contains(">Scale</text>"), "Expected timeline events")
+
+        // 14. Journey
+        val journeySvg = MaradonaSvgExporter.exportToSvg(
+            """
+            journey
+                title Onboarding
+                section Signup
+                    Create account: 5: User
+                    Verify email: 2: User
+            """.trimIndent(),
+        )
+        assertTrue(journeySvg.contains("class=\"journey-face\" data-mood=\"happy\""), "Expected happy mood face")
+        assertTrue(journeySvg.contains("class=\"journey-face\" data-mood=\"sad\""), "Expected sad mood face")
+
+        // 15. Quadrant (points drawn above quadrant backgrounds)
+        val quadrantSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            quadrantChart
+                title Campaign Matrix
+                x-axis Low --> High
+                y-axis Small --> Large
+                quadrant-1 Leader
+                Campaign A: [0.75, 0.80]
+            """.trimIndent(),
+        )
+        val qPointIdx = quadrantSvg.indexOf("class=\"quadrant-point\"")
+        assertTrue(qPointIdx > 0, "Expected quadrant data point circle")
+
+        // 16. XY Chart (axes, ticks, rotated Y-axis title, bars before lines, single-point line marker)
+        val xySvg = MaradonaSvgExporter.exportToSvg(
+            """
+            xychart-beta
+                title "Revenue"
+                x-axis [Jan]
+                y-axis "USD (k)" 0 --> 100
+                bar [40]
+                line [65]
+            """.trimIndent(),
+        )
+        val barIdx = xySvg.indexOf("class=\"xy-bar\"")
+        val linePtIdx = xySvg.indexOf("class=\"xy-line-point\"")
+        assertTrue(barIdx in 1 until linePtIdx, "Expected XY bar to be emitted before XY line point marker")
+        assertTrue(xySvg.contains("transform=\"rotate(-90"), "Expected rotated Y-axis title")
+
+        // 17. Kanban (with priority stripe and ticket link)
+        val kanbanSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            ---
+            config:
+              kanban:
+                ticketBaseUrl: 'https://issues.example.com/#TICKET#'
+            ---
+            kanban
+              todo[Todo]
+                t1[Fix bug]@{ ticket: MRD-1, assigned: 'rock3r', priority: 'Very High' }
+            """.trimIndent(),
+        )
+        assertTrue(kanbanSvg.contains("class=\"kanban-priority-stripe\" data-priority=\"veryhigh\""), "Expected Kanban priority stripe")
+        assertTrue(kanbanSvg.contains("<a href=\"https://issues.example.com/MRD-1\">"), "Expected Kanban ticket link")
+
+        // 18. Sankey
+        val sankeySvg = MaradonaSvgExporter.exportToSvg(
+            """
+            sankey-beta
+              Solar,Grid,120
+              Grid,Homes,100
+            """.trimIndent(),
+        )
+        assertTrue(sankeySvg.contains("class=\"sankey-link\""), "Expected Sankey cubic Bezier link")
+        assertTrue(sankeySvg.contains("class=\"sankey-node\""), "Expected Sankey node")
+
+        // 19. Packet
+        val packetSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            packet-beta
+              0-15: "Source Port"
+              16: "ACK"
+            """.trimIndent(),
+        )
+        assertTrue(packetSvg.contains("class=\"packet-block\""), "Expected packet block")
+        assertTrue(packetSvg.contains("Source Port"), "Expected packet field label")
+
+        // 20. Radar
+        val radarSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            radar-beta
+              axis a["Speed"], b["Reliability"], c["Memory"]
+              curve m["Maradona"]{90, 95, 88}
+            """.trimIndent(),
+        )
+        assertTrue(radarSvg.contains("class=\"radar-curve\""), "Expected radar curve polygon")
+
+        // 21. Block (with composite container, diamond, and directional block arrow)
+        val blockSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            block-beta
+              columns 3
+              A{"Decision"} arr<["Go"]>(right) B("Action")
+            """.trimIndent(),
+        )
+        assertTrue(blockSvg.contains("class=\"block-arrow\" data-dir=\"right\""), "Expected directional block arrow")
+
+        // 22. Treemap
+        val treemapSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            treemap-beta
+            "Engineering"
+                "Frontend": 40
+                "Backend": 60
+            """.trimIndent(),
+        )
+        assertTrue(treemapSvg.contains("class=\"treemap-section\""), "Expected treemap section")
+        assertTrue(treemapSvg.contains("class=\"treemap-leaf\""), "Expected treemap leaf")
     }
 
     @Test

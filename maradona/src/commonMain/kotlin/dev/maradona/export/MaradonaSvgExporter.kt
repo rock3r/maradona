@@ -1,8 +1,11 @@
 package dev.maradona.export
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.ArchitectureLayout
+import dev.maradona.layout.BlockDiagramLayout
+import dev.maradona.layout.BlockLayout
 import dev.maradona.layout.C4DiagramLayout
 import dev.maradona.layout.C4Layout
 import dev.maradona.layout.ClassBoxMetrics
@@ -16,21 +19,52 @@ import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.ErEntityMetrics
 import dev.maradona.layout.ErLayout
 import dev.maradona.layout.FlowchartLayout
+import dev.maradona.layout.GanttDiagramLayout
+import dev.maradona.layout.GanttLayout
+import dev.maradona.layout.GitGraphDiagramLayout
+import dev.maradona.layout.GitGraphLayout
+import dev.maradona.layout.JourneyDiagramLayout
+import dev.maradona.layout.JourneyLayout
+import dev.maradona.layout.KanbanDiagramLayout
+import dev.maradona.layout.KanbanLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MindmapDiagramLayout
+import dev.maradona.layout.MindmapLayout
 import dev.maradona.layout.NodeOutline
 import dev.maradona.layout.NodeSizing
+import dev.maradona.layout.PacketDiagramLayout
+import dev.maradona.layout.PacketLayout
+import dev.maradona.layout.PieDiagramLayout
+import dev.maradona.layout.PieLayout
+import dev.maradona.layout.QuadrantDiagramLayout
+import dev.maradona.layout.QuadrantLayout
+import dev.maradona.layout.RadarDiagramLayout
+import dev.maradona.layout.RadarLayout
 import dev.maradona.layout.RequirementBoxMetrics
 import dev.maradona.layout.RequirementDiagramLayout
 import dev.maradona.layout.RequirementLayout
+import dev.maradona.layout.SankeyDiagramLayout
+import dev.maradona.layout.SankeyLayout
 import dev.maradona.layout.SequenceDiagramLayout
 import dev.maradona.layout.SequenceLayout
 import dev.maradona.layout.StateBoxMetrics
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.StateLayout
+import dev.maradona.layout.TimelineDiagramLayout
+import dev.maradona.layout.TimelineLayout
+import dev.maradona.layout.TreemapDiagramLayout
+import dev.maradona.layout.TreemapLayout
+import dev.maradona.layout.XyChartDiagramLayout
+import dev.maradona.layout.XyChartLayout
 import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.layout.ZenUmlLayout
 import dev.maradona.model.ArchitectureDiagram
 import dev.maradona.model.ArrowHead
+import dev.maradona.model.BlockArrowDir
+import dev.maradona.model.BlockArrowHead
+import dev.maradona.model.BlockDiagram
+import dev.maradona.model.BlockEdgePattern
+import dev.maradona.model.BlockShape
 import dev.maradona.model.C4Diagram
 import dev.maradona.model.C4ElementKind
 import dev.maradona.model.ClassClassifier
@@ -42,14 +76,33 @@ import dev.maradona.model.ErCardinality
 import dev.maradona.model.ErDiagram
 import dev.maradona.model.FlowNode
 import dev.maradona.model.Flowchart
+import dev.maradona.model.GanttDiagram
+import dev.maradona.model.GanttTaskStatus
+import dev.maradona.model.GitCommitType
+import dev.maradona.model.GitGraphDiagram
+import dev.maradona.model.JourneyDiagram
+import dev.maradona.model.JourneyMood
+import dev.maradona.model.KanbanDiagram
+import dev.maradona.model.KanbanPriority
+import dev.maradona.model.MindmapDiagram
+import dev.maradona.model.MindmapShape
 import dev.maradona.model.NodeShape
+import dev.maradona.model.PacketDiagram
 import dev.maradona.model.ParticipantKind
+import dev.maradona.model.PieDiagram
+import dev.maradona.model.QuadrantDiagram
+import dev.maradona.model.RadarDiagram
+import dev.maradona.model.RadarGraticule
 import dev.maradona.model.RequirementDiagram
+import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SequenceBlockKind
 import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.SequenceHead
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.StateKind
+import dev.maradona.model.TimelineDiagram
+import dev.maradona.model.TreemapDiagram
+import dev.maradona.model.XyChartDiagram
 import dev.maradona.model.ZenUmlDiagram
 import dev.maradona.model.ZenUmlMessageKind
 import dev.maradona.model.ZenUmlParticipant
@@ -372,9 +425,181 @@ object MaradonaSvgExporter {
                 )
                 exportZenUmlToSvg(d, layout, theme, options.density)
             }
-            else -> throw UnsupportedOperationException(
-                "Standalone SVG export does not yet support ${model::class.simpleName}; render it through MaradonaDiagram.",
-            )
+            is MaradonaDiagramModel.MindmapModel -> {
+                val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
+                val layout = MindmapLayout.layout(
+                    diagram = d,
+                    nodeSize = { n ->
+                        val display = if (!n.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(n.icon)} ${n.label}" else n.label
+                        val sz = defaultTextSize(display, theme.nodeFontSize.value)
+                        DiagramSize(max(72f * dens, sz.width + 28f * dens), max(34f * dens, sz.height + 16f * dens))
+                    },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportMindmapToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.GanttModel -> {
+                val d = model.diagram
+                val layout = GanttLayout.layout(
+                    diagram = d,
+                    taskLabelSize = { t -> defaultTextSize(t.label, theme.nodeFontSize.value) },
+                    sectionLabelSize = { s -> defaultTextSize(s, theme.subgraphFontSize.value) },
+                    tickLabelSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportGanttToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.PieModel -> {
+                val d = model.diagram
+                val layout = PieLayout.layout(
+                    diagram = d,
+                    pctLabelSize = { _, s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    legendLabelSize = { _, s -> defaultTextSize(s, theme.nodeFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportPieToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.GitGraphModel -> {
+                val d = model.diagram
+                val layout = GitGraphLayout.layout(
+                    diagram = d,
+                    branchLabelSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    commitLabelSize = { c -> defaultTextSize(c.id, theme.captionFontSize.value) },
+                    tagLabelSize = { c -> defaultTextSize(c.tag.orEmpty(), theme.captionFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportGitGraphToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.TimelineModel -> {
+                val d = model.diagram
+                val layout = TimelineLayout.layout(
+                    diagram = d,
+                    periodTitleSize = { p -> defaultTextSize(p.title, theme.nodeFontSize.value) },
+                    eventTextSize = { _, _, s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    sectionTitleSize = { s -> defaultTextSize(s, theme.subgraphFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportTimelineToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.JourneyModel -> {
+                val d = model.diagram
+                val layout = JourneyLayout.layout(
+                    diagram = d,
+                    taskLabelSize = { t -> defaultTextSize(t.label, theme.nodeFontSize.value) },
+                    sectionTitleSize = { s -> defaultTextSize(s, theme.subgraphFontSize.value) },
+                    actorLabelSize = { a -> defaultTextSize(a, theme.edgeLabelFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportJourneyToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.QuadrantModel -> {
+                val d = model.diagram
+                val layout = QuadrantLayout.layout(
+                    diagram = d,
+                    pointLabelSize = { p -> defaultTextSize(p.label, theme.edgeLabelFontSize.value) },
+                    quadrantLabelSize = { _, s -> defaultTextSize(s, theme.subgraphFontSize.value) },
+                    axisLabelSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportQuadrantToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.XyChartModel -> {
+                val d = model.diagram
+                val layout = XyChartLayout.layout(
+                    diagram = d,
+                    tickLabelSize = { s -> defaultTextSize(s, theme.captionFontSize.value) },
+                    axisTitleSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    legendLabelSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    pointLabelSize = { s -> defaultTextSize(s, theme.captionFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportXyChartToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.KanbanModel -> {
+                val d = model.diagram
+                val dens = options.density.coerceAtLeast(0.01f)
+                val taskFont = theme.edgeLabelFontSize.value
+                val layout = KanbanLayout.layout(
+                    diagram = d,
+                    columnHeaderSize = { _, col ->
+                        val hdr = if (!col.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(col.icon)} ${col.label}" else col.label
+                        defaultTextSize(hdr, theme.subgraphFontSize.value)
+                    },
+                    taskLabelSize = { _, _, task, maxW ->
+                        val display = if (!task.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(task.icon)} ${task.label}" else task.label
+                        val wrapW = maxW.coerceAtLeast(60f * dens)
+                        val lines = wrapSvgLines(plainTextLabel(display), taskFont, wrapW)
+                        val maxCols = lines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                        DiagramSize(
+                            width = min(maxW, maxCols * taskFont * 0.62f + 8f * dens),
+                            height = lines.size * taskFont * 1.38f + 4f * dens,
+                        )
+                    },
+                    metaBadgeSize = { s -> defaultTextSize(s, theme.captionFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportKanbanToSvg(d, layout, theme, dens)
+            }
+            is MaradonaDiagramModel.SankeyModel -> {
+                val d = model.diagram
+                val layout = SankeyLayout.layout(
+                    diagram = d,
+                    nodeLabelSize = { s -> defaultTextSize(s, theme.nodeFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportSankeyToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.PacketModel -> {
+                val d = model.diagram
+                val layout = PacketLayout.layout(
+                    diagram = d,
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportPacketToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.RadarModel -> {
+                val d = model.diagram
+                val layout = RadarLayout.layout(
+                    diagram = d,
+                    axisLabelSize = { s -> defaultTextSize(s, theme.nodeFontSize.value) },
+                    legendLabelSize = { s -> defaultTextSize(s, theme.edgeLabelFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportRadarToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.BlockModel -> {
+                val d = model.diagram
+                val layout = BlockLayout.layout(
+                    diagram = d,
+                    nodeLabelSize = { _, lbl -> defaultTextSize(lbl, theme.nodeFontSize.value) },
+                    edgeLabelSize = { lbl -> defaultTextSize(lbl, theme.edgeLabelFontSize.value) },
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportBlockToSvg(d, layout, theme)
+            }
+            is MaradonaDiagramModel.TreemapModel -> {
+                val d = model.diagram
+                val layout = TreemapLayout.layout(
+                    diagram = d,
+                    titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
+                    options = options,
+                )
+                exportTreemapToSvg(d, layout, theme)
+            }
         }
     }
 
@@ -1405,6 +1630,823 @@ object MaradonaSvgExporter {
         }
     }
 
+    /**
+     * Exports a pre-laid-out [MindmapDiagram] and [MindmapDiagramLayout] to a standalone SVG string.
+     */
+    fun exportMindmapToSvg(
+        diagram: MindmapDiagram,
+        layout: MindmapDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        for (e in layout.edges) {
+            if (e.points.size < 2) continue
+            val strokeHex = (if (e.branchIndex >= 0) theme.seriesColor(e.branchIndex) else theme.edge).toSvgHex()
+            sb.append("""  <path class="mindmap-edge" d="${buildSvgEdgePath(e.points)}" fill="none" stroke="$strokeHex" stroke-width="1.8"/>""").append('\n')
+        }
+        for (pn in layout.nodes) {
+            val n = pn.node
+            val r = pn.rect
+            val isUrgent = "urgent" in n.classes
+            val fillHex = (parseCssColor(n.style?.fill) ?: when {
+                isUrgent -> theme.criticalFill
+                pn.depth == 0 -> theme.subgraphFill
+                else -> theme.nodeFill
+            }).toSvgHex()
+            val strokeHex = (parseCssColor(n.style?.stroke) ?: when {
+                isUrgent -> theme.criticalBorder
+                pn.branchIndex >= 0 -> theme.seriesColor(pn.branchIndex)
+                else -> theme.nodeBorder
+            }).toSvgHex()
+            val textHex = (parseCssColor(n.style?.textColor) ?: theme.nodeText).toSvgHex()
+            val strokeW = n.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull()
+                ?: if (pn.depth == 0 || isUrgent) 2f else 1.35f
+            val shape = when (n.shape) {
+                MindmapShape.Square -> NodeShape.Rect
+                MindmapShape.Circle -> NodeShape.Circle
+                MindmapShape.Hexagon -> NodeShape.Hexagon
+                else -> NodeShape.RoundedRect
+            }
+            sb.append("""  <g class="mindmap-node" data-id="${escapeXml(n.id)}">""").append('\n')
+            appendSvgNodeShape(sb, shape, r, fillHex, strokeHex, strokeW)
+            val display = if (!n.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(n.icon)} ${n.label}" else n.label
+            appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(display).split('\n'), textHex, theme.nodeFontSize.value)
+            sb.append("""  </g>""").append('\n')
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [GanttDiagram] and [GanttDiagramLayout] to a standalone SVG string.
+     */
+    fun exportGanttToSvg(
+        diagram: GanttDiagram,
+        layout: GanttDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+
+        // 1. Section bands and labels
+        for (s in layout.sections) {
+            val r = s.rect
+            val fillHex = theme.seriesFill(s.sectionIndex.coerceAtLeast(0)).toSvgHex()
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="0.75"/>""").append('\n')
+            if (s.name.isNotBlank()) {
+                appendMultilineText(sb, "  ", s.labelRect.centerX, s.labelRect.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+            }
+        }
+
+        // 2. Excluded-day shading bands
+        for (eb in layout.excludedBands) {
+            sb.append("""  <rect class="gantt-excluded-band" x="${fmt(eb.x)}" y="${fmt(eb.y)}" width="${fmt(eb.width)}" height="${fmt(eb.height)}" fill="${theme.mutedFill.copy(alpha = 0.55f).toSvgHex()}"/>""").append('\n')
+        }
+
+        // 3. Ticks and grid lines
+        for (t in layout.ticks) {
+            sb.append("""  <line x1="${fmt(t.x)}" y1="${fmt(layout.plotRect.y)}" x2="${fmt(t.x)}" y2="${fmt(layout.plotRect.bottom)}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="0.75" stroke-dasharray="3,3"/>""").append('\n')
+            appendMultilineText(sb, "  ", t.bottomLabelRect.centerX, t.bottomLabelRect.centerY, listOf(t.label), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+            t.topLabelRect?.let { tr ->
+                appendMultilineText(sb, "  ", tr.centerX, tr.centerY, listOf(t.label), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+            }
+        }
+
+        // 4. Tasks (status & critical-path colors, milestones, and separate labelRect)
+        for (pt in layout.tasks) {
+            val t = pt.task
+            val idx = pt.sectionIndex.coerceAtLeast(0)
+            val defaultFill = theme.seriesFill(idx)
+            val defaultStroke = theme.seriesColor(idx)
+            val (fill, border) = when {
+                t.isCritical && t.status == GanttTaskStatus.Done ->
+                    theme.criticalFill.copy(alpha = 0.78f) to theme.criticalBorder
+                t.isCritical && t.status == GanttTaskStatus.Active ->
+                    lerp(theme.criticalFill, theme.criticalBorder, 0.24f) to theme.criticalBorder
+                t.isCritical -> theme.criticalFill to theme.criticalBorder
+                t.status == GanttTaskStatus.Done -> theme.mutedFill to theme.mutedBorder
+                t.status == GanttTaskStatus.Active -> theme.accentFill to theme.accentBorder
+                else -> defaultFill to defaultStroke
+            }
+            val url = t.action?.url?.takeIf { it.isNotBlank() }
+            val tooltip = t.action?.tooltip?.takeIf { it.isNotBlank() }
+            if (url != null) sb.append("""  <a href="${escapeXml(url)}">""").append('\n')
+            sb.append("""  <g class="gantt-task" data-id="${escapeXml(t.id)}">""").append('\n')
+            if (tooltip != null) sb.append("""    <title>${escapeXml(tooltip)}</title>""").append('\n')
+            val shape = if (t.isMilestone) NodeShape.Diamond else NodeShape.RoundedRect
+            appendSvgNodeShape(sb, shape, pt.barRect, fill.toSvgHex(), border.toSvgHex(), 1.3f)
+            if (t.label.isNotBlank()) {
+                appendMultilineText(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, plainTextLabel(t.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            }
+            sb.append("""  </g>""").append('\n')
+            if (url != null) sb.append("""  </a>""").append('\n')
+        }
+
+        // 5. Vertical markers
+        for (vm in layout.verticalMarkers) {
+            sb.append("""  <line x1="${fmt(vm.x)}" y1="${fmt(vm.topY)}" x2="${fmt(vm.x)}" y2="${fmt(vm.bottomY)}" stroke="${theme.accentBorder.toSvgHex()}" stroke-width="1.5" stroke-dasharray="4,3"/>""").append('\n')
+            val lr = vm.labelRect
+            sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.accentFill.toSvgHex()}" stroke="${theme.accentBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
+            appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(vm.task.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [PieDiagram] and [PieDiagramLayout] to a standalone SVG string.
+     */
+    fun exportPieToSvg(
+        diagram: PieDiagram,
+        layout: PieDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        for (s in layout.slices) {
+            val cx = layout.center.x + s.explodeOffset.x
+            val cy = layout.center.y + s.explodeOffset.y
+            val fillHex = theme.seriesColor(s.index).toSvgHex()
+            val strokeHex = theme.background.toSvgHex()
+            if (s.sweepAngleDeg >= 359.9f) {
+                val rOut = layout.outerRadius
+                if (layout.innerRadius > 0.5f) {
+                    val rIn = layout.innerRadius
+                    val dPath = "M ${fmt(cx)} ${fmt(cy - rOut)} A ${fmt(rOut)} ${fmt(rOut)} 0 1 1 ${fmt(cx)} ${fmt(cy + rOut)} A ${fmt(rOut)} ${fmt(rOut)} 0 1 1 ${fmt(cx)} ${fmt(cy - rOut)} Z " +
+                        "M ${fmt(cx)} ${fmt(cy - rIn)} A ${fmt(rIn)} ${fmt(rIn)} 0 1 0 ${fmt(cx)} ${fmt(cy + rIn)} A ${fmt(rIn)} ${fmt(rIn)} 0 1 0 ${fmt(cx)} ${fmt(cy - rIn)} Z"
+                    sb.append("""  <path class="pie-slice" fill-rule="evenodd" d="$dPath" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(layout.outerStrokeWidth)}"/>""").append('\n')
+                } else {
+                    sb.append("""  <circle class="pie-slice" cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rOut)}" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(layout.outerStrokeWidth)}"/>""").append('\n')
+                }
+            } else if (s.sweepAngleDeg > 0.01f) {
+                val startRad = s.startAngleDeg * kotlin.math.PI / 180.0
+                val endRad = (s.startAngleDeg + s.sweepAngleDeg) * kotlin.math.PI / 180.0
+                val x1 = cx + (layout.outerRadius * cos(startRad)).toFloat()
+                val y1 = cy + (layout.outerRadius * sin(startRad)).toFloat()
+                val x2 = cx + (layout.outerRadius * cos(endRad)).toFloat()
+                val y2 = cy + (layout.outerRadius * sin(endRad)).toFloat()
+                val largeArc = if (s.sweepAngleDeg > 180f) 1 else 0
+                val pathData = if (layout.innerRadius > 0.5f) {
+                    val ix2 = cx + (layout.innerRadius * cos(endRad)).toFloat()
+                    val iy2 = cy + (layout.innerRadius * sin(endRad)).toFloat()
+                    val ix1 = cx + (layout.innerRadius * cos(startRad)).toFloat()
+                    val iy1 = cy + (layout.innerRadius * sin(startRad)).toFloat()
+                    "M ${fmt(x1)} ${fmt(y1)} A ${fmt(layout.outerRadius)} ${fmt(layout.outerRadius)} 0 $largeArc 1 ${fmt(x2)} ${fmt(y2)} L ${fmt(ix2)} ${fmt(iy2)} A ${fmt(layout.innerRadius)} ${fmt(layout.innerRadius)} 0 $largeArc 0 ${fmt(ix1)} ${fmt(iy1)} Z"
+                } else {
+                    "M ${fmt(cx)} ${fmt(cy)} L ${fmt(x1)} ${fmt(y1)} A ${fmt(layout.outerRadius)} ${fmt(layout.outerRadius)} 0 $largeArc 1 ${fmt(x2)} ${fmt(y2)} Z"
+                }
+                sb.append("""  <path class="pie-slice" d="$pathData" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(layout.outerStrokeWidth)}"/>""").append('\n')
+            }
+            s.pctLabelRect?.let { pr ->
+                appendMultilineText(sb, "  ", pr.centerX, pr.centerY, listOf(s.percentageText), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            }
+        }
+        for (li in layout.legendItems) {
+            val sr = li.swatchRect
+            val colorHex = theme.seriesColor(li.index).toSvgHex()
+            sb.append("""  <rect x="${fmt(sr.x)}" y="${fmt(sr.y)}" width="${fmt(sr.width)}" height="${fmt(sr.height)}" fill="$colorHex" stroke="$colorHex" stroke-width="1"/>""").append('\n')
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(li.displayText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [GitGraphDiagram] and [GitGraphDiagramLayout] to a standalone SVG string.
+     */
+    fun exportGitGraphToSvg(
+        diagram: GitGraphDiagram,
+        layout: GitGraphDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val bgHex = theme.background.toSvgHex()
+
+        for (b in layout.branches) {
+            val strokeHex = theme.seriesColor(b.laneIndex).toSvgHex()
+            val fillHex = theme.seriesFill(b.laneIndex).toSvgHex()
+            sb.append("""  <line x1="${fmt(b.lineStart.x)}" y1="${fmt(b.lineStart.y)}" x2="${fmt(b.lineEnd.x)}" y2="${fmt(b.lineEnd.y)}" stroke="$strokeHex" stroke-width="1.4" stroke-dasharray="5,4"/>""").append('\n')
+            b.labelRect?.let { lr ->
+                sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(b.branch.name).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            }
+        }
+
+        for (e in layout.edges) {
+            val pts = e.points
+            if (pts.size < 2) continue
+            val strokeHex = theme.seriesColor(e.branchLaneIndex).toSvgHex()
+            val d = if (pts.size == 4) {
+                "M ${fmt(pts[0].x)} ${fmt(pts[0].y)} C ${fmt(pts[1].x)} ${fmt(pts[1].y)}, ${fmt(pts[2].x)} ${fmt(pts[2].y)}, ${fmt(pts[3].x)} ${fmt(pts[3].y)}"
+            } else {
+                buildSvgEdgePath(pts)
+            }
+            val dashAttr = if (e.isCherryPick) """ stroke-dasharray="6,4"""" else ""
+            sb.append("""  <path class="git-edge" d="$d" fill="none" stroke="$strokeHex" stroke-width="2.4"$dashAttr/>""").append('\n')
+        }
+
+        for (pc in layout.commits) {
+            val branchFillHex = theme.seriesFill(pc.laneIndex).toSvgHex()
+            val branchStrokeHex = theme.seriesColor(pc.laneIndex).toSvgHex()
+            val nr = pc.nodeRect
+            val cx = pc.center.x
+            val cy = pc.center.y
+            val rad = nr.width / 2f
+            val typeTag = when {
+                pc.commit.type == GitCommitType.Highlight -> "highlight"
+                pc.commit.type == GitCommitType.Reverse -> "reverse"
+                pc.commit.isMerge -> "merge"
+                else -> "normal"
+            }
+            sb.append("""  <g class="git-commit" data-id="${escapeXml(pc.commit.id)}" data-commit-type="$typeTag">""").append('\n')
+            when (pc.commit.type) {
+                GitCommitType.Highlight -> {
+                    sb.append("""    <rect x="${fmt(nr.x)}" y="${fmt(nr.y)}" width="${fmt(nr.width)}" height="${fmt(nr.height)}" fill="$branchFillHex" stroke="$branchStrokeHex" stroke-width="2.2"/>""").append('\n')
+                    val inset = nr.width * 0.18f
+                    sb.append("""    <rect x="${fmt(nr.x + inset)}" y="${fmt(nr.y + inset)}" width="${fmt(nr.width - inset * 2f)}" height="${fmt(nr.height - inset * 2f)}" fill="$branchStrokeHex"/>""").append('\n')
+                }
+                GitCommitType.Reverse -> {
+                    sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad)}" fill="$bgHex" stroke="$branchStrokeHex" stroke-width="2.2"/>""").append('\n')
+                    val d = rad * 0.52f
+                    sb.append("""    <line x1="${fmt(cx - d)}" y1="${fmt(cy - d)}" x2="${fmt(cx + d)}" y2="${fmt(cy + d)}" stroke="$branchStrokeHex" stroke-width="2"/>""").append('\n')
+                    sb.append("""    <line x1="${fmt(cx - d)}" y1="${fmt(cy + d)}" x2="${fmt(cx + d)}" y2="${fmt(cy - d)}" stroke="$branchStrokeHex" stroke-width="2"/>""").append('\n')
+                }
+                GitCommitType.Normal -> {
+                    if (pc.commit.isMerge) {
+                        sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad)}" fill="$bgHex" stroke="$branchStrokeHex" stroke-width="2.2"/>""").append('\n')
+                        sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad * 0.48f)}" fill="$branchStrokeHex"/>""").append('\n')
+                    } else {
+                        sb.append("""    <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(rad)}" fill="$branchStrokeHex" stroke="$bgHex" stroke-width="1.6"/>""").append('\n')
+                    }
+                }
+            }
+            pc.commitLabelRect?.let { clRect ->
+                appendMultilineText(
+                    sb = sb,
+                    indent = "    ",
+                    centerX = clRect.centerX,
+                    centerY = clRect.centerY,
+                    lines = listOf(pc.commit.id),
+                    colorHex = theme.nodeText.toSvgHex(),
+                    fontSize = theme.captionFontSize.value,
+                    rotationDeg = pc.commitLabelAngleDeg,
+                )
+            }
+            pc.tagRect?.let { tgRect ->
+                sb.append("""    <rect x="${fmt(tgRect.x)}" y="${fmt(tgRect.y)}" width="${fmt(tgRect.width)}" height="${fmt(tgRect.height)}" rx="4" fill="${theme.warningFill.toSvgHex()}" stroke="${theme.warningBorder.toSvgHex()}" stroke-width="1.3"/>""").append('\n')
+                appendMultilineText(sb, "    ", tgRect.centerX, tgRect.centerY, listOf(pc.commit.tag.orEmpty()), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+            }
+            sb.append("""  </g>""").append('\n')
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [TimelineDiagram] and [TimelineDiagramLayout] to a standalone SVG string.
+     */
+    fun exportTimelineToSvg(
+        diagram: TimelineDiagram,
+        layout: TimelineDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        for (s in layout.sections) {
+            val r = s.rect
+            val fillHex = theme.seriesFill(s.sectionIndex).toSvgHex()
+            val strokeHex = theme.seriesColor(s.sectionIndex).toSvgHex()
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+        }
+        sb.append("""  <line x1="${fmt(layout.spineStart.x)}" y1="${fmt(layout.spineStart.y)}" x2="${fmt(layout.spineEnd.x)}" y2="${fmt(layout.spineEnd.y)}" stroke="${theme.edge.toSvgHex()}" stroke-width="2"/>""").append('\n')
+        for (pp in layout.periods) {
+            val strokeHex = theme.seriesColor(pp.colorIndex).toSvgHex()
+            val fillHex = theme.seriesFill(pp.colorIndex).toSvgHex()
+            val cs = pp.connectorStart
+            val ce = pp.connectorEnd
+            if (cs != null && ce != null) {
+                sb.append("""  <line x1="${fmt(cs.x)}" y1="${fmt(cs.y)}" x2="${fmt(ce.x)}" y2="${fmt(ce.y)}" stroke="$strokeHex" stroke-width="1.4" stroke-dasharray="4,3"/>""").append('\n')
+            }
+            val r = pp.rect
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(pp.period.title).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            for (ev in pp.events) {
+                val er = ev.rect
+                sb.append("""  <rect x="${fmt(er.x)}" y="${fmt(er.y)}" width="${fmt(er.width)}" height="${fmt(er.height)}" rx="5" fill="${theme.nodeFill.toSvgHex()}" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
+                appendMultilineText(sb, "  ", er.centerX, er.centerY, plainTextLabel(ev.text).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            }
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [JourneyDiagram] and [JourneyDiagramLayout] to a standalone SVG string.
+     */
+    fun exportJourneyToSvg(
+        diagram: JourneyDiagram,
+        layout: JourneyDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val bgHex = theme.background.toSvgHex()
+        for (al in layout.actorLegend) {
+            sb.append("""  <circle cx="${fmt(al.circleCenter.x)}" cy="${fmt(al.circleCenter.y)}" r="${fmt(al.circleRadius)}" fill="${theme.seriesFill(al.actorIndex).toSvgHex()}" stroke="${theme.seriesColor(al.actorIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
+            appendMultilineText(sb, "  ", al.labelRect.centerX, al.labelRect.centerY, plainTextLabel(al.actor).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+        }
+        for (s in layout.sections) {
+            val r = s.rect
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.seriesFill(s.sectionIndex).toSvgHex()}" stroke="${theme.seriesColor(s.sectionIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+        }
+        val spineHex = theme.nodeBorder.toSvgHex()
+        sb.append("""  <line x1="${fmt(layout.spineStart.x)}" y1="${fmt(layout.spineStart.y)}" x2="${fmt(layout.spineEnd.x)}" y2="${fmt(layout.spineEnd.y)}" stroke="$spineHex" stroke-width="2.4"/>""").append('\n')
+        appendSvgMarker(sb, layout.spineEnd, layout.spineStart, SvgMarker.FilledArrow, spineHex, bgHex)
+
+        val faceFillHex = theme.noteFill.toSvgHex()
+        val faceStrokeHex = theme.noteBorder.toSvgHex()
+        val featHex = theme.noteText.toSvgHex()
+        for (pt in layout.tasks) {
+            sb.append("""  <line x1="${fmt(pt.lineStart.x)}" y1="${fmt(pt.lineStart.y)}" x2="${fmt(pt.lineEnd.x)}" y2="${fmt(pt.lineEnd.y)}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1.3" stroke-dasharray="4,3"/>""").append('\n')
+            val r = pt.cardRect
+            val fillHex = theme.seriesFill(pt.sectionIndex).toSvgHex()
+            val strokeHex = theme.seriesColor(pt.sectionIndex).toSvgHex()
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
+            val taskText = "${pt.task.label} (${pt.task.score})"
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(taskText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            for (dot in pt.actorDots) {
+                sb.append("""  <circle cx="${fmt(dot.center.x)}" cy="${fmt(dot.center.y)}" r="${fmt(dot.radius)}" fill="${theme.seriesFill(dot.actorIndex).toSvgHex()}" stroke="${theme.seriesColor(dot.actorIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
+            }
+            val fc = pt.faceCenter
+            val fr = pt.faceRadius
+            sb.append("""  <circle class="journey-face" data-mood="${pt.mood.name.lowercase()}" cx="${fmt(fc.x)}" cy="${fmt(fc.y)}" r="${fmt(fr)}" fill="$faceFillHex" stroke="$faceStrokeHex" stroke-width="1.6"/>""").append('\n')
+            val mY = fc.y + fr * 0.25f
+            val mSpan = fr * 0.36f
+            val mouthD = when (pt.mood) {
+                JourneyMood.Happy -> "M ${fmt(fc.x - mSpan)} ${fmt(mY - 2f)} Q ${fmt(fc.x)} ${fmt(mY + 4f)} ${fmt(fc.x + mSpan)} ${fmt(mY - 2f)}"
+                JourneyMood.Sad -> "M ${fmt(fc.x - mSpan)} ${fmt(mY + 2f)} Q ${fmt(fc.x)} ${fmt(mY - 4f)} ${fmt(fc.x + mSpan)} ${fmt(mY + 2f)}"
+                JourneyMood.Neutral -> "M ${fmt(fc.x - mSpan)} ${fmt(mY)} L ${fmt(fc.x + mSpan)} ${fmt(mY)}"
+            }
+            sb.append("""  <path d="$mouthD" fill="none" stroke="$featHex" stroke-width="1.5"/>""").append('\n')
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [QuadrantDiagram] and [QuadrantDiagramLayout] to a standalone SVG string.
+     */
+    fun exportQuadrantToSvg(
+        diagram: QuadrantDiagram,
+        layout: QuadrantDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        // 1. Quadrant background boxes (drawn first so data points sit on top)
+        for (q in layout.quadrants) {
+            val r = q.rect
+            val fillHex = theme.seriesFill(q.quadrantNumber - 1).toSvgHex()
+            sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
+            val lbl = q.text
+            val lr = q.labelRect
+            if (!lbl.isNullOrBlank() && lr != null) {
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+            }
+        }
+        // 2. Axis labels (including rotated Y-axis labels)
+        for (al in layout.axisLabels) {
+            appendMultilineText(
+                sb = sb,
+                indent = "  ",
+                centerX = al.rect.centerX,
+                centerY = al.rect.centerY,
+                lines = plainTextLabel(al.text).split('\n'),
+                colorHex = theme.edgeLabelText.toSvgHex(),
+                fontSize = theme.edgeLabelFontSize.value,
+                rotationDeg = al.rotationDeg,
+            )
+        }
+        // 3. Data points and labels (drawn above quadrant backgrounds)
+        for (pt in layout.points) {
+            val fillHex = (parseCssColor(pt.point.style?.color) ?: theme.accentFill).toSvgHex()
+            val strokeHex = (parseCssColor(pt.point.style?.strokeColor) ?: theme.accentBorder).toSvgHex()
+            sb.append("""  <circle class="quadrant-point" cx="${fmt(pt.center.x)}" cy="${fmt(pt.center.y)}" r="${fmt(pt.radius)}" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(pt.strokeWidth)}"/>""").append('\n')
+            appendMultilineText(sb, "  ", pt.labelRect.centerX, pt.labelRect.centerY, plainTextLabel(pt.point.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [XyChartDiagram] and [XyChartDiagramLayout] to a standalone SVG string.
+     */
+    fun exportXyChartToSvg(
+        diagram: XyChartDiagram,
+        layout: XyChartDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val borderHex = theme.nodeBorder.toSvgHex()
+        val gridHex = theme.subgraphBorder.toSvgHex()
+
+        // 1. Grid lines, axes, ticks, and rotated axis titles
+        for (tk in layout.xTicks + layout.yTicks) {
+            sb.append("""  <line x1="${fmt(tk.gridStart.x)}" y1="${fmt(tk.gridStart.y)}" x2="${fmt(tk.gridEnd.x)}" y2="${fmt(tk.gridEnd.y)}" stroke="$gridHex" stroke-width="0.75" stroke-dasharray="3,3"/>""").append('\n')
+            sb.append("""  <line x1="${fmt(tk.lineStart.x)}" y1="${fmt(tk.lineStart.y)}" x2="${fmt(tk.lineEnd.x)}" y2="${fmt(tk.lineEnd.y)}" stroke="$borderHex" stroke-width="1.2"/>""").append('\n')
+            appendMultilineText(sb, "  ", tk.labelRect.centerX, tk.labelRect.centerY, plainTextLabel(tk.label).split('\n'), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
+        }
+        sb.append("""  <line x1="${fmt(layout.xAxisLineStart.x)}" y1="${fmt(layout.xAxisLineStart.y)}" x2="${fmt(layout.xAxisLineEnd.x)}" y2="${fmt(layout.xAxisLineEnd.y)}" stroke="$borderHex" stroke-width="1.5"/>""").append('\n')
+        sb.append("""  <line x1="${fmt(layout.yAxisLineStart.x)}" y1="${fmt(layout.yAxisLineStart.y)}" x2="${fmt(layout.yAxisLineEnd.x)}" y2="${fmt(layout.yAxisLineEnd.y)}" stroke="$borderHex" stroke-width="1.5"/>""").append('\n')
+        for (at in layout.axisTitles) {
+            appendMultilineText(
+                sb = sb,
+                indent = "  ",
+                centerX = at.rect.centerX,
+                centerY = at.rect.centerY,
+                lines = plainTextLabel(at.text).split('\n'),
+                colorHex = theme.nodeText.toSvgHex(),
+                fontSize = theme.edgeLabelFontSize.value,
+                rotationDeg = at.rotationDeg,
+            )
+        }
+
+        // 2. Bar series (drawn before line series so bars never obscure line plots)
+        for (b in layout.bars) {
+            val r = b.rect
+            val colorHex = theme.seriesColor(b.seriesIndex).toSvgHex()
+            sb.append("""  <rect class="xy-bar" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$colorHex" stroke="$colorHex" stroke-width="1"/>""").append('\n')
+            val dl = b.dataLabel
+            val dlr = b.dataLabelRect
+            if (!dl.isNullOrBlank() && dlr != null) {
+                appendMultilineText(sb, "  ", dlr.centerX, dlr.centerY, plainTextLabel(dl).split('\n'), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+            }
+        }
+
+        // 3. Line series and point markers (drawn above bars; single-point series still emit point markers)
+        val bgHex = theme.background.toSvgHex()
+        for (ls in layout.lines) {
+            val strokeHex = theme.seriesColor(ls.seriesIndex).toSvgHex()
+            if (ls.points.size >= 2) {
+                sb.append("""  <path class="xy-line" d="${buildSvgEdgePath(ls.points.map { it.position })}" fill="none" stroke="$strokeHex" stroke-width="2.2"/>""").append('\n')
+            }
+            for (pt in ls.points) {
+                sb.append("""  <circle class="xy-line-point" cx="${fmt(pt.position.x)}" cy="${fmt(pt.position.y)}" r="3.5" fill="$strokeHex" stroke="$bgHex" stroke-width="1"/>""").append('\n')
+                val lbl = pt.label
+                val lr = pt.labelRect
+                if (!lbl.isNullOrBlank() && lr != null) {
+                    appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                }
+            }
+        }
+
+        // 4. Legend items
+        for (li in layout.legendItems) {
+            val mr = li.markerRect
+            val colorHex = theme.seriesColor(li.seriesIndex).toSvgHex()
+            sb.append("""  <rect x="${fmt(mr.x)}" y="${fmt(mr.y)}" width="${fmt(mr.width)}" height="${fmt(mr.height)}" fill="$colorHex"/>""").append('\n')
+            val legendText = li.series.title ?: li.series.id
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(legendText).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [KanbanDiagram] and [KanbanDiagramLayout] to a standalone SVG string.
+     */
+    fun exportKanbanToSvg(
+        diagram: KanbanDiagram,
+        layout: KanbanDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+        density: Float = 1f,
+    ): String {
+        val dens = density.coerceAtLeast(0.01f)
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val bgHex = theme.background.toSvgHex()
+        val borderHex = theme.nodeBorder.toSvgHex()
+
+        for (col in layout.columns) {
+            val cr = col.rect
+            val colFillHex = lerp(theme.seriesFill(col.columnIndex), theme.background, 0.45f).toSvgHex()
+            sb.append("""  <rect x="${fmt(cr.x)}" y="${fmt(cr.y)}" width="${fmt(cr.width)}" height="${fmt(cr.height)}" rx="6" fill="$colFillHex" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1.2"/>""").append('\n')
+            val colHdr = if (!col.column.icon.isNullOrBlank()) {
+                "${resolveMermaidIconGlyph(col.column.icon)} ${col.column.label}"
+            } else {
+                col.column.label
+            }
+            appendMultilineText(sb, "  ", col.headerRect.centerX, col.headerRect.centerY, plainTextLabel(colHdr).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+
+            for (pt in col.tasks) {
+                val t = pt.task
+                val r = pt.cardRect
+                val ticketUrl = t.ticket?.takeIf { it.isNotBlank() }?.let { diagram.resolveTicketUrl(it) }
+                if (ticketUrl != null) sb.append("""  <a href="${escapeXml(ticketUrl)}">""").append('\n')
+                sb.append("""  <g class="kanban-card" data-id="${escapeXml(t.id)}">""").append('\n')
+                sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="5" fill="$bgHex" stroke="$borderHex" stroke-width="1.1"/>""").append('\n')
+
+                val stripeColor = when (t.priority) {
+                    KanbanPriority.VeryHigh -> theme.criticalBorder
+                    KanbanPriority.High -> theme.warningBorder
+                    KanbanPriority.Medium -> null
+                    KanbanPriority.Low -> theme.accentBorder
+                    KanbanPriority.VeryLow -> theme.seriesColor(1)
+                    null -> null
+                }
+                if (stripeColor != null && t.priority != null) {
+                    val lineX = r.x + 3f * dens
+                    val insetY = 3.5f * dens
+                    sb.append("""    <line class="kanban-priority-stripe" data-priority="${t.priority.name.lowercase()}" x1="${fmt(lineX)}" y1="${fmt(r.y + insetY)}" x2="${fmt(lineX)}" y2="${fmt(r.bottom - insetY)}" stroke="${stripeColor.toSvgHex()}" stroke-width="${fmt(3.6f * dens)}"/>""").append('\n')
+                }
+
+                val display = if (!t.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(t.icon)} ${t.label}" else t.label
+                val taskFont = theme.edgeLabelFontSize.value
+                val lines = wrapSvgLines(plainTextLabel(display), taskFont, pt.labelRect.width.coerceAtLeast(60f * dens))
+                appendMultilineText(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, lines, theme.nodeText.toSvgHex(), taskFont)
+
+                val tktRect = pt.ticketRect
+                if (tktRect != null && !t.ticket.isNullOrBlank()) {
+                    appendMultilineText(sb, "    ", tktRect.centerX, tktRect.centerY, listOf(plainTextLabel(t.ticket)), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                }
+                val asgRect = pt.assignedRect
+                if (asgRect != null && !t.assigned.isNullOrBlank()) {
+                    appendMultilineText(sb, "    ", asgRect.centerX, asgRect.centerY, listOf(plainTextLabel(t.assigned)), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                }
+                sb.append("""  </g>""").append('\n')
+                if (ticketUrl != null) sb.append("""  </a>""").append('\n')
+            }
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [SankeyDiagram] and [SankeyDiagramLayout] to a standalone SVG string.
+     */
+    fun exportSankeyToSvg(
+        diagram: SankeyDiagram,
+        layout: SankeyDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        for (pl in layout.links) {
+            val strokeHex = theme.seriesColor(pl.sourceNodeIndex).toSvgHex()
+            val pathD = "M ${fmt(pl.start.x)} ${fmt(pl.start.y)} C ${fmt(pl.control1.x)} ${fmt(pl.control1.y)}, ${fmt(pl.control2.x)} ${fmt(pl.control2.y)}, ${fmt(pl.end.x)} ${fmt(pl.end.y)}"
+            sb.append("""  <path class="sankey-link" d="$pathD" fill="none" stroke="$strokeHex" stroke-width="${fmt(pl.thickness.coerceAtLeast(1f))}" stroke-opacity="0.45"/>""").append('\n')
+        }
+        for (pn in layout.nodes) {
+            val r = pn.rect
+            sb.append("""  <rect class="sankey-node" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="${theme.seriesColor(pn.nodeIndex).toSvgHex()}" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
+            if (pn.labelText.isNotBlank()) {
+                appendMultilineText(sb, "  ", pn.labelRect.centerX, pn.labelRect.centerY, plainTextLabel(pn.labelText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            }
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [PacketDiagram] and [PacketDiagramLayout] to a standalone SVG string.
+     */
+    fun exportPacketToSvg(
+        diagram: PacketDiagram,
+        layout: PacketDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val strokeHex = theme.nodeBorder.toSvgHex()
+        val textHex = theme.nodeText.toSvgHex()
+        for (pb in layout.blocks) {
+            val r = pb.rect
+            val fillHex = (if (pb.isSingleBit) theme.subgraphFill else theme.nodeFill).toSvgHex()
+            sb.append("""  <rect class="packet-block" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="$strokeHex" stroke-width="1.35"/>""").append('\n')
+            if (layout.showBits) {
+                val bitY = (r.y - 4f).coerceAtLeast(10f)
+                if (pb.isSingleBit) {
+                    sb.append("""  <text x="${fmt(r.centerX)}" y="${fmt(bitY)}" text-anchor="middle" fill="$textHex" font-family="sans-serif" font-size="9.5">${escapeXml(pb.leadingBitLabel)}</text>""").append('\n')
+                } else {
+                    sb.append("""  <text x="${fmt(r.x + 3f)}" y="${fmt(bitY)}" text-anchor="start" fill="$textHex" font-family="sans-serif" font-size="9.5">${escapeXml(pb.leadingBitLabel)}</text>""").append('\n')
+                    sb.append("""  <text x="${fmt(r.right - 3f)}" y="${fmt(bitY)}" text-anchor="end" fill="$textHex" font-family="sans-serif" font-size="9.5">${escapeXml(pb.trailingBitLabel)}</text>""").append('\n')
+                }
+            }
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(pb.block.label).split('\n'), textHex, theme.edgeLabelFontSize.value)
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [RadarDiagram] and [RadarDiagramLayout] to a standalone SVG string.
+     */
+    fun exportRadarToSvg(
+        diagram: RadarDiagram,
+        layout: RadarDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val cx = layout.center.x
+        val cy = layout.center.y
+        val gridHex = theme.subgraphBorder.toSvgHex()
+        val numAxes = layout.axes.size
+
+        for (t in layout.ticks downTo 1) {
+            val r = layout.radius * t.toFloat() / layout.ticks.coerceAtLeast(1).toFloat()
+            if (layout.graticule == RadarGraticule.Polygon && numAxes >= 3) {
+                val pts = (0 until numAxes).joinToString(" ") { i ->
+                    val angle = layout.axes[i].angleRad.toDouble()
+                    "${fmt(cx + (r * cos(angle)).toFloat())},${fmt(cy + (r * sin(angle)).toFloat())}"
+                }
+                sb.append("""  <polygon points="$pts" fill="none" stroke="$gridHex" stroke-width="1"/>""").append('\n')
+            } else {
+                sb.append("""  <circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}" fill="none" stroke="$gridHex" stroke-width="1"/>""").append('\n')
+            }
+        }
+        for (pa in layout.axes) {
+            sb.append("""  <line x1="${fmt(cx)}" y1="${fmt(cy)}" x2="${fmt(pa.lineEnd.x)}" y2="${fmt(pa.lineEnd.y)}" stroke="$gridHex" stroke-width="1"/>""").append('\n')
+            appendMultilineText(sb, "  ", pa.labelRect.centerX, pa.labelRect.centerY, plainTextLabel(pa.axis.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+        }
+        val fillAlpha = diagram.config.curveOpacity.coerceIn(0f, 1f)
+        for (pc in layout.curves) {
+            if (pc.points.isEmpty()) continue
+            val cColor = theme.seriesColor(pc.curveIndex)
+            val strokeHex = cColor.toSvgHex()
+            val fillHex = cColor.copy(alpha = fillAlpha).toSvgHex()
+            if (pc.points.size >= 2) {
+                val pts = pc.points.joinToString(" ") { "${fmt(it.x)},${fmt(it.y)}" }
+                sb.append("""  <polygon class="radar-curve" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(diagram.config.curveStrokeWidth.coerceAtLeast(1f))}"/>""").append('\n')
+            }
+            for (pt in pc.points) {
+                sb.append("""  <circle cx="${fmt(pt.x)}" cy="${fmt(pt.y)}" r="3.2" fill="$strokeHex"/>""").append('\n')
+            }
+        }
+        for (li in layout.legendItems) {
+            val cColor = theme.seriesColor(li.curveIndex)
+            val sr = li.swatchRect
+            sb.append("""  <rect x="${fmt(sr.x)}" y="${fmt(sr.y)}" width="${fmt(sr.width)}" height="${fmt(sr.height)}" fill="${cColor.copy(alpha = max(0.35f, fillAlpha)).toSvgHex()}" stroke="${cColor.toSvgHex()}" stroke-width="1.2"/>""").append('\n')
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(li.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [BlockDiagram] and [BlockDiagramLayout] to a standalone SVG string.
+     */
+    fun exportBlockToSvg(
+        diagram: BlockDiagram,
+        layout: BlockDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val bgHex = theme.background.toSvgHex()
+        val edgeHex = theme.edge.toSvgHex()
+
+        // 1. Composite containers (drawn first so inner blocks and block arrows sit on top)
+        for (pb in layout.blocks) {
+            if (!pb.isCompositeContainer) continue
+            val r = pb.rect
+            val fillHex = (parseCssColor(pb.item.style?.fill) ?: theme.subgraphFill).toSvgHex()
+            val strokeHex = (parseCssColor(pb.item.style?.stroke) ?: theme.subgraphBorder).toSvgHex()
+            val textHex = (parseCssColor(pb.item.style?.textColor) ?: theme.subgraphText).toSvgHex()
+            sb.append("""  <rect class="block-container" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
+            if (pb.item.label.isNotBlank()) {
+                val lr = pb.labelRect ?: DiagramRect(r.x, r.y, r.width, 22f)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(pb.item.label).split('\n'), textHex, theme.subgraphFontSize.value)
+            }
+        }
+
+        // 2. Leaf blocks and directional block arrows
+        for (pb in layout.blocks) {
+            if (pb.isCompositeContainer || pb.item.shape == BlockShape.Space) continue
+            val r = pb.rect
+            val fillHex = (parseCssColor(pb.item.style?.fill) ?: theme.nodeFill).toSvgHex()
+            val strokeHex = (parseCssColor(pb.item.style?.stroke) ?: theme.nodeBorder).toSvgHex()
+            val textHex = (parseCssColor(pb.item.style?.textColor) ?: theme.nodeText).toSvgHex()
+            val strokeW = pb.item.style?.strokeWidth ?: 1.3f
+
+            sb.append("""  <g class="block-node" data-id="${escapeXml(pb.item.id)}">""").append('\n')
+            if (pb.item.shape == BlockShape.BlockArrow) {
+                val dir = pb.item.arrowDirections.firstOrNull() ?: BlockArrowDir.Right
+                val pts = buildBlockArrowPoints(r, dir)
+                sb.append("""    <polygon class="block-arrow" data-dir="${dir.name.lowercase()}" points="$pts" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
+            } else {
+                appendSvgNodeShape(sb, mapBlockNodeShape(pb.item.shape), r, fillHex, strokeHex, strokeW)
+            }
+            if (pb.item.label.isNotBlank()) {
+                appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(pb.item.label).split('\n'), textHex, theme.nodeFontSize.value)
+            }
+            sb.append("""  </g>""").append('\n')
+        }
+
+        // 3. Edges
+        for (pe in layout.edges) {
+            val pts = pe.points
+            if (pts.size < 2) continue
+            val dashAttr = if (pe.edge.pattern == BlockEdgePattern.Dotted) """ stroke-dasharray="4,3"""" else ""
+            sb.append("""  <path class="block-edge" d="${buildSvgEdgePath(pts)}" fill="none" stroke="$edgeHex" stroke-width="1.5"$dashAttr/>""").append('\n')
+            val startToward = pts.drop(1).firstOrNull { it != pts.first() } ?: pts[1]
+            val endFrom = pts.dropLast(1).lastOrNull { it != pts.last() } ?: pts[pts.lastIndex - 1]
+            appendSvgMarker(sb, pts.first(), startToward, mapBlockEndMarker(pe.edge.startHead), edgeHex, bgHex)
+            appendSvgMarker(sb, pts.last(), endFrom, mapBlockEndMarker(pe.edge.endHead), edgeHex, bgHex)
+            val lr = pe.labelRect
+            val lbl = pe.edge.label
+            if (lr != null && !lbl.isNullOrBlank()) {
+                sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+            }
+        }
+
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    /**
+     * Exports a pre-laid-out [TreemapDiagram] and [TreemapDiagramLayout] to a standalone SVG string.
+     */
+    fun exportTreemapToSvg(
+        diagram: TreemapDiagram,
+        layout: TreemapDiagramLayout,
+        theme: MaradonaTheme = MaradonaTheme.light(),
+    ): String {
+        val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        for (sec in layout.sections) {
+            val r = sec.rect
+            val baseCol = theme.seriesColor(sec.colorIndex)
+            val fillHex = (parseCssColor(sec.node.style?.fill)?.copy(alpha = 0.25f) ?: baseCol.copy(alpha = 0.18f)).toSvgHex()
+            val strokeHex = (parseCssColor(sec.node.style?.stroke) ?: baseCol.copy(alpha = 0.65f)).toSvgHex()
+            val textHex = (parseCssColor(sec.node.style?.textColor) ?: theme.nodeText).toSvgHex()
+            sb.append("""  <rect class="treemap-section" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="4" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
+            val hdrText = if (layout.showValues && sec.formattedValue.isNotBlank()) "${sec.node.name} (${sec.formattedValue})" else sec.node.name
+            appendMultilineText(sb, "  ", sec.headerRect.centerX, sec.headerRect.centerY, plainTextLabel(hdrText).split('\n'), textHex, theme.subgraphFontSize.value)
+        }
+        for (lf in layout.leaves) {
+            val r = lf.rect
+            val baseCol = theme.seriesColor(lf.colorIndex)
+            val fillHex = (parseCssColor(lf.node.style?.fill)?.copy(alpha = 0.42f) ?: baseCol.copy(alpha = 0.34f)).toSvgHex()
+            val strokeHex = (parseCssColor(lf.node.style?.stroke) ?: baseCol).toSvgHex()
+            val textHex = (parseCssColor(lf.node.style?.textColor) ?: theme.nodeText).toSvgHex()
+            sb.append("""  <rect class="treemap-leaf" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="3" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
+            val leafLines = if (layout.showValues && lf.formattedValue.isNotBlank()) {
+                plainTextLabel(lf.node.name).split('\n') + listOf(lf.formattedValue)
+            } else {
+                plainTextLabel(lf.node.name).split('\n')
+            }
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, leafLines, textHex, theme.nodeFontSize.value)
+        }
+        sb.append("</svg>")
+        return sb.toString()
+    }
+
+    private fun mapBlockNodeShape(shape: BlockShape): NodeShape = when (shape) {
+        BlockShape.Rect, BlockShape.BlockArrow, BlockShape.Composite, BlockShape.Space -> NodeShape.Rect
+        BlockShape.Round -> NodeShape.RoundedRect
+        BlockShape.Stadium -> NodeShape.Stadium
+        BlockShape.Subroutine -> NodeShape.Subroutine
+        BlockShape.Cylinder -> NodeShape.Cylinder
+        BlockShape.Circle -> NodeShape.Circle
+        BlockShape.DoubleCircle -> NodeShape.DoubleCircle
+        BlockShape.Asymmetric -> NodeShape.Asymmetric
+        BlockShape.Diamond -> NodeShape.Diamond
+        BlockShape.Hexagon -> NodeShape.Hexagon
+        BlockShape.LeanRight -> NodeShape.Parallelogram
+        BlockShape.LeanLeft -> NodeShape.ParallelogramAlt
+        BlockShape.Trapezoid -> NodeShape.Trapezoid
+        BlockShape.InvTrapezoid -> NodeShape.TrapezoidAlt
+    }
+
+    private fun buildBlockArrowPoints(r: DiagramRect, dir: BlockArrowDir): String {
+        val x = r.x
+        val y = r.y
+        val right = r.right
+        val bottom = r.bottom
+        val cx = r.centerX
+        val cy = r.centerY
+        val sw = r.width * 0.22f
+        val sh = r.height * 0.22f
+        return when (dir) {
+            BlockArrowDir.Right ->
+                "${fmt(x)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(x)},${fmt(bottom - sh)}"
+            BlockArrowDir.Left ->
+                "${fmt(right)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y)} ${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)}"
+            BlockArrowDir.Down ->
+                "${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right - sw)},${fmt(bottom - sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x + sw)},${fmt(bottom - sh)}"
+            BlockArrowDir.Up ->
+                "${fmt(x + sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(right - sw)},${fmt(y + sh)} ${fmt(right)},${fmt(y + sh)} ${fmt(cx)},${fmt(y)} ${fmt(x)},${fmt(y + sh)} ${fmt(x + sw)},${fmt(y + sh)}"
+            BlockArrowDir.X ->
+                "${fmt(x)},${fmt(cy)} ${fmt(x + sw)},${fmt(y)} ${fmt(right - sw)},${fmt(y)} ${fmt(right)},${fmt(cy)} ${fmt(right - sw)},${fmt(bottom)} ${fmt(x + sw)},${fmt(bottom)}"
+            BlockArrowDir.Y ->
+                "${fmt(cx)},${fmt(y)} ${fmt(right)},${fmt(y + sh)} ${fmt(right)},${fmt(bottom - sh)} ${fmt(cx)},${fmt(bottom)} ${fmt(x)},${fmt(bottom - sh)} ${fmt(x)},${fmt(y + sh)}"
+        }
+    }
+
+    private fun mapBlockEndMarker(head: BlockArrowHead): SvgMarker = when (head) {
+        BlockArrowHead.None -> SvgMarker.None
+        BlockArrowHead.Point -> SvgMarker.FilledArrow
+        BlockArrowHead.Circle -> SvgMarker.Circle
+        BlockArrowHead.Cross -> SvgMarker.Cross
+    }
+
     private fun c4WrapWidth(cardWidth: Float, dens: Float): Float =
         (cardWidth - 28f * dens).coerceAtLeast(80f * dens)
 
@@ -1792,13 +2834,19 @@ object MaradonaSvgExporter {
         lines: List<String>,
         colorHex: String,
         fontSize: Float,
+        rotationDeg: Float = 0f,
     ) {
         val lineH = fontSize * 1.35f
         val startY = centerY - ((lines.size - 1) * lineH) / 2f + fontSize * 0.35f
+        val rotateAttr = if (rotationDeg != 0f) {
+            """ transform="rotate(${fmt(rotationDeg)} ${fmt(centerX)} ${fmt(centerY)})""""
+        } else {
+            ""
+        }
         for ((idx, textLine) in lines.withIndex()) {
             val ly = startY + idx * lineH
             sb.append(
-                """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}">${escapeXml(textLine)}</text>""",
+                """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>${escapeXml(textLine)}</text>""",
             ).append('\n')
         }
     }
