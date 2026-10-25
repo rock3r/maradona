@@ -15,6 +15,12 @@ data class DiagramRect(val x: Float, val y: Float, val width: Float, val height:
     val bottom: Float get() = y + height
     val centerX: Float get() = x + width / 2f
     val centerY: Float get() = y + height / 2f
+
+    fun intersects(other: DiagramRect): Boolean =
+        x <= other.right && right >= other.x && y <= other.bottom && bottom >= other.y
+
+    fun inflate(margin: Float): DiagramRect =
+        DiagramRect(x - margin, y - margin, width + margin * 2f, height + margin * 2f)
 }
 
 data class PositionedNode(val node: FlowNode, val rect: DiagramRect)
@@ -24,6 +30,49 @@ data class PositionedEdge(
     /** Orthogonal polyline from the source border to the target border. */
     val points: List<DiagramPoint>,
     val labelRect: DiagramRect? = null,
+) {
+    /** Axis-aligned bounding box of all route points and optional label rect, inflated by [margin]. */
+    fun bounds(margin: Float = 0f): DiagramRect {
+        if (points.isEmpty()) return DiagramRect(0f, 0f, 0f, 0f)
+        var minX = Float.POSITIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        for (p in points) {
+            if (p.x < minX) minX = p.x
+            if (p.x > maxX) maxX = p.x
+            if (p.y < minY) minY = p.y
+            if (p.y > maxY) maxY = p.y
+        }
+        labelRect?.let { lr ->
+            if (lr.x < minX) minX = lr.x
+            if (lr.right > maxX) maxX = lr.right
+            if (lr.y < minY) minY = lr.y
+            if (lr.bottom > maxY) maxY = lr.bottom
+        }
+        return DiagramRect(
+            x = minX - margin,
+            y = minY - margin,
+            width = (maxX - minX) + margin * 2f,
+            height = (maxY - minY) + margin * 2f,
+        )
+    }
+}
+
+/**
+ * Diagnostic counters reported by [dev.maradona.render.MaradonaLayout] and
+ * [dev.maradona.render.MaradonaDiagram] when viewport-lazy composition and
+ * underlay culling are active.
+ */
+data class MaradonaViewportStats(
+    val composedNodes: Int,
+    val totalNodes: Int,
+    val composedEdgeLabels: Int,
+    val totalEdgeLabels: Int,
+    val drawnEdges: Int,
+    val totalEdges: Int,
+    val drawnSubgraphs: Int,
+    val totalSubgraphs: Int,
 )
 
 data class PositionedSubgraph(val subgraph: Subgraph, val rect: DiagramRect)

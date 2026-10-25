@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import dev.maradona.layout.DiagramLayout
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.model.ArrowHead
 import dev.maradona.model.EdgeStroke
 import kotlin.math.atan2
@@ -20,10 +21,21 @@ import kotlin.math.sqrt
  * Edges and subgraph boxes are pure geometry, drawn on a single underlay
  * behind the node composables. Nodes and labels stay real composables;
  * only this non-textual layer is canvas-drawn.
+ *
+ * When [visibleViewport] is non-null, subgraphs and edges whose bounding
+ * boxes do not intersect [visibleViewport] are skipped, while any edge
+ * whose route crosses [visibleViewport] is drawn in full even when both
+ * endpoint nodes lie outside the viewport.
  */
-fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
+fun DrawScope.drawDiagramUnderlay(
+    layout: DiagramLayout,
+    theme: MaradonaTheme,
+    visibleViewport: DiagramRect? = null,
+) {
+    val edgeCullMargin = 20f * unit
     for (sg in layout.subgraphs) {
         val r = sg.rect
+        if (visibleViewport != null && !r.intersects(visibleViewport)) continue
         val topLeft = Offset(r.x, r.y)
         val size = androidx.compose.ui.geometry.Size(r.width, r.height)
         drawRect(
@@ -41,6 +53,7 @@ fun DrawScope.drawDiagramUnderlay(layout: DiagramLayout, theme: MaradonaTheme) {
     for (positioned in layout.edges) {
         val edge = positioned.edge
         if (edge.stroke == EdgeStroke.Invisible || positioned.points.size < 2) continue
+        if (visibleViewport != null && !positioned.bounds(edgeCullMargin).intersects(visibleViewport)) continue
         val pts = positioned.points
         val edgeColor = parseCssColor(edge.style?.stroke) ?: theme.edge
         // Stop the line where the head starts so the stroke end doesn't poke

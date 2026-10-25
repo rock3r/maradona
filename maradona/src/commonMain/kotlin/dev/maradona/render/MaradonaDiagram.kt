@@ -40,12 +40,14 @@ import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.BlockDiagramLayout
 import dev.maradona.layout.C4DiagramLayout
 import dev.maradona.layout.ClassDiagramLayout
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.GanttDiagramLayout
 import dev.maradona.layout.GitGraphDiagramLayout
 import dev.maradona.layout.JourneyDiagramLayout
 import dev.maradona.layout.KanbanDiagramLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.PacketDiagramLayout
 import dev.maradona.layout.PieDiagramLayout
@@ -101,8 +103,13 @@ enum class DiagramZoom {
  * nodes, and 5,000 edges so untrusted inputs cannot exhaust memory. Every node
  * is rendered through the standard Compose layout pipeline (preserving native
  * text measurement, `click` actions, and accessibility semantics without a
- * separate Canvas-only fast path); layout and frame times vary with graph
- * density and may slow down when thousands of nodes are visible simultaneously.
+ * separate Canvas-only fast path). When [viewportCullingEnabled] is `true`
+ * (the default), off-screen nodes, edge labels, subgraph headers, and underlay
+ * edges/subgraphs outside the visible viewport (plus overscan) are lazily
+ * skipped during composition and drawing while preserving edges that cross the
+ * viewport between off-screen endpoints; however, when zoomed out so that
+ * thousands of nodes are simultaneously visible inside the viewport, layout
+ * and frame times may still be slow.
  */
 @Composable
 fun MaradonaDiagram(
@@ -111,6 +118,8 @@ fun MaradonaDiagram(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     autoDirection: Boolean = true,
     zoomEnabled: Boolean = true,
+    /** Whether to lazily skip composing/drawing off-screen flowchart items outside the visible viewport. */
+    viewportCullingEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
     initialZoom: DiagramZoom = DiagramZoom.Fit,
     /**
@@ -123,6 +132,8 @@ fun MaradonaDiagram(
     initialPan: Offset? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
     onNaturalSize: (IntSize) -> Unit = {},
+    /** Reports diagnostic counts for viewport-lazy composition and underlay culling. */
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     /**
      * Optional callback invoked when a diagram node, class, task, C4 element,
      * requirement element, or Kanban ticket is clicked/activated.
@@ -346,6 +357,22 @@ fun MaradonaDiagram(
             // scaled: doing so would zoom text quadratically while dp-sized
             // shapes zoom linearly, and text bursts out of its nodes.
             val zoomedDensity = Density(density.density * scale, density.fontScale)
+            val overscanPx = 96f * density.density
+            val viewportParams = if (viewportCullingEnabled && availW > 0f && availH > 0f) {
+                FlowchartViewportParams(
+                    viewportWidthPx = availW,
+                    viewportHeightPx = availH,
+                    gestureZoom = gestureZoom,
+                    panPx = pan,
+                    gesturePanPx = gesturePan,
+                    initialPan = initialPan,
+                    initialViewApplied = initialViewApplied,
+                    overscanPx = overscanPx,
+                    scaleKnownOnFirstFrame = initialScale != null || (naturalSize.width > 0 && naturalSize.height > 0),
+                )
+            } else {
+                null
+            }
             // The pan/zoom transform lives on a viewport-sized wrapper, not on
             // the diagram node itself: the node can be far wider than any GPU
             // texture (a zoomed-in LR chart is tens of thousands of px), and a
@@ -356,11 +383,23 @@ fun MaradonaDiagram(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        val curCenterX = (availW - naturalSize.width * scale) / 2f
+                        val curCenterY = (availH - naturalSize.height * scale) / 2f
+                        val curPan = if (!initialViewApplied && initialPan != null && naturalSize.width > 0 && naturalSize.height > 0) {
+                            val rangeX = naturalSize.width * scale - availW
+                            val rangeY = naturalSize.height * scale - availH
+                            Offset(
+                                if (rangeX > 0f) rangeX / 2f - initialPan.x * rangeX else 0f,
+                                if (rangeY > 0f) rangeY / 2f - initialPan.y * rangeY else 0f,
+                            )
+                        } else {
+                            pan
+                        }
                         scaleX = gestureZoom
                         scaleY = gestureZoom
                         transformOrigin = TransformOrigin(0f, 0f)
-                        translationX = centerX + pan.x + gesturePan.x
-                        translationY = centerY + pan.y + gesturePan.y
+                        translationX = curCenterX + curPan.x + gesturePan.x
+                        translationY = curCenterY + curPan.y + gesturePan.y
                     },
             ) {
                 CompositionLocalProvider(
@@ -390,7 +429,11 @@ fun MaradonaDiagram(
                                 // density-scaled values, so zooming in would spuriously
                                 // flip a horizontal chart to vertical.
                                 availableWidthPx = layoutWidthPx,
+                                viewportResolver = viewportParams?.let { params ->
+                                    { lw, lh -> params.resolve(lw, lh) }
+                                },
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onLayout,
                                 modifier = contentModifier,
                             )
