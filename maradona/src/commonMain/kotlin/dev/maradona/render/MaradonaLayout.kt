@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -26,6 +27,8 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
@@ -56,6 +59,8 @@ private class LayoutHolder {
     var subgraphLabelSizes: Map<String, DiagramSize> = emptyMap()
     var lastDensity: Float = Float.NaN
     var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
     var lastResolvedImageUrls: Set<String> = emptySet()
     var visibleViewport: DiagramRect? = null
 }
@@ -148,6 +153,13 @@ fun MaradonaLayout(
     val densityObj = LocalDensity.current
     val renderDensity = densityObj.density
     val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
     val imageResolver = LocalMaradonaImageResolver.current
     val uriHandler = LocalUriHandler.current
     val distinctImageUrls = remember(chart) {
@@ -180,6 +192,8 @@ fun MaradonaLayout(
             cachedNatural != null &&
             abs(holder.lastDensity - renderDensity) < 1e-4f &&
             abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken &&
             holder.lastResolvedImageUrls == resolvedImageUrls
         ) {
             cachedNatural
@@ -199,6 +213,8 @@ fun MaradonaLayout(
                 holder.subgraphLabelSizes = pre.subgraphLabelSizes
                 holder.lastDensity = renderDensity
                 holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
                 holder.lastResolvedImageUrls = resolvedImageUrls
             }.naturalLayout
         }
