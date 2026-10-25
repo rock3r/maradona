@@ -197,7 +197,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(ganttSvg.contains("Phase 1") && ganttSvg.contains("Design") && ganttSvg.contains("Ship"), "Expected Gantt section and task labels in SVG")
-        assertTrue(ganttSvg.contains("fill=\"#FEE2E2\""), "Expected Gantt critical task fill in SVG")
+        assertTrue(ganttSvg.contains("fill=\"#FFEBE9\"") && ganttSvg.contains("stroke=\"#D14D41\""), "Expected Gantt critical task fill and border in SVG")
 
         val reqSvg = MaradonaSvgExporter.exportToSvg(
             """
