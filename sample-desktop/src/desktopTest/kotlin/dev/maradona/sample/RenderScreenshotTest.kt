@@ -12,10 +12,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import dev.maradona.render.LocalMaradonaImageResolver
 import dev.maradona.render.LocalMaradonaTheme
 import dev.maradona.render.MaradonaDiagram
+import dev.maradona.render.MaradonaImageResolver
 import dev.maradona.render.MaradonaTheme
 import java.io.File
 import javax.imageio.ImageIO
@@ -1169,5 +1173,47 @@ class RenderScreenshotTest {
         assertTrue(jewelDarkCardPixels > 1_000, "Jewel Dark surface #2B2D30 not rendered ($jewelDarkCardPixels px)")
         assertTrue(jewelBlueAccentPixels > 2_000, "Jewel accent #3574F0 not rendered ($jewelBlueAccentPixels px)")
         assertTrue(jewelLightBgPixels > 50_000, "Jewel Light background #FFFFFF not rendered ($jewelLightBgPixels px)")
+    }
+
+    @Test
+    fun richLabelsIconsAndInlineImages() {
+        val resolver = MaradonaImageResolver { url ->
+            if (url.endsWith("badge.png")) ColorPainter(Color(0xFF9333EA)) else null
+        }
+        val scene = ImageComposeScene(width = 880, height = 420, density = Density(1.5f)) {
+            CompositionLocalProvider(LocalMaradonaImageResolver provides resolver) {
+                MaradonaDiagram(
+                    source = """
+                        flowchart LR
+                          A["fa:fa-check **Bold** & *italic*<br/>~~old~~ <u>new</u> `v2.0`"] --> B["<img src='https://example.com/badge.png' width='28' height='28' alt='Badge'/> Verified H<sub>2</sub>O x<sup>2</sup>"]
+                          B --> C["::icon(fa fa-rocket) Ship Release"]
+                    """.trimIndent(),
+                    modifier = Modifier.fillMaxSize(),
+                    zoomEnabled = false,
+                )
+            }
+        }
+        val out = File("build/screenshots/rich-labels-icons.png")
+        try {
+            repeat(4) { frame -> scene.render((frame + 1) * 16_000_000L) }
+            val data = scene.render(100_000_000L).encodeToData(EncodedImageFormat.PNG)
+            requireNotNull(data)
+            out.parentFile.mkdirs()
+            out.writeBytes(data.bytes)
+        } finally {
+            scene.close()
+        }
+        val img = ImageIO.read(out)
+        var inlinePurplePixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x93) <= 4 && abs(g - 0x33) <= 4 && abs(b - 0xEA) <= 4) inlinePurplePixels++
+            }
+        }
+        assertTrue(inlinePurplePixels > 400, "Inline <img/> Painter #9333EA not rendered ($inlinePurplePixels px)")
     }
 }

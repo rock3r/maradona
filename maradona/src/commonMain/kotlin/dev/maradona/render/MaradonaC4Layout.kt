@@ -266,8 +266,13 @@ fun MaradonaC4Layout(
                             textAlign = TextAlign.Center,
                         ),
                     )
+                    val elDisplayLabel = if (!el.sprite.isNullOrBlank()) {
+                        "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
+                    } else {
+                        el.label
+                    }
                     BasicText(
-                        text = annotatedLabel(el.label),
+                        text = annotatedLabel(elDisplayLabel, theme.monospaceFontFamily),
                         style = TextStyle(
                             color = colors.text,
                             fontFamily = theme.fontFamily,

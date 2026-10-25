@@ -609,12 +609,24 @@ internal object NodeRefReader {
      * node composable turns into [androidx.compose.ui.text.AnnotatedString] spans.
      */
     fun cleanLabel(raw: String): String {
-        var text = raw.trim()
-        if (text.length >= 2 && text.first() == '"' && text.last() == '"') {
+        val rawTrimmed = raw.trim()
+        var text = rawTrimmed
+        val hadOuterQuotes = text.length >= 2 && text.first() == '"' && text.last() == '"'
+        if (hadOuterQuotes) {
             text = text.substring(1, text.length - 1).replace("\\\"", "\"")
         }
         if (text.length >= 2 && text.first() == '`' && text.last() == '`') {
-            text = text.substring(1, text.length - 1)
+            val inner = text.substring(1, text.length - 1)
+            val isSingleCodeToken = hadOuterQuotes &&
+                '`' !in inner &&
+                inner.none { it.isWhitespace() } &&
+                !inner.contains("**") &&
+                !inner.contains("__") &&
+                !inner.contains("~~") &&
+                !inner.contains('<')
+            if ('`' !in inner && !isSingleCodeToken) {
+                text = inner
+            }
         }
         text = text
             .replace(Regex("(?i)<br\\s*/?>"), "\n")
@@ -622,7 +634,8 @@ internal object NodeRefReader {
             .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
             .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
             .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
-            .replace(Regex("(?i)</?(?:span|div|p|sub|sup|font|small|mark|u|s|del|ins|code)(?:\\s[^>]*)?>"), "")
+            .replace(Regex("(?i)<strike>"), "~~").replace(Regex("(?i)</strike>"), "~~")
+            .replace(Regex("(?i)</?(?:span|div|p|font|small|mark)(?:\\s[^>]*)?>"), "")
             .replace("&quot;", "\"").replace("#quot;", "\"")
             .replace("&#39;", "'").replace("&apos;", "'")
             .replace("&lt;", "<").replace("#lt;", "<")
