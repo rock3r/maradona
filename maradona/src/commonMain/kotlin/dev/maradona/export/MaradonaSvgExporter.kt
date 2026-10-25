@@ -823,6 +823,7 @@ object MaradonaSvgExporter {
             is MaradonaDiagramModel.C4Model -> {
                 val d = model.diagram
                 val layout = C4Layout.layout(diagram = d, options = options)
+                val p = theme.c4Palette
                 buildGenericBoxSvg(
                     width = layout.width,
                     height = layout.height,
@@ -830,32 +831,60 @@ object MaradonaSvgExporter {
                     title = d.title to layout.titleRect,
                     containers = layout.boundaries.map { pb ->
                         val hdr = listOfNotNull(pb.boundary.label, pb.boundary.type?.takeIf { it.isNotBlank() }?.let { "[$it]" }).joinToString(" ")
-                        SvgBox(pb.rect, hdr, theme.subgraphFill, theme.subgraphBorder, theme.subgraphText)
+                        val bFill = parseCssColor(pb.boundary.style?.bgColor) ?: theme.subgraphFill
+                        val bStroke = parseCssColor(pb.boundary.style?.borderColor) ?: theme.subgraphBorder
+                        val bText = parseCssColor(pb.boundary.style?.fontColor) ?: theme.subgraphText
+                        SvgBox(pb.rect, hdr, bFill, bStroke, bText)
                     },
                     boxes = layout.elements.map { pe ->
+                        val el = pe.element
                         val cardText = listOfNotNull(
-                            pe.element.label,
-                            pe.element.technology?.takeIf { it.isNotBlank() }?.let { "[$it]" },
-                            pe.element.description?.takeIf { it.isNotBlank() },
+                            el.typeHeaderText,
+                            el.label,
+                            el.description?.takeIf { it.isNotBlank() },
                         ).joinToString("\n")
+                        val (defFill, defBorder, defText) = when {
+                            el.kind.isExternal -> Triple(p.externalFill, p.externalBorder, p.externalText)
+                            el.kind.isPerson -> Triple(p.personFill, p.personBorder, p.personText)
+                            el.kind == dev.maradona.model.C4ElementKind.CONTAINER ||
+                                el.kind == dev.maradona.model.C4ElementKind.CONTAINER_DB ||
+                                el.kind == dev.maradona.model.C4ElementKind.CONTAINER_QUEUE ->
+                                Triple(p.containerFill, p.containerBorder, p.containerText)
+                            el.kind == dev.maradona.model.C4ElementKind.COMPONENT ||
+                                el.kind == dev.maradona.model.C4ElementKind.COMPONENT_DB ||
+                                el.kind == dev.maradona.model.C4ElementKind.COMPONENT_QUEUE ->
+                                Triple(p.componentFill, p.componentBorder, p.componentText)
+                            else -> Triple(p.systemFill, p.systemBorder, p.systemText)
+                        }
+                        val shape = when {
+                            el.kind.isDatabase -> NodeShape.Cylinder
+                            el.kind.isQueue -> NodeShape.Stadium
+                            else -> NodeShape.RoundedRect
+                        }
                         SvgBox(
                             rect = pe.rect,
                             label = cardText,
-                            fill = theme.c4Palette.systemFill,
-                            stroke = theme.c4Palette.systemBorder,
-                            textColor = theme.c4Palette.systemText,
-                            url = pe.element.link,
-                            tooltip = pe.element.description,
+                            fill = parseCssColor(el.style?.bgColor) ?: defFill,
+                            stroke = parseCssColor(el.style?.borderColor) ?: defBorder,
+                            textColor = parseCssColor(el.style?.fontColor) ?: defText,
+                            url = el.link,
+                            tooltip = el.description,
+                            shape = shape,
                         )
                     },
                     lines = layout.relationships.map { pr ->
+                        val indexedLabel = if (!pr.relationship.index.isNullOrBlank()) {
+                            "${pr.relationship.index}: ${pr.relationship.label}"
+                        } else {
+                            pr.relationship.label
+                        }
                         val relLabel = listOfNotNull(
-                            pr.relationship.label,
+                            indexedLabel.takeIf { it.isNotBlank() },
                             pr.relationship.technology?.takeIf { it.isNotBlank() }?.let { "[$it]" },
                         ).joinToString(" ")
                         SvgLine(
                             points = pr.points,
-                            color = theme.edge,
+                            color = parseCssColor(pr.relationship.style?.lineColor) ?: theme.edge,
                             dashed = true,
                             label = relLabel to pr.labelRect,
                             startMarker = if (pr.startArrow) SvgMarker.FilledArrow else SvgMarker.None,

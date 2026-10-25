@@ -41,11 +41,11 @@ class MaradonaSvgExporterTest {
     @Test
     fun exportsWithCustomJewelDarkTheme() {
         val mmd = """
-            C4Context
+            C4Dynamic
                 title Payment System Context
                 Person(user, "Customer", "Uses checkout")
-                System(pay, "Payment Gateway", "Processes cards", ${'$'}link="https://pay.example.com")
-                Rel(user, pay, "Submits payment")
+                System_Ext(pay, "Payment Gateway", "Processes cards", ${'$'}link="https://pay.example.com")
+                RelIndex(1, user, pay, "Submits payment")
         """.trimIndent()
 
         val jewelDark = MaradonaTheme.jewelDark()
@@ -53,6 +53,9 @@ class MaradonaSvgExporterTest {
         assertTrue(svg.contains("fill=\"#1E1F22\""), "Expected Jewel dark background #1E1F22 in SVG")
         assertTrue(svg.contains("<a href=\"https://pay.example.com\">"))
         assertTrue(svg.contains("Payment System Context"))
+        assertTrue(svg.contains("&lt;&lt;Person&gt;&gt;"), "Expected C4 Person type header in SVG")
+        assertTrue(svg.contains("&lt;&lt;External System&gt;&gt;"), "Expected C4 External System type header in SVG")
+        assertTrue(svg.contains("1: Submits payment"), "Expected RelIndex prefix in C4 SVG")
     }
 
     @Test
