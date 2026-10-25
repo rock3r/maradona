@@ -45,12 +45,13 @@ import kotlin.math.roundToInt
 
 private class LayoutHolder {
     var layout: DiagramLayout? = null
+    var naturalLayout: DiagramLayout? = null
+    var adaptedTbLayout: DiagramLayout? = null
     var nodeSizes: Map<String, DiagramSize> = emptyMap()
     var edgeLabelSizes: List<DiagramSize?> = emptyList()
     var lastDensity: Float = Float.NaN
     var lastFontScale: Float = Float.NaN
     var lastResolvedImageUrls: Set<String> = emptySet()
-    var lastAdaptedVertical: Boolean = false
     var lastBoundedWidthPx: Int = Int.MAX_VALUE
     var boundedWidthObserved: Boolean = false
     var visibleViewport: DiagramRect? = null
@@ -168,63 +169,68 @@ fun MaradonaLayout(
     // composition knows every node, edge label, and subgraph bounding box before
     // emitting child composables, and panning across a zoomed diagram does not
     // re-run Sugiyama/Dagre layout.
-    val precomputedLayout = run {
-        val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
-        val cached = holder.layout
+    val naturalLayout = run {
+        val cachedNatural = holder.naturalLayout
         if (
-            cached != null &&
+            cachedNatural != null &&
             abs(holder.lastDensity - renderDensity) < 1e-4f &&
             abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
             holder.lastResolvedImageUrls == resolvedImageUrls
         ) {
-            val wantVertical = autoDirection &&
-                (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
-                layoutOptions.directionOverride == null &&
-                effectiveAvailableWidthPx in 1 until breakpointPx &&
-                cached.width > effectiveAvailableWidthPx
-            if (wantVertical == holder.lastAdaptedVertical) {
-                cached
-            } else {
-                computePremeasuredFlowchartLayout(
-                    chart = chart,
-                    theme = theme,
-                    layoutOptions = layoutOptions,
-                    autoDirection = autoDirection,
-                    availableWidthPx = effectiveAvailableWidthPx,
-                    densityObj = densityObj,
-                    textMeasurer = textMeasurer,
-                    resolvedImageUrls = resolvedImageUrls,
-                ).also { pre ->
-                    holder.layout = pre.layout
-                    holder.nodeSizes = pre.nodeSizes
-                    holder.edgeLabelSizes = pre.edgeLabelSizes
-                    holder.lastDensity = renderDensity
-                    holder.lastFontScale = renderFontScale
-                    holder.lastResolvedImageUrls = resolvedImageUrls
-                    holder.lastAdaptedVertical = pre.adaptedVertical
-                }.layout
-            }
+            cachedNatural
         } else {
             computePremeasuredFlowchartLayout(
                 chart = chart,
                 theme = theme,
                 layoutOptions = layoutOptions,
-                autoDirection = autoDirection,
-                availableWidthPx = effectiveAvailableWidthPx,
                 densityObj = densityObj,
                 textMeasurer = textMeasurer,
                 resolvedImageUrls = resolvedImageUrls,
             ).also { pre ->
-                holder.layout = pre.layout
+                holder.naturalLayout = pre.naturalLayout
+                holder.adaptedTbLayout = null
                 holder.nodeSizes = pre.nodeSizes
                 holder.edgeLabelSizes = pre.edgeLabelSizes
                 holder.lastDensity = renderDensity
                 holder.lastFontScale = renderFontScale
                 holder.lastResolvedImageUrls = resolvedImageUrls
-                holder.lastAdaptedVertical = pre.adaptedVertical
-            }.layout
+            }.naturalLayout
         }
     }
+
+    fun resolveAdaptedTbLayout(): DiagramLayout {
+        holder.adaptedTbLayout?.let { return it }
+        val scaledOptions = with(layoutOptions) {
+            copy(
+                nodeGap = nodeGap * renderDensity,
+                layerGap = layerGap * renderDensity,
+                padding = padding * renderDensity,
+                subgraphPaddingX = subgraphPaddingX * renderDensity,
+                subgraphPaddingY = subgraphPaddingY * renderDensity,
+                density = renderDensity,
+                directionOverride = Direction.TB,
+            )
+        }
+        return FlowchartLayout.layout(
+            chart = chart,
+            nodeSize = { holder.nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
+            edgeLabelSize = { edge -> holder.edgeLabelSizes[chart.edges.indexOf(edge)] },
+            options = scaledOptions,
+        ).also { holder.adaptedTbLayout = it }
+    }
+
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    val wantVerticalInComposition = autoDirection &&
+        (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        effectiveAvailableWidthPx in 1 until breakpointPx &&
+        naturalLayout.width > effectiveAvailableWidthPx
+    val precomputedLayout = if (wantVerticalInComposition) {
+        resolveAdaptedTbLayout()
+    } else {
+        naturalLayout
+    }
+    holder.layout = precomputedLayout
     val effectiveViewport = visibleViewport
         ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
     val needsParentWidthProbe = autoDirection &&
@@ -367,33 +373,15 @@ fun MaradonaLayout(
         holder.boundedWidthObserved = true
         val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
-        var result = precomputedLayout
-        if (
-            autoDirection &&
+        val wantVerticalAtMeasure = autoDirection &&
             (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
             layoutOptions.directionOverride == null &&
-            !holder.lastAdaptedVertical &&
             effectiveMaxWidth in 1 until breakpoint &&
-            result.width > effectiveMaxWidth
-        ) {
-            val scaledOptions = with(layoutOptions) {
-                copy(
-                    nodeGap = nodeGap * density,
-                    layerGap = layerGap * density,
-                    padding = padding * density,
-                    subgraphPaddingX = subgraphPaddingX * density,
-                    subgraphPaddingY = subgraphPaddingY * density,
-                    density = density,
-                    directionOverride = Direction.TB,
-                )
-            }
-            result = FlowchartLayout.layout(
-                chart = chart,
-                nodeSize = { holder.nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
-                edgeLabelSize = { edge -> holder.edgeLabelSizes[chart.edges.indexOf(edge)] },
-                options = scaledOptions,
-            )
-            holder.lastAdaptedVertical = true
+            naturalLayout.width > effectiveMaxWidth
+        val result = if (wantVerticalAtMeasure) {
+            resolveAdaptedTbLayout()
+        } else {
+            naturalLayout
         }
         holder.layout = result
         onLayout(result)
@@ -455,18 +443,15 @@ fun MaradonaLayout(
 }
 
 private data class PremeasuredFlowchartResult(
-    val layout: DiagramLayout,
+    val naturalLayout: DiagramLayout,
     val nodeSizes: Map<String, DiagramSize>,
     val edgeLabelSizes: List<DiagramSize?>,
-    val adaptedVertical: Boolean,
 )
 
 private fun computePremeasuredFlowchartLayout(
     chart: Flowchart,
     theme: MaradonaTheme,
     layoutOptions: LayoutOptions,
-    autoDirection: Boolean,
-    availableWidthPx: Int,
     densityObj: Density,
     textMeasurer: TextMeasurer,
     resolvedImageUrls: Set<String>,
@@ -558,34 +543,16 @@ private fun computePremeasuredFlowchartLayout(
             density = renderDensity,
         )
     }
-    var result = FlowchartLayout.layout(
+    val result = FlowchartLayout.layout(
         chart = chart,
         nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
         edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
         options = scaledOptions,
     )
-    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
-    var adaptedVertical = false
-    if (
-        autoDirection &&
-        (chart.direction == Direction.LR || chart.direction == Direction.RL) &&
-        layoutOptions.directionOverride == null &&
-        availableWidthPx in 1 until breakpointPx &&
-        result.width > availableWidthPx
-    ) {
-        result = FlowchartLayout.layout(
-            chart = chart,
-            nodeSize = { nodeSizes[it.id] ?: DiagramSize(0f, 0f) },
-            edgeLabelSize = { edge -> edgeLabelSizes[chart.edges.indexOf(edge)] },
-            options = scaledOptions.copy(directionOverride = Direction.TB),
-        )
-        adaptedVertical = true
-    }
     return PremeasuredFlowchartResult(
-        layout = result,
+        naturalLayout = result,
         nodeSizes = nodeSizes,
         edgeLabelSizes = edgeLabelSizes,
-        adaptedVertical = adaptedVertical,
     )
 }
 
