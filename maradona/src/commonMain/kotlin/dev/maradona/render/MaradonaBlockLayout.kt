@@ -65,7 +65,7 @@ private class BlockLayoutHolder {
 @Composable
 fun MaradonaBlockLayout(
     diagram: BlockDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (BlockDiagramLayout) -> Unit = {},
@@ -97,7 +97,7 @@ fun MaradonaBlockLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -118,7 +118,7 @@ fun MaradonaBlockLayout(
                         style = TextStyle(
                             color = customTextColor,
                             fontFamily = theme.fontFamily,
-                            fontSize = 13.sp,
+                            fontSize = theme.scaledSp(13f),
                             fontWeight = fontWeight,
                             textAlign = TextAlign.Center,
                         ),
@@ -143,7 +143,7 @@ fun MaradonaBlockLayout(
                         style = TextStyle(
                             color = theme.edgeLabelText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             textAlign = TextAlign.Center,
                         ),
                     )

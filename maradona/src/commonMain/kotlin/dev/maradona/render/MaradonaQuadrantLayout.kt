@@ -34,20 +34,6 @@ private class QuadrantLayoutHolder {
     var layout: QuadrantDiagramLayout? = null
 }
 
-private val QUADRANT_FILLS_LIGHT = listOf(
-    Color(0xFFE4EFF8), // Q1 top-right
-    Color(0xFFE7F3EF), // Q2 top-left
-    Color(0xFFF3F0E6), // Q3 bottom-left
-    Color(0xFFF8F0DA), // Q4 bottom-right
-)
-
-private val QUADRANT_FILLS_DARK = listOf(
-    Color(0xFF172B3C), // Q1 top-right
-    Color(0xFF162C29), // Q2 top-left
-    Color(0xFF22211F), // Q3 bottom-left
-    Color(0xFF2D2514), // Q4 bottom-right
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `quadrantChart` diagrams.
  *
@@ -58,7 +44,7 @@ private val QUADRANT_FILLS_DARK = listOf(
 @Composable
 fun MaradonaQuadrantLayout(
     diagram: QuadrantDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (QuadrantDiagramLayout) -> Unit = {},
@@ -109,7 +95,7 @@ fun MaradonaQuadrantLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -122,7 +108,7 @@ fun MaradonaQuadrantLayout(
                     style = TextStyle(
                         color = theme.nodeText.copy(alpha = 0.85f),
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -135,7 +121,7 @@ fun MaradonaQuadrantLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.5.sp,
+                        fontSize = theme.scaledSp(12.5f),
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     ),
@@ -148,7 +134,7 @@ fun MaradonaQuadrantLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = theme.scaledSp(11.5f),
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     ),
@@ -282,9 +268,13 @@ private fun DrawScope.drawQuadrantUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val fills = if (isDark) QUADRANT_FILLS_DARK else QUADRANT_FILLS_LIGHT
-    val defaultPointColor = if (isDark) Color(0xFF5B9BD5) else Color(0xFF205EA6)
+    val fills = listOf(
+        androidx.compose.ui.graphics.lerp(theme.seriesFill(0), theme.background, 0.42f),
+        androidx.compose.ui.graphics.lerp(theme.seriesFill(2), theme.background, 0.42f),
+        theme.mutedFill,
+        androidx.compose.ui.graphics.lerp(theme.seriesFill(3), theme.background, 0.42f),
+    )
+    val defaultPointColor = theme.accentBorder
 
     // 1. Quadrant background fills.
     for (q in layout.quadrants) {

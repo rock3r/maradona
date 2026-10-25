@@ -47,9 +47,6 @@ private class ArchitectureLayoutHolder {
     var layout: ArchitectureDiagramLayout? = null
 }
 
-private val ARCH_ICON_BG_LIGHT = Color(0xFF087EBF)
-private val ARCH_ICON_BG_DARK = Color(0xFF0A8FD8)
-
 /**
  * Custom Compose [Layout] for Mermaid `architecture` / `architecture-beta` diagrams.
  *
@@ -61,13 +58,12 @@ private val ARCH_ICON_BG_DARK = Color(0xFF0A8FD8)
 @Composable
 fun MaradonaArchitectureLayout(
     diagram: ArchitectureDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (ArchitectureDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ArchitectureLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
     val labelFontSp = diagram.config.fontSize.coerceAtLeast(1f)
 
     Layout(
@@ -84,7 +80,7 @@ fun MaradonaArchitectureLayout(
                 }
             }
             .drawBehind {
-                holder.layout?.let { drawArchitectureUnderlay(it, theme, isDark) }
+                holder.layout?.let { drawArchitectureUnderlay(it, theme) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
@@ -94,7 +90,7 @@ fun MaradonaArchitectureLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -103,6 +99,7 @@ fun MaradonaArchitectureLayout(
 
             for (grp in diagram.groups) {
                 val grpLabel = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
+                val sgScale = if (theme.subgraphFontSize.value > 0f) theme.subgraphFontSize.value / 14f else 1f
                 BasicText(
                     text = annotatedLabel(grpLabel),
                     modifier = Modifier.layoutId("grplbl:${grp.id}"),
@@ -110,7 +107,7 @@ fun MaradonaArchitectureLayout(
                     style = TextStyle(
                         color = theme.subgraphText,
                         fontFamily = theme.fontFamily,
-                        fontSize = labelFontSp.sp,
+                        fontSize = (labelFontSp * sgScale).sp,
                         fontWeight = FontWeight.SemiBold,
                     ),
                 )
@@ -125,7 +122,7 @@ fun MaradonaArchitectureLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = labelFontSp.sp,
+                            fontSize = theme.scaledSp(labelFontSp),
                             fontWeight = FontWeight.Medium,
                             textAlign = TextAlign.Center,
                         ),
@@ -138,9 +135,9 @@ fun MaradonaArchitectureLayout(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
-                            color = Color.White,
+                            color = theme.accentText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.scaledSp(11.5f),
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
                         ),
@@ -165,7 +162,7 @@ fun MaradonaArchitectureLayout(
                         style = TextStyle(
                             color = theme.edgeLabelText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             textAlign = TextAlign.Center,
                         ),
                     )
@@ -326,9 +323,9 @@ fun MaradonaArchitectureLayout(
 private fun DrawScope.drawArchitectureUnderlay(
     layout: ArchitectureDiagramLayout,
     theme: MaradonaTheme,
-    isDark: Boolean,
 ) {
-    val iconTileBg = if (isDark) ARCH_ICON_BG_DARK else ARCH_ICON_BG_LIGHT
+    val iconTileBg = theme.accentBorder
+    val iconFg = theme.accentText
     val groupDash = PathEffect.dashPathEffect(floatArrayOf(7f * density, 4.5f * density), 0f)
     val groupStroke = Stroke(width = max(1f, 1.4f * density), pathEffect = groupDash)
 
@@ -352,7 +349,7 @@ private fun DrawScope.drawArchitectureUnderlay(
         )
         val ir = pg.iconRect
         if (ir != null) {
-            drawArchitectureIconTile(ir, pg.group.icon, iconTileBg)
+            drawArchitectureIconTile(ir, pg.group.icon, iconTileBg, iconFg)
         }
     }
 
@@ -403,7 +400,7 @@ private fun DrawScope.drawArchitectureUnderlay(
         val svc = ps.service
         val ir = ps.iconRect
         if (svc.icon != null || !svc.iconText.isNullOrBlank()) {
-            drawArchitectureIconTile(ir, svc.icon, iconTileBg)
+            drawArchitectureIconTile(ir, svc.icon, iconTileBg, iconFg)
         } else {
             val cr = CornerRadius(5f * density, 5f * density)
             drawRoundRect(
@@ -428,6 +425,7 @@ private fun DrawScope.drawArchitectureIconTile(
     rect: DiagramRect,
     iconName: String?,
     tileBg: Color,
+    iconFg: Color = Color.White,
 ) {
     val cr = CornerRadius(min(6f * density, rect.width * 0.12f), min(6f * density, rect.height * 0.12f))
     drawRoundRect(
@@ -455,17 +453,17 @@ private fun DrawScope.drawArchitectureIconTile(
             val topY = y0 + h * 0.28f
             val botY = y0 + h * 0.72f
             drawOval(
-                color = Color.White,
+                color = iconFg,
                 topLeft = Offset(cx - rx, topY - ry),
                 size = Size(rx * 2f, ry * 2f),
                 style = iconStroke,
             )
-            drawLine(color = Color.White, start = Offset(cx - rx, topY), end = Offset(cx - rx, botY), strokeWidth = strokeW)
-            drawLine(color = Color.White, start = Offset(cx + rx, topY), end = Offset(cx + rx, botY), strokeWidth = strokeW)
+            drawLine(color = iconFg, start = Offset(cx - rx, topY), end = Offset(cx - rx, botY), strokeWidth = strokeW)
+            drawLine(color = iconFg, start = Offset(cx + rx, topY), end = Offset(cx + rx, botY), strokeWidth = strokeW)
             for (frac in listOf(0.43f, 0.58f, 0.72f)) {
                 val ay = y0 + h * frac
                 drawArc(
-                    color = Color.White,
+                    color = iconFg,
                     startAngle = 0f,
                     sweepAngle = 180f,
                     useCenter = false,
@@ -481,17 +479,17 @@ private fun DrawScope.drawArchitectureIconTile(
             val bw = w * 0.50f
             val bh = h * 0.62f
             drawRoundRect(
-                color = Color.White,
+                color = iconFg,
                 topLeft = Offset(bx, by),
                 size = Size(bw, bh),
                 cornerRadius = CornerRadius(strokeW, strokeW),
                 style = iconStroke,
             )
             val platterCenter = Offset(rect.centerX, y0 + h * 0.43f)
-            drawCircle(color = Color.White, radius = w * 0.17f, center = platterCenter, style = iconStroke)
-            drawCircle(color = Color.White, radius = w * 0.045f, center = platterCenter, style = Fill)
+            drawCircle(color = iconFg, radius = w * 0.17f, center = platterCenter, style = iconStroke)
+            drawCircle(color = iconFg, radius = w * 0.045f, center = platterCenter, style = Fill)
             drawLine(
-                color = Color.White,
+                color = iconFg,
                 start = Offset(rect.centerX - w * 0.03f, y0 + h * 0.52f),
                 end = Offset(rect.centerX - w * 0.12f, y0 + h * 0.70f),
                 strokeWidth = strokeW * 1.3f,
@@ -501,11 +499,11 @@ private fun DrawScope.drawArchitectureIconTile(
         norm.contains("internet") || norm.contains("globe") || norm.contains("gateway") -> {
             val center = Offset(rect.centerX, rect.centerY)
             val r = min(w, h) * 0.28f
-            drawCircle(color = Color.White, radius = r, center = center, style = iconStroke)
-            drawLine(color = Color.White, start = Offset(center.x, center.y - r), end = Offset(center.x, center.y + r), strokeWidth = strokeW)
-            drawLine(color = Color.White, start = Offset(center.x - r, center.y), end = Offset(center.x + r, center.y), strokeWidth = strokeW)
+            drawCircle(color = iconFg, radius = r, center = center, style = iconStroke)
+            drawLine(color = iconFg, start = Offset(center.x, center.y - r), end = Offset(center.x, center.y + r), strokeWidth = strokeW)
+            drawLine(color = iconFg, start = Offset(center.x - r, center.y), end = Offset(center.x + r, center.y), strokeWidth = strokeW)
             drawOval(
-                color = Color.White,
+                color = iconFg,
                 topLeft = Offset(center.x - r * 0.52f, center.y - r),
                 size = Size(r * 1.04f, r * 2f),
                 style = iconStroke,
@@ -523,7 +521,7 @@ private fun DrawScope.drawArchitectureIconTile(
                 cubicTo(left, y0 + h * 0.42f, left - w * 0.02f, base, left + w * 0.08f, base)
                 close()
             }
-            drawPath(path = path, color = Color.White, style = iconStroke)
+            drawPath(path = path, color = iconFg, style = iconStroke)
         }
         else -> {
             // Default `server` / compute rack icon
@@ -532,7 +530,7 @@ private fun DrawScope.drawArchitectureIconTile(
             val bw = w * 0.56f
             val bh = h * 0.56f
             drawRoundRect(
-                color = Color.White,
+                color = iconFg,
                 topLeft = Offset(bx, by),
                 size = Size(bw, bh),
                 cornerRadius = CornerRadius(strokeW, strokeW),
@@ -540,13 +538,13 @@ private fun DrawScope.drawArchitectureIconTile(
             )
             val y1 = by + bh / 3f
             val y2 = by + bh * 2f / 3f
-            drawLine(color = Color.White, start = Offset(bx, y1), end = Offset(bx + bw, y1), strokeWidth = strokeW)
-            drawLine(color = Color.White, start = Offset(bx, y2), end = Offset(bx + bw, y2), strokeWidth = strokeW)
+            drawLine(color = iconFg, start = Offset(bx, y1), end = Offset(bx + bw, y1), strokeWidth = strokeW)
+            drawLine(color = iconFg, start = Offset(bx, y2), end = Offset(bx + bw, y2), strokeWidth = strokeW)
             for (slotY in listOf(by + bh / 6f, by + bh / 2f, by + bh * 5f / 6f)) {
-                drawCircle(color = Color.White, radius = strokeW * 0.8f, center = Offset(bx + bw * 0.16f, slotY))
-                drawCircle(color = Color.White, radius = strokeW * 0.8f, center = Offset(bx + bw * 0.28f, slotY))
+                drawCircle(color = iconFg, radius = strokeW * 0.8f, center = Offset(bx + bw * 0.16f, slotY))
+                drawCircle(color = iconFg, radius = strokeW * 0.8f, center = Offset(bx + bw * 0.28f, slotY))
                 drawLine(
-                    color = Color.White,
+                    color = iconFg,
                     start = Offset(bx + bw * 0.55f, slotY),
                     end = Offset(bx + bw * 0.84f, slotY),
                     strokeWidth = strokeW,

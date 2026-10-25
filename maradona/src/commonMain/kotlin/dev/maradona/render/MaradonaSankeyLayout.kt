@@ -41,44 +41,16 @@ private class SankeyLayoutHolder {
     var layout: SankeyDiagramLayout? = null
 }
 
-// Tableau-10 / Flexoki-harmonized categorical palette matching Mermaid's d3.schemeTableau10.
-private val SANKEY_PALETTE_LIGHT = listOf(
-    Color(0xFF4E79A7),
-    Color(0xFFF28E2B),
-    Color(0xFFE15759),
-    Color(0xFF76B7B2),
-    Color(0xFF59A14F),
-    Color(0xFFEDC948),
-    Color(0xFFB07AA1),
-    Color(0xFFFF9DA7),
-    Color(0xFF9C755F),
-    Color(0xFFBAB0AC),
-)
-
-private val SANKEY_PALETTE_DARK = listOf(
-    Color(0xFF5B8CC0),
-    Color(0xFFF59D3D),
-    Color(0xFFEB6B6D),
-    Color(0xFF88C6C1),
-    Color(0xFF6BB361),
-    Color(0xFFF2D45C),
-    Color(0xFFC18EB3),
-    Color(0xFFFFB0B8),
-    Color(0xFFB08973),
-    Color(0xFFCBC2BE),
-)
-
 private fun resolveSankeyNodeColor(
     nodeIndex: Int,
     nodeId: String,
     explicitColor: String?,
     nodeColorsMap: Map<String, String>,
-    isDark: Boolean,
+    theme: MaradonaTheme,
 ): Color {
     parseCssColor(explicitColor)?.let { return it }
     parseCssColor(nodeColorsMap[nodeId])?.let { return it }
-    val palette = if (isDark) SANKEY_PALETTE_DARK else SANKEY_PALETTE_LIGHT
-    return palette[nodeIndex % palette.size]
+    return theme.seriesColor(nodeIndex)
 }
 
 /**
@@ -91,13 +63,12 @@ private fun resolveSankeyNodeColor(
 @Composable
 fun MaradonaSankeyLayout(
     diagram: SankeyDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (SankeyDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { SankeyLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
 
     // Precompute formatted label texts for each node in diagram.nodes order.
     val nodeLabelTexts = remember(diagram) {
@@ -131,7 +102,7 @@ fun MaradonaSankeyLayout(
                 }
             }
             .drawBehind {
-                holder.layout?.let { drawSankeyUnderlay(it, diagram, theme, isDark) }
+                holder.layout?.let { drawSankeyUnderlay(it, diagram, theme) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
@@ -141,7 +112,7 @@ fun MaradonaSankeyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -154,7 +125,7 @@ fun MaradonaSankeyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = theme.scaledSp(11.5f),
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -261,7 +232,6 @@ private fun DrawScope.drawSankeyUnderlay(
     layout: SankeyDiagramLayout,
     diagram: SankeyDiagram,
     theme: MaradonaTheme,
-    isDark: Boolean,
 ) {
     val unit = density
     val nodeColors = layout.nodes.associate { pn ->
@@ -270,7 +240,7 @@ private fun DrawScope.drawSankeyUnderlay(
             nodeId = pn.node.id,
             explicitColor = pn.node.color,
             nodeColorsMap = diagram.nodeColors,
-            isDark = isDark,
+            theme = theme,
         )
     }
 
@@ -283,8 +253,8 @@ private fun DrawScope.drawSankeyUnderlay(
     }
 
     for (pl in layout.links) {
-        val srcCol = (nodeColors[pl.sourceNodeIndex] ?: SANKEY_PALETTE_LIGHT[0]).copy(alpha = 0.45f)
-        val dstCol = (nodeColors[pl.targetNodeIndex] ?: SANKEY_PALETTE_LIGHT[1]).copy(alpha = 0.45f)
+        val srcCol = (nodeColors[pl.sourceNodeIndex] ?: theme.seriesColor(0)).copy(alpha = 0.45f)
+        val dstCol = (nodeColors[pl.targetNodeIndex] ?: theme.seriesColor(1)).copy(alpha = 0.45f)
         val halfW = pl.thickness / 2f
         val path = Path().apply {
             moveTo(pl.start.x, pl.start.y - halfW)
@@ -331,7 +301,7 @@ private fun DrawScope.drawSankeyUnderlay(
 
     // 2. Node bars.
     for (pn in layout.nodes) {
-        val fill = nodeColors[pn.nodeIndex] ?: SANKEY_PALETTE_LIGHT[0]
+        val fill = nodeColors[pn.nodeIndex] ?: theme.seriesColor(0)
         drawRect(
             color = fill,
             topLeft = Offset(pn.rect.x, pn.rect.y),

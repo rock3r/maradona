@@ -40,30 +40,6 @@ private class GanttLayoutHolder {
     var layout: GanttDiagramLayout? = null
 }
 
-private val SECTION_BAND_FILLS_LIGHT = listOf(
-    Color(0xFFF5F2E8),
-    Color(0xFFEDEAE0),
-)
-
-private val SECTION_BAND_FILLS_DARK = listOf(
-    Color(0xFF1C1B1A),
-    Color(0xFF242321),
-)
-
-private val DEFAULT_BAR_FILLS_LIGHT = listOf(
-    Color(0xFFD6E6F4) to Color(0xFF205EA6),
-    Color(0xFFD5EBE6) to Color(0xFF24837B),
-    Color(0xFFF3E7C4) to Color(0xFFAD8301),
-    Color(0xFFEAD7E4) to Color(0xFFA02F6F),
-)
-
-private val DEFAULT_BAR_FILLS_DARK = listOf(
-    Color(0xFF1B344B) to Color(0xFF4385BE),
-    Color(0xFF183734) to Color(0xFF3AA99F),
-    Color(0xFF3B2E12) to Color(0xFFD0A215),
-    Color(0xFF3A1D2E) to Color(0xFFCE5D97),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `gantt` diagrams.
  *
@@ -74,7 +50,7 @@ private val DEFAULT_BAR_FILLS_DARK = listOf(
 @Composable
 fun MaradonaGanttLayout(
     diagram: GanttDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (GanttDiagramLayout) -> Unit = {},
@@ -105,7 +81,7 @@ fun MaradonaGanttLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -119,7 +95,7 @@ fun MaradonaGanttLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.SemiBold,
                     ),
                 )
@@ -129,9 +105,9 @@ fun MaradonaGanttLayout(
                     text = annotatedLabel(t.label),
                     modifier = Modifier.layoutId("tasklbl:${t.id}"),
                     style = TextStyle(
-                        color = if (t.isVerticalMarker) Color(0xFFAF3029) else theme.nodeText,
+                        color = if (t.isVerticalMarker) theme.criticalBorder else theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = if (t.isCritical || t.isMilestone) FontWeight.SemiBold else FontWeight.Medium,
                     ),
                 )
@@ -152,7 +128,7 @@ fun MaradonaGanttLayout(
                     style = TextStyle(
                         color = theme.subgraphText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.sp,
+                        fontSize = theme.captionFontSize,
                         textAlign = TextAlign.Center,
                     ),
                 )
@@ -163,7 +139,7 @@ fun MaradonaGanttLayout(
                         style = TextStyle(
                             color = theme.subgraphText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.sp,
+                            fontSize = theme.captionFontSize,
                             textAlign = TextAlign.Center,
                         ),
                     )
@@ -279,9 +255,11 @@ private fun DrawScope.drawGanttUnderlay(
 ) {
     val unit = density
     val plot = layout.plotRect
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val sectionBands = if (isDark) SECTION_BAND_FILLS_DARK else SECTION_BAND_FILLS_LIGHT
-    val defaultBars = if (isDark) DEFAULT_BAR_FILLS_DARK else DEFAULT_BAR_FILLS_LIGHT
+    val isDark = theme.isDark
+    val sectionBands = listOf(
+        theme.subgraphFill.copy(alpha = 0.72f),
+        theme.mutedFill.copy(alpha = 0.85f),
+    )
 
     // 1. Section and row background bands.
     for (sec in layout.sections) {
@@ -295,7 +273,7 @@ private fun DrawScope.drawGanttUnderlay(
     for ((idx, rRect) in layout.rowRects.withIndex()) {
         if (idx % 2 == 1) {
             drawRect(
-                color = if (isDark) Color(0x14FFFFFF) else Color(0x0A000000),
+                color = theme.mutedFill.copy(alpha = 0.35f),
                 topLeft = Offset(rRect.x, rRect.y),
                 size = Size(rRect.width, rRect.height),
             )
@@ -311,7 +289,7 @@ private fun DrawScope.drawGanttUnderlay(
     // 2. Excluded day shading (weekends / holidays).
     for (ex in layout.excludedBands) {
         drawRect(
-            color = if (isDark) Color(0x24000000) else Color(0x166F6E69),
+            color = theme.mutedBorder.copy(alpha = 0.16f),
             topLeft = Offset(ex.x, ex.y),
             size = Size(ex.width, ex.height),
         )
@@ -337,25 +315,16 @@ private fun DrawScope.drawGanttUnderlay(
     for (pt in layout.tasks) {
         val t = pt.task
         val r = pt.barRect
-        val (defaultFill, defaultStroke) = defaultBars[pt.sectionIndex.coerceAtLeast(0).mod(defaultBars.size)]
-        val (fill, border) = if (isDark) {
-            when {
-                t.isCritical && t.status == GanttTaskStatus.Done -> Color(0xFF3E2220) to Color(0xFFD14D41)
-                t.isCritical && t.status == GanttTaskStatus.Active -> Color(0xFF5A2521) to Color(0xFFEB6F65)
-                t.isCritical -> Color(0xFF471E1B) to Color(0xFFD14D41)
-                t.status == GanttTaskStatus.Done -> Color(0xFF282726) to Color(0xFF6F6E69)
-                t.status == GanttTaskStatus.Active -> Color(0xFF1F3E5A) to Color(0xFF5B9BD5)
-                else -> defaultFill to defaultStroke
-            }
-        } else {
-            when {
-                t.isCritical && t.status == GanttTaskStatus.Done -> Color(0xFFF2D2CF) to Color(0xFFAF3029)
-                t.isCritical && t.status == GanttTaskStatus.Active -> Color(0xFFF8B9B2) to Color(0xFFAF3029)
-                t.isCritical -> Color(0xFFFCE6E4) to Color(0xFFD14D41)
-                t.status == GanttTaskStatus.Done -> Color(0xFFE6E4D9) to Color(0xFF878580)
-                t.status == GanttTaskStatus.Active -> Color(0xFFBFE0F8) to Color(0xFF205EA6)
-                else -> defaultFill to defaultStroke
-            }
+        val secIdx = pt.sectionIndex.coerceAtLeast(0)
+        val defaultFill = theme.seriesFill(secIdx)
+        val defaultStroke = theme.seriesColor(secIdx)
+        val (fill, border) = when {
+            t.isCritical && t.status == GanttTaskStatus.Done -> theme.criticalFill.copy(alpha = 0.78f) to theme.criticalBorder
+            t.isCritical && t.status == GanttTaskStatus.Active -> androidx.compose.ui.graphics.lerp(theme.criticalFill, theme.criticalBorder, 0.24f) to theme.criticalBorder
+            t.isCritical -> theme.criticalFill to theme.criticalBorder
+            t.status == GanttTaskStatus.Done -> theme.mutedFill to theme.mutedBorder
+            t.status == GanttTaskStatus.Active -> theme.accentFill to theme.accentBorder
+            else -> defaultFill to defaultStroke
         }
         val strokeW = if (t.isCritical || t.status == GanttTaskStatus.Active) 1.8f * unit else 1.3f * unit
 
@@ -391,7 +360,7 @@ private fun DrawScope.drawGanttUnderlay(
     val dash = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
     for (vt in layout.verticalMarkers) {
         drawLine(
-            color = Color(0xFFAF3029),
+            color = theme.criticalBorder,
             start = Offset(vt.x, vt.topY),
             end = Offset(vt.x, vt.bottomY),
             strokeWidth = 1.6f * unit,

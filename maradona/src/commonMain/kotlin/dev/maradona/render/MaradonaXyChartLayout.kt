@@ -39,39 +39,18 @@ private class XyChartLayoutHolder {
     var layout: XyChartDiagramLayout? = null
 }
 
-private val XY_PALETTE_LIGHT = listOf(
-    Color(0xFF205EA6), // Flexoki blue
-    Color(0xFFDA702C), // Flexoki orange
-    Color(0xFF24837B), // Flexoki cyan/teal
-    Color(0xFFD14D41), // Flexoki red
-    Color(0xFF5E409D), // Flexoki purple
-    Color(0xFF66800B), // Flexoki green
-    Color(0xFFA02F6F), // Flexoki magenta
-)
-
-private val XY_PALETTE_DARK = listOf(
-    Color(0xFF4385BE), // Flexoki blue light
-    Color(0xFFDA702C), // Flexoki orange
-    Color(0xFF3AA99F), // Flexoki cyan light
-    Color(0xFFAF3029), // Flexoki red
-    Color(0xFF8B7EC8), // Flexoki purple light
-    Color(0xFF879A39), // Flexoki green light
-    Color(0xFFCE5D97), // Flexoki magenta light
-)
-
 private fun resolveSeriesColor(
     seriesIndex: Int,
     explicitColor: String?,
     paletteStrings: List<String>,
-    isDark: Boolean,
+    theme: MaradonaTheme,
 ): Color {
     parseCssColor(explicitColor)?.let { return it }
     if (paletteStrings.isNotEmpty()) {
         val raw = paletteStrings[seriesIndex % paletteStrings.size]
         parseCssColor(raw)?.let { return it }
     }
-    val defaults = if (isDark) XY_PALETTE_DARK else XY_PALETTE_LIGHT
-    return defaults[seriesIndex % defaults.size]
+    return theme.seriesColor(seriesIndex)
 }
 
 /**
@@ -84,13 +63,12 @@ private fun resolveSeriesColor(
 @Composable
 fun MaradonaXyChartLayout(
     diagram: XyChartDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (XyChartDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { XyChartLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
 
     val xAxisPreviewTicks = remember(diagram) {
         when (val xa = diagram.xAxis) {
@@ -154,7 +132,7 @@ fun MaradonaXyChartLayout(
                 }
             }
             .drawBehind {
-                holder.layout?.let { drawXyChartUnderlay(it, diagram, theme, isDark) }
+                holder.layout?.let { drawXyChartUnderlay(it, diagram, theme) }
             },
         content = {
             if (diagram.showTitle && !diagram.title.isNullOrBlank()) {
@@ -164,7 +142,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -177,20 +155,20 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
             }
             for ((key, sIdx, txt) in pointAndDataLabels) {
                 val series = diagram.plots[sIdx]
-                val seriesCol = resolveSeriesColor(sIdx, series.color, diagram.plotColorPalette, isDark)
+                val seriesCol = resolveSeriesColor(sIdx, series.color, diagram.plotColorPalette, theme)
                 val labelColor = if (key.startsWith("plbl:")) {
                     seriesCol
                 } else if (diagram.showDataLabelOutsideBar || series.points.any { it.label == txt }) {
                     theme.nodeText
                 } else {
-                    Color.White
+                    contrastingTextColor(seriesCol)
                 }
                 BasicText(
                     text = annotatedLabel(txt),
@@ -198,7 +176,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = labelColor,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.sp,
+                        fontSize = theme.captionFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -211,7 +189,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = theme.captionFontSize,
                         fontWeight = FontWeight.Normal,
                     ),
                 )
@@ -223,7 +201,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = theme.captionFontSize,
                         fontWeight = FontWeight.Normal,
                     ),
                 )
@@ -235,7 +213,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.5.sp,
+                        fontSize = theme.scaledSp(12.5f),
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -248,7 +226,7 @@ fun MaradonaXyChartLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.5.sp,
+                        fontSize = theme.scaledSp(12.5f),
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -472,7 +450,6 @@ private fun DrawScope.drawXyChartUnderlay(
     layout: XyChartDiagramLayout,
     diagram: XyChartDiagram,
     theme: MaradonaTheme,
-    isDark: Boolean,
 ) {
     val unit = density
     val pr = layout.plotRect
@@ -495,7 +472,7 @@ private fun DrawScope.drawXyChartUnderlay(
     // 2. Bar plots.
     for (bar in layout.bars) {
         val series = diagram.plots.getOrNull(bar.seriesIndex)
-        val fill = resolveSeriesColor(bar.seriesIndex, series?.color, diagram.plotColorPalette, isDark)
+        val fill = resolveSeriesColor(bar.seriesIndex, series?.color, diagram.plotColorPalette, theme)
         drawRect(
             color = fill,
             topLeft = Offset(bar.rect.x, bar.rect.y),
@@ -505,7 +482,7 @@ private fun DrawScope.drawXyChartUnderlay(
 
     // 3. Line plots.
     for (ls in layout.lines) {
-        val strokeColor = resolveSeriesColor(ls.seriesIndex, ls.series.color, diagram.plotColorPalette, isDark)
+        val strokeColor = resolveSeriesColor(ls.seriesIndex, ls.series.color, diagram.plotColorPalette, theme)
         if (ls.points.size >= 2) {
             val path = Path().apply {
                 val first = ls.points.first().position
@@ -573,7 +550,7 @@ private fun DrawScope.drawXyChartUnderlay(
 
     // 5. Legend markers.
     for (li in layout.legendItems) {
-        val col = resolveSeriesColor(li.seriesIndex, li.series.color, diagram.plotColorPalette, isDark)
+        val col = resolveSeriesColor(li.seriesIndex, li.series.color, diagram.plotColorPalette, theme)
         val mr = li.markerRect
         if (li.series.type == XyPlotType.Bar) {
             drawRect(

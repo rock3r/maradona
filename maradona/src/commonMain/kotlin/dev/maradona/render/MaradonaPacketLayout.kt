@@ -47,7 +47,7 @@ private class PacketLayoutHolder {
 @Composable
 fun MaradonaPacketLayout(
     diagram: PacketDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (PacketDiagramLayout) -> Unit = {},
@@ -79,7 +79,7 @@ fun MaradonaPacketLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -104,14 +104,15 @@ fun MaradonaPacketLayout(
                     } else {
                         10f
                     }
+                    val resolvedBitFontSize = minOf(theme.scaledSp(bitFontSp).value, 11f).sp
                     BasicText(
                         text = leadingBit,
                         modifier = Modifier.layoutId("bit_lead:$idx"),
                         maxLines = 1,
                         style = TextStyle(
                             color = theme.subgraphText,
-                            fontFamily = theme.fontFamily,
-                            fontSize = bitFontSp.sp,
+                            fontFamily = theme.monospaceFontFamily,
+                            fontSize = resolvedBitFontSize,
                             textAlign = if (isSingleBit) TextAlign.Center else TextAlign.Start,
                         ),
                     )
@@ -122,8 +123,8 @@ fun MaradonaPacketLayout(
                             maxLines = 1,
                             style = TextStyle(
                                 color = theme.subgraphText,
-                                fontFamily = theme.fontFamily,
-                                fontSize = bitFontSp.sp,
+                                fontFamily = theme.monospaceFontFamily,
+                                fontSize = resolvedBitFontSize,
                                 textAlign = TextAlign.End,
                             ),
                         )
@@ -132,6 +133,8 @@ fun MaradonaPacketLayout(
 
                 if (block.label.isNotEmpty()) {
                     val labelFontSp = computeBlockLabelFontSize(block, diagram.config.bitWidth)
+                    val maxRowLabelSp = (diagram.config.rowHeight * 0.44f).coerceAtLeast(9f)
+                    val resolvedLabelFontSize = minOf(theme.scaledSp(labelFontSp).value, maxRowLabelSp).sp
                     BasicText(
                         text = annotatedLabel(block.label),
                         modifier = Modifier.layoutId("label:$idx"),
@@ -140,7 +143,7 @@ fun MaradonaPacketLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = labelFontSp.sp,
+                            fontSize = resolvedLabelFontSize,
                             fontWeight = FontWeight.Medium,
                             textAlign = TextAlign.Center,
                         ),

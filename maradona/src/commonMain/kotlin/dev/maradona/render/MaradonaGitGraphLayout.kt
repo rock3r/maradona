@@ -40,28 +40,6 @@ private class GitGraphLayoutHolder {
     var layout: GitGraphDiagramLayout? = null
 }
 
-private val GIT_BRANCH_PALETTE_LIGHT = listOf(
-    Color(0xFFD6E6F4) to Color(0xFF205EA6), // Cobalt
-    Color(0xFFD5EBE6) to Color(0xFF24837B), // Teal
-    Color(0xFFF3E7C4) to Color(0xFFAD8301), // Ochre
-    Color(0xFFEAD7E4) to Color(0xFFA02F6F), // Magenta
-    Color(0xFFE2ECC6) to Color(0xFF66800B), // Olive
-    Color(0xFFF6DDD0) to Color(0xFFBC5215), // Terracotta
-    Color(0xFFE1DCF2) to Color(0xFF5E409D), // Purple
-    Color(0xFFE6E4D9) to Color(0xFF6F6E69), // Stone
-)
-
-private val GIT_BRANCH_PALETTE_DARK = listOf(
-    Color(0xFF1B344B) to Color(0xFF4385BE),
-    Color(0xFF183734) to Color(0xFF3AA99F),
-    Color(0xFF3B2E12) to Color(0xFFD0A215),
-    Color(0xFF3A1D2E) to Color(0xFFCE5D97),
-    Color(0xFF2A3411) to Color(0xFF879A39),
-    Color(0xFF3E2214) to Color(0xFFDA702C),
-    Color(0xFF2B2244) to Color(0xFF8B7EC8),
-    Color(0xFF282726) to Color(0xFF878580),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `gitGraph` diagrams.
  *
@@ -72,7 +50,7 @@ private val GIT_BRANCH_PALETTE_DARK = listOf(
 @Composable
 fun MaradonaGitGraphLayout(
     diagram: GitGraphDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (GitGraphDiagramLayout) -> Unit = {},
@@ -106,7 +84,7 @@ fun MaradonaGitGraphLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -120,7 +98,7 @@ fun MaradonaGitGraphLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             fontWeight = FontWeight.SemiBold,
                         ),
                     )
@@ -134,7 +112,7 @@ fun MaradonaGitGraphLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = theme.scaledSp(10.5f),
                             fontWeight = FontWeight.Medium,
                         ),
                     )
@@ -146,7 +124,7 @@ fun MaradonaGitGraphLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = theme.scaledSp(10.5f),
                             fontWeight = FontWeight.SemiBold,
                         ),
                     )
@@ -273,14 +251,13 @@ private fun DrawScope.drawGitGraphUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val palette = if (isDark) GIT_BRANCH_PALETTE_DARK else GIT_BRANCH_PALETTE_LIGHT
     val guideDash = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
     val cherryDash = PathEffect.dashPathEffect(floatArrayOf(6f * unit, 4f * unit), 0f)
 
     // 1. Branch lane guide lines & branch pills.
     for (pb in layout.branches) {
-        val (fill, stroke) = palette[pb.laneIndex.mod(palette.size)]
+        val fill = theme.seriesFill(pb.laneIndex)
+        val stroke = theme.seriesColor(pb.laneIndex)
         drawLine(
             color = stroke.copy(alpha = 0.28f),
             start = Offset(pb.lineStart.x, pb.lineStart.y),
@@ -309,7 +286,7 @@ private fun DrawScope.drawGitGraphUnderlay(
 
     // 2. Commit edges (same-branch lines and cross-branch S-curves).
     for (edge in layout.edges) {
-        val (_, stroke) = palette[edge.branchLaneIndex.mod(palette.size)]
+        val stroke = theme.seriesColor(edge.branchLaneIndex)
         val pts = edge.points
         if (pts.size < 2) continue
         val path = Path().apply {
@@ -334,12 +311,13 @@ private fun DrawScope.drawGitGraphUnderlay(
     }
 
     // 3. Commit markers, commit label pills, and tag badges.
-    val tagFill = if (isDark) Color(0xFF3B2E12) else Color(0xFFF9F0D2)
-    val tagBorder = if (isDark) Color(0xFFD0A215) else Color(0xFFAD8301)
-    val lblFill = if (isDark) Color(0xFF201F1E) else Color(0xFFF4F1E6)
+    val tagFill = theme.warningFill
+    val tagBorder = theme.warningBorder
+    val lblFill = theme.nodeFill
 
     for (pc in layout.commits) {
-        val (branchFill, branchStroke) = palette[pc.laneIndex.mod(palette.size)]
+        val branchFill = theme.seriesFill(pc.laneIndex)
+        val branchStroke = theme.seriesColor(pc.laneIndex)
         val nr = pc.nodeRect
         val center = Offset(pc.center.x, pc.center.y)
         val radius = nr.width / 2f

@@ -100,7 +100,7 @@ enum class DiagramZoom {
 fun MaradonaDiagram(
     source: String,
     modifier: Modifier = Modifier,
-    theme: MaradonaTheme = MaradonaTheme.light(),
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     autoDirection: Boolean = true,
     zoomEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
@@ -348,7 +348,10 @@ fun MaradonaDiagram(
                         translationY = centerY + pan.y + gesturePan.y
                     },
             ) {
-                CompositionLocalProvider(LocalDensity provides zoomedDensity) {
+                CompositionLocalProvider(
+                    LocalDensity provides zoomedDensity,
+                    LocalMaradonaTheme provides theme,
+                ) {
                     val contentModifier = Modifier
                         .wrapContentSize(Alignment.TopStart, unbounded = true)
                         .onSizeChanged {
@@ -570,7 +573,11 @@ fun MaradonaDiagram(
                     .align(Alignment.BottomStart)
                     .background(theme.background)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                style = TextStyle(color = theme.error, fontSize = 12.sp),
+                style = TextStyle(
+                    color = theme.error,
+                    fontSize = theme.edgeLabelFontSize,
+                    fontFamily = theme.fontFamily,
+                ),
             )
         }
     }

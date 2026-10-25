@@ -43,36 +43,13 @@ private class RadarLayoutHolder {
     var layout: RadarDiagramLayout? = null
 }
 
-private val RADAR_PALETTE_LIGHT = listOf(
-    Color(0xFF205EA6),
-    Color(0xFFDA702C),
-    Color(0xFF66800B),
-    Color(0xFFCE5D97),
-    Color(0xFF24837B),
-    Color(0xFF8B7EC8),
-    Color(0xFFD14D41),
-    Color(0xFFD0A215),
-)
-
-private val RADAR_PALETTE_DARK = listOf(
-    Color(0xFF4385BE),
-    Color(0xFFF29A4B),
-    Color(0xFF879A39),
-    Color(0xFFE479B2),
-    Color(0xFF3AA99F),
-    Color(0xFFA699E0),
-    Color(0xFFEB6F62),
-    Color(0xFFE6B830),
-)
-
 private fun resolveRadarCurveColor(
     curveIndex: Int,
     customPalette: Map<Int, String>,
-    isDark: Boolean,
+    theme: MaradonaTheme,
 ): Color {
-    val palette = if (isDark) RADAR_PALETTE_DARK else RADAR_PALETTE_LIGHT
     parseCssColor(customPalette[curveIndex])?.let { return it }
-    return palette[curveIndex % palette.size]
+    return theme.seriesColor(curveIndex)
 }
 
 /**
@@ -85,13 +62,12 @@ private fun resolveRadarCurveColor(
 @Composable
 fun MaradonaRadarLayout(
     diagram: RadarDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (RadarDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { RadarLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
 
     Layout(
         modifier = modifier
@@ -107,7 +83,7 @@ fun MaradonaRadarLayout(
                 }
             }
             .drawBehind {
-                holder.layout?.let { drawRadarUnderlay(it, diagram, theme, isDark) }
+                holder.layout?.let { drawRadarUnderlay(it, diagram, theme) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
@@ -117,7 +93,7 @@ fun MaradonaRadarLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -132,7 +108,7 @@ fun MaradonaRadarLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -155,7 +131,7 @@ fun MaradonaRadarLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             fontWeight = FontWeight.Normal,
                         ),
                     )
@@ -303,7 +279,6 @@ private fun DrawScope.drawRadarUnderlay(
     layout: RadarDiagramLayout,
     diagram: RadarDiagram,
     theme: MaradonaTheme,
-    isDark: Boolean,
 ) {
     val cx = layout.center.x
     val cy = layout.center.y
@@ -361,7 +336,7 @@ private fun DrawScope.drawRadarUnderlay(
     for (pc in layout.curves) {
         val pts = pc.points
         if (pts.isEmpty()) continue
-        val curveColor = resolveRadarCurveColor(pc.curveIndex, diagram.config.customPalette, isDark)
+        val curveColor = resolveRadarCurveColor(pc.curveIndex, diagram.config.customPalette, theme)
         if (pts.size >= 2) {
             val path = buildRadarCurvePath(pts, pc.useSmoothClosedCurve, pc.tension)
             if (pts.size >= 3 && fillAlpha > 0f) {
@@ -386,7 +361,7 @@ private fun DrawScope.drawRadarUnderlay(
     val swatchStroke = Stroke(width = max(1f, 1.25f * density))
     val swatchAlpha = max(0.35f, fillAlpha)
     for (li in layout.legendItems) {
-        val curveColor = resolveRadarCurveColor(li.curveIndex, diagram.config.customPalette, isDark)
+        val curveColor = resolveRadarCurveColor(li.curveIndex, diagram.config.customPalette, theme)
         val topLeft = Offset(li.swatchRect.x, li.swatchRect.y)
         val sz = Size(li.swatchRect.width, li.swatchRect.height)
         drawRect(color = curveColor.copy(alpha = swatchAlpha), topLeft = topLeft, size = sz, style = Fill)

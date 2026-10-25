@@ -64,7 +64,7 @@ private class StateLayoutHolder {
 @Composable
 fun MaradonaStateLayout(
     diagram: StateDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 44f, layerGap = 48f),
@@ -107,7 +107,7 @@ fun MaradonaStateLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -141,7 +141,7 @@ fun MaradonaStateLayout(
                                     style = TextStyle(
                                         color = textColor,
                                         fontFamily = theme.fontFamily,
-                                        fontSize = 12.sp,
+                                        fontSize = theme.edgeLabelFontSize,
                                         textAlign = TextAlign.Start,
                                     ),
                                 )
@@ -178,9 +178,9 @@ fun MaradonaStateLayout(
                     BasicText(
                         text = annotatedLabel(note.text),
                         style = TextStyle(
-                            color = Color(0xFF333333),
+                            color = theme.noteText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             textAlign = TextAlign.Start,
                         ),
                     )
@@ -552,8 +552,8 @@ private fun DrawScope.drawStateUnderlay(
     }
 
     // 5. Sticky note backgrounds and borders.
-    val noteFill = Color(0xFFFFF5AD)
-    val noteBorder = Color(0xFFAAAA33)
+    val noteFill = theme.noteFill
+    val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
         drawRect(

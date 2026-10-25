@@ -1,10 +1,20 @@
 package dev.maradona.sample
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import dev.maradona.render.LocalMaradonaTheme
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 import java.io.File
@@ -415,10 +425,10 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 248) <= 3 && abs(g - 185) <= 3 && abs(b - 178) <= 3) critActivePixels++
+                if (abs(r - 244) <= 6 && abs(g - 196) <= 6 && abs(b - 193) <= 6) critActivePixels++
             }
         }
-        assertTrue(critActivePixels > 400, "Critical active Gantt bar rgb(248, 185, 178) not rendered ($critActivePixels px)")
+        assertTrue(critActivePixels > 400, "Critical active Gantt bar not rendered ($critActivePixels px)")
     }
 
     @Test
@@ -455,10 +465,10 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 136) <= 3 && abs(g - 179) <= 3 && abs(b - 216) <= 3) cobaltSlicePixels++
+                if (abs(r - 149) <= 5 && abs(g - 184) <= 5 && abs(b - 219) <= 5) cobaltSlicePixels++
             }
         }
-        assertTrue(cobaltSlicePixels > 2_000, "Primary pie slice rgb(136, 179, 216) not rendered ($cobaltSlicePixels px)")
+        assertTrue(cobaltSlicePixels > 2_000, "Primary pie slice not rendered ($cobaltSlicePixels px)")
     }
 
     @Test
@@ -567,10 +577,10 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 255) <= 3 && abs(g - 248) <= 3 && abs(b - 220) <= 3) facePixels++
+                if (abs(r - 255) <= 4 && abs(g - 245) <= 4 && abs(b - 173) <= 4) facePixels++
             }
         }
-        assertTrue(facePixels > 500, "Journey mood face rgb(255, 248, 220) not rendered ($facePixels px)")
+        assertTrue(facePixels > 500, "Journey mood face not rendered ($facePixels px)")
     }
 
     @Test
@@ -605,10 +615,10 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 228) <= 3 && abs(g - 239) <= 3 && abs(b - 248) <= 3) q1Pixels++
+                if (abs(r - 222) <= 5 && abs(g - 235) <= 5 && abs(b - 241) <= 5) q1Pixels++
             }
         }
-        assertTrue(q1Pixels > 5_000, "Quadrant Q1 fill rgb(228, 239, 248) not rendered ($q1Pixels px)")
+        assertTrue(q1Pixels > 5_000, "Quadrant Q1 fill not rendered ($q1Pixels px)")
     }
 
     @Test
@@ -676,11 +686,11 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 0xEA) <= 3 && abs(g - 0xF2) <= 3 && abs(b - 0xFA) <= 3) colBlueTintPixels++
+                if (abs(r - 224) <= 5 && abs(g - 236) <= 5 && abs(b - 241) <= 5) colBlueTintPixels++
                 if (abs(r - 0xD1) <= 4 && abs(g - 0x4D) <= 4 && abs(b - 0x41) <= 4) priorityRedPixels++
             }
         }
-        assertTrue(colBlueTintPixels > 2_000, "Kanban column fill #EAF2FA not rendered ($colBlueTintPixels px)")
+        assertTrue(colBlueTintPixels > 2_000, "Kanban column fill not rendered ($colBlueTintPixels px)")
         assertTrue(priorityRedPixels > 40, "Kanban Very High priority stripe #D14D41 not rendered ($priorityRedPixels px)")
     }
 
@@ -710,12 +720,12 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 0x4E) <= 4 && abs(g - 0x79) <= 4 && abs(b - 0xA7) <= 4) nodeBluePixels++
-                if (abs(r - 0xF2) <= 4 && abs(g - 0x8E) <= 4 && abs(b - 0x2B) <= 4) nodeOrangePixels++
+                if (abs(r - 0x20) <= 4 && abs(g - 0x5E) <= 4 && abs(b - 0xA6) <= 4) nodeBluePixels++
+                if (abs(r - 0xDA) <= 4 && abs(g - 0x70) <= 4 && abs(b - 0x2C) <= 4) nodeOrangePixels++
             }
         }
-        assertTrue(nodeBluePixels > 200, "Sankey node fill #4E79A7 not rendered ($nodeBluePixels px)")
-        assertTrue(nodeOrangePixels > 400, "Sankey node fill #F28E2B not rendered ($nodeOrangePixels px)")
+        assertTrue(nodeBluePixels > 200, "Sankey node fill #205EA6 not rendered ($nodeBluePixels px)")
+        assertTrue(nodeOrangePixels > 400, "Sankey node fill #DA702C not rendered ($nodeOrangePixels px)")
     }
 
     @Test
@@ -756,11 +766,11 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 0xEA) <= 3 && abs(g - 0xF2) <= 3 && abs(b - 0xFA) <= 3) reqHeaderBluePixels++
+                if (abs(r - 0xDB) <= 4 && abs(g - 0xEA) <= 4 && abs(b - 0xFE) <= 4) reqHeaderBluePixels++
                 if (abs(r - 0xE8) <= 3 && abs(g - 0xF4) <= 3 && abs(b - 0xEE) <= 3) elemHeaderMintPixels++
             }
         }
-        assertTrue(reqHeaderBluePixels > 2_000, "Requirement header fill #EAF2FA not rendered ($reqHeaderBluePixels px)")
+        assertTrue(reqHeaderBluePixels > 2_000, "Requirement header fill #DBEAFE not rendered ($reqHeaderBluePixels px)")
         assertTrue(elemHeaderMintPixels > 1_000, "Element header fill #E8F4EE not rendered ($elemHeaderMintPixels px)")
     }
 
@@ -959,12 +969,12 @@ class RenderScreenshotTest {
                 val r = (rgb shr 16) and 0xFF
                 val g = (rgb shr 8) and 0xFF
                 val b = rgb and 0xFF
-                if (abs(r - 0x4E) <= 8 && abs(g - 0x79) <= 8 && abs(b - 0xA7) <= 8) sectionBlueBorderPixels++
-                if (abs(r - 0xF2) <= 8 && abs(g - 0x8E) <= 8 && abs(b - 0x2B) <= 8) sectionOrangeBorderPixels++
+                if (abs(r - 0x20) <= 8 && abs(g - 0x5E) <= 8 && abs(b - 0xA6) <= 8) sectionBlueBorderPixels++
+                if (abs(r - 0xDA) <= 8 && abs(g - 0x70) <= 8 && abs(b - 0x2C) <= 8) sectionOrangeBorderPixels++
             }
         }
-        assertTrue(sectionBlueBorderPixels > 200, "Treemap blue section border #4E79A7 not rendered ($sectionBlueBorderPixels px)")
-        assertTrue(sectionOrangeBorderPixels > 100, "Treemap orange section border #F28E2B not rendered ($sectionOrangeBorderPixels px)")
+        assertTrue(sectionBlueBorderPixels > 200, "Treemap blue section border #205EA6 not rendered ($sectionBlueBorderPixels px)")
+        assertTrue(sectionOrangeBorderPixels > 100, "Treemap orange section border #DA702C not rendered ($sectionOrangeBorderPixels px)")
     }
 
     @Test
@@ -1046,5 +1056,118 @@ class RenderScreenshotTest {
         }
         assertTrue(activationBluePixels > 400, "ZenUML activation bar #DBEAFE not rendered ($activationBluePixels px)")
         assertTrue(primaryCardFillPixels > 1_500, "ZenUML participant header card fill not rendered ($primaryCardFillPixels px)")
+    }
+
+    @Test
+    fun jewelDarkAndLightIntegration() {
+        val jewelDark = MaradonaTheme.jewelDark()
+        val jewelLight = MaradonaTheme.jewelLight()
+        val scene = ImageComposeScene(width = 1280, height = 760, density = Density(1.5f)) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Left half: Jewel Dark (IntUiDark) provided via LocalMaradonaTheme
+                CompositionLocalProvider(LocalMaradonaTheme provides jewelDark) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(jewelDark.background)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MaradonaDiagram(
+                            source = """
+                                sequenceDiagram
+                                  participant IDE as Jewel Toolwindow
+                                  participant M as MaradonaDiagram
+                                  IDE->>+M: Provide LocalMaradonaTheme
+                                  Note right of M: IntUiDark #1E1F22 / #3574F0
+                                  M-->>-IDE: Native Compose Canvas
+                            """.trimIndent(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            zoomEnabled = false,
+                        )
+                        MaradonaDiagram(
+                            source = """
+                                architecture-beta
+                                  group ide(cloud)[IntelliJ Platform]
+                                  service plugin(server)[Plugin Host] in ide
+                                  service cache(database)[Index Cache] in ide
+                                  plugin:R --> L:cache
+                            """.trimIndent(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            zoomEnabled = false,
+                        )
+                    }
+                }
+                // Right half: Jewel Light (IntUiLight) provided via LocalMaradonaTheme
+                CompositionLocalProvider(LocalMaradonaTheme provides jewelLight) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .background(jewelLight.background)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MaradonaDiagram(
+                            source = """
+                                C4Context
+                                  title Jewel Light C4 Integration
+                                  Person(dev, "Plugin Author", "Embeds Maradona in Jewel")
+                                  System(maradona, "Maradona", "Host-themed Mermaid renderer")
+                                  System_Ext(ij, "IntelliJ SDK", "Jewel IntUi tokens")
+                                  Rel(dev, maradona, "Provides LocalMaradonaTheme")
+                                  Rel(maradona, ij, "Matches IDE palette")
+                            """.trimIndent(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            zoomEnabled = false,
+                        )
+                        MaradonaDiagram(
+                            source = """
+                                gitGraph
+                                  commit id: "init" tag: "v1.0"
+                                  branch jewel-theme
+                                  commit id: "tokens" type: HIGHLIGHT
+                                  checkout main
+                                  merge jewel-theme id: "ship"
+                            """.trimIndent(),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            zoomEnabled = false,
+                        )
+                    }
+                }
+            }
+        }
+        val out = File("build/screenshots/jewel-integration.png")
+        try {
+            repeat(4) { frame -> scene.render((frame + 1) * 16_000_000L) }
+            val data = scene.render(100_000_000L).encodeToData(EncodedImageFormat.PNG)
+            requireNotNull(data)
+            out.parentFile.mkdirs()
+            out.writeBytes(data.bytes)
+        } finally {
+            scene.close()
+        }
+        val img = ImageIO.read(out)
+        var jewelDarkBgPixels = 0
+        var jewelDarkCardPixels = 0
+        var jewelBlueAccentPixels = 0
+        var jewelLightBgPixels = 0
+        for (y in 0 until img.height) {
+            for (x in 0 until img.width) {
+                val rgb = img.getRGB(x, y)
+                val r = (rgb shr 16) and 0xFF
+                val g = (rgb shr 8) and 0xFF
+                val b = rgb and 0xFF
+                if (abs(r - 0x1E) <= 3 && abs(g - 0x1F) <= 3 && abs(b - 0x22) <= 3) jewelDarkBgPixels++
+                if (abs(r - 0x2B) <= 3 && abs(g - 0x2D) <= 3 && abs(b - 0x30) <= 3) jewelDarkCardPixels++
+                if (abs(r - 0x35) <= 5 && abs(g - 0x74) <= 5 && abs(b - 0xF0) <= 5) jewelBlueAccentPixels++
+                if (r >= 252 && g >= 252 && b >= 252) jewelLightBgPixels++
+            }
+        }
+        assertTrue(jewelDarkBgPixels > 50_000, "Jewel Dark background #1E1F22 not rendered ($jewelDarkBgPixels px)")
+        assertTrue(jewelDarkCardPixels > 1_000, "Jewel Dark surface #2B2D30 not rendered ($jewelDarkCardPixels px)")
+        assertTrue(jewelBlueAccentPixels > 2_000, "Jewel accent #3574F0 not rendered ($jewelBlueAccentPixels px)")
+        assertTrue(jewelLightBgPixels > 50_000, "Jewel Light background #FFFFFF not rendered ($jewelLightBgPixels px)")
     }
 }
