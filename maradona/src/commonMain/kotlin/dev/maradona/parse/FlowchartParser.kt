@@ -652,6 +652,28 @@ internal object NodeRefReader {
             }
         }
         while (i < s.length) {
+            if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
+                i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
+            ) {
+                var j = i + 4
+                var quote: Char? = null
+                while (j < s.length) {
+                    val c = s[j]
+                    if (quote != null) {
+                        if (c == quote) quote = null
+                    } else if (c == '"' || c == '\'') {
+                        quote = c
+                    } else if (c == '>') {
+                        break
+                    }
+                    j++
+                }
+                if (j < s.length && s[j] == '>') {
+                    nonCode.append(s, i, j + 1)
+                    i = j + 1
+                    continue
+                }
+            }
             if (s[i] == '`') {
                 val close = s.indexOf('`', i + 1)
                 if (close > i) {

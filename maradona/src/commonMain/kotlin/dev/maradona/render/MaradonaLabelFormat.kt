@@ -52,7 +52,7 @@ data class InlineImageSpec(
 )
 
 private val IMG_TAG_REGEX = Regex("""(?i)<img\b((?:[^>"']|"[^"]*"|'[^']*')*)/?>""")
-private val MD_IMAGE_REGEX = Regex("""!\[([^\]]*)]\(([^)\s]+)\)""")
+private val MD_IMAGE_REGEX = Regex("""!\[([^\]]*)]\(((?:[^()\s]|\([^()\s]*\))+)\)""")
 
 private val INLINE_ICON_CALL_REGEX = Regex("""(?i)::icon\(([^)]+)\)""")
 private val INLINE_ICON_SHORT_REGEX = Regex("""(?i)\b(?:fa[bsrl]?|mdi):([a-z0-9_-]+)""")
@@ -506,6 +506,24 @@ fun annotatedLabel(
     flush()
 }
 
+private fun findHtmlTagEnd(s: String, startAfterTagName: Int): Int {
+    var i = startAfterTagName
+    var quote: Char? = null
+    while (i < s.length) {
+        val c = s[i]
+        if (quote != null) {
+            if (c == quote) quote = null
+        } else {
+            when (c) {
+                '"', '\'' -> quote = c
+                '>' -> return i
+            }
+        }
+        i++
+    }
+    return -1
+}
+
 private fun transformOutsideCodeSpans(s: String, transform: (String) -> String): String {
     val out = StringBuilder()
     val nonCode = StringBuilder()
@@ -517,6 +535,16 @@ private fun transformOutsideCodeSpans(s: String, transform: (String) -> String):
         }
     }
     while (i < s.length) {
+        if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
+            i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
+        ) {
+            val tagEnd = findHtmlTagEnd(s, i + 4)
+            if (tagEnd >= 0) {
+                nonCode.append(s, i, tagEnd + 1)
+                i = tagEnd + 1
+                continue
+            }
+        }
         if (s[i] == '`') {
             val close = s.indexOf('`', i + 1)
             if (close > i) {
@@ -529,7 +557,7 @@ private fun transformOutsideCodeSpans(s: String, transform: (String) -> String):
         if (s.regionMatches(i, "<code", 0, 5, ignoreCase = true) &&
             i + 5 < s.length && (s[i + 5] == '>' || s[i + 5].isWhitespace())
         ) {
-            val openEnd = s.indexOf('>', i + 5)
+            val openEnd = findHtmlTagEnd(s, i + 5)
             val close = if (openEnd >= 0) s.indexOf("</code>", openEnd + 1, ignoreCase = true) else -1
             if (openEnd >= 0 && close >= 0) {
                 flushNonCode()
