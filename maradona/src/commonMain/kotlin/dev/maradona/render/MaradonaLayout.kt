@@ -88,7 +88,7 @@ fun MaradonaLayout(
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                         .semantics {
                             contentDescription =
-                                "Connection from ${plainLabel(chart, edge.from)} to ${plainLabel(chart, edge.to)}: ${label.replace("*", "")}"
+                                "Connection from ${plainLabel(chart, edge.from)} to ${plainLabel(chart, edge.to)}: ${plainTextLabel(label)}"
                         },
                     style = TextStyle(
                         color = theme.edgeLabelText,
@@ -203,14 +203,14 @@ fun MaradonaLayout(
 }
 
 private fun plainLabel(chart: Flowchart, id: String): String =
-    (chart.nodes.firstOrNull { it.id == id }?.label ?: id).replace("*", "")
+    plainTextLabel(chart.nodes.firstOrNull { it.id == id }?.label ?: id)
 
 private fun connectionDescriptions(chart: Flowchart): Map<String, String> {
     val out = HashMap<String, MutableList<String>>()
     for (node in chart.nodes) out[node.id] = mutableListOf()
     for (edge in chart.edges) {
         if (edge.stroke == EdgeStroke.Invisible) continue
-        val labelPart = edge.label?.let { " (${it.replace("*", "")})" } ?: ""
+        val labelPart = edge.label?.let { " (${plainTextLabel(it)})" } ?: ""
         val fromLabel = plainLabel(chart, edge.from)
         val toLabel = plainLabel(chart, edge.to)
         when {

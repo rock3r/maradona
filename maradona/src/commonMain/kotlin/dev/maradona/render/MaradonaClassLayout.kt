@@ -189,7 +189,7 @@ fun MaradonaClassLayout(
                         .layoutId("note:$idx")
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                         .semantics {
-                            contentDescription = "Note: ${note.text.replace("*", "")}"
+                            contentDescription = "Note: ${plainTextLabel(note.text)}"
                         },
                 ) {
                     BasicText(

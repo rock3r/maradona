@@ -81,8 +81,8 @@ fun MaradonaSequenceLayout(
         val out = HashMap<String, MutableList<String>>()
         for (p in diagram.participants) out[p.id] = mutableListOf()
         for (m in flatMessages) {
-            out[m.from]?.add("sends ${m.text.replace("*", "")} to ${m.to}")
-            out[m.to]?.add("receives ${m.text.replace("*", "")} from ${m.from}")
+            out[m.from]?.add("sends ${plainTextLabel(m.text)} to ${m.to}")
+            out[m.to]?.add("receives ${plainTextLabel(m.text)} from ${m.from}")
         }
         out.mapValues { it.value.joinToString("; ") }
     }
@@ -147,7 +147,7 @@ fun MaradonaSequenceLayout(
                     modifier = Modifier
                         .layoutId("msg:$index")
                         .semantics {
-                            contentDescription = "Message from ${msg.from} to ${msg.to}: ${msg.text.replace("*", "")}"
+                            contentDescription = "Message from ${msg.from} to ${msg.to}: ${plainTextLabel(msg.text)}"
                         },
                     style = TextStyle(
                         color = theme.nodeText,
@@ -176,7 +176,7 @@ fun MaradonaSequenceLayout(
                     modifier = Modifier
                         .layoutId("note:$index")
                         .semantics {
-                            contentDescription = "Note: ${note.text.replace("*", "")}"
+                            contentDescription = "Note: ${plainTextLabel(note.text)}"
                         },
                     style = TextStyle(
                         color = theme.noteText,
@@ -409,7 +409,7 @@ private fun SequenceParticipantBox(
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
 ) {
     val uriHandler = LocalUriHandler.current
-    val plainLabel = participant.label.replace("**", "").replace("*", "")
+    val plainLabel = plainTextLabel(participant.label)
     val baseDesc = buildString {
         append("Participant $plainLabel")
         if (!messageSummary.isNullOrBlank()) append(". $messageSummary")
