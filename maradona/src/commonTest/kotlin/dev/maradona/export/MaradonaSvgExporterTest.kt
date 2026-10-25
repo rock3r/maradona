@@ -277,11 +277,11 @@ class MaradonaSvgExporterTest {
         assertTrue(sankeySvg.contains("class=\"sankey-link\""), "Expected sankey link ribbon in SVG")
 
         val wrappedAndControlSvg = MaradonaSvgExporter.exportToSvg(
-            "flowchart TD\n    Long[\"This is a very long flowchart node label that exceeds the default two hundred pixel wrapping width\u0001 and wraps onto multiple SVG text lines\"]",
+            "flowchart TD\n    Long[\"Open https://example.com/a/very/long/unbroken/resource/path/that/exceeds/wrapping/width\u0001 and wraps onto multiple SVG text lines\"]",
         )
         assertFalse(wrappedAndControlSvg.contains("\u0001"), "Expected illegal XML control char U+0001 to be stripped")
         val textTagCount = Regex("<text ").findAll(wrappedAndControlSvg).count()
-        assertTrue(textTagCount >= 2, "Expected long flowchart label to wrap into at least 2 <text> lines, got $textTagCount")
+        assertTrue(textTagCount >= 3, "Expected long flowchart label with oversized second token to wrap into at least 3 <text> lines, got $textTagCount")
     }
 
     @Test

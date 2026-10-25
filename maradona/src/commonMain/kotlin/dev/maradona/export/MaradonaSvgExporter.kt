@@ -996,25 +996,26 @@ object MaradonaSvgExporter {
                 continue
             }
             val words = rawLine.split(' ')
-            var cur = StringBuilder()
+            val cur = StringBuilder()
             for (word in words) {
-                if (cur.isEmpty()) {
-                    if (word.length <= maxChars) {
-                        cur.append(word)
-                    } else {
-                        var pos = 0
-                        while (pos < word.length) {
-                            val end = min(word.length, pos + maxChars)
-                            val chunk = word.substring(pos, end)
-                            if (end < word.length) out += chunk else cur.append(chunk)
-                            pos = end
-                        }
-                    }
-                } else if (cur.length + 1 + word.length <= maxChars) {
+                if (cur.isNotEmpty() && cur.length + 1 + word.length <= maxChars) {
                     cur.append(' ').append(word)
-                } else {
+                    continue
+                }
+                if (cur.isNotEmpty()) {
                     out += cur.toString()
-                    cur = StringBuilder(word)
+                    cur.setLength(0)
+                }
+                if (word.length <= maxChars) {
+                    cur.append(word)
+                } else {
+                    var pos = 0
+                    while (pos < word.length) {
+                        val end = min(word.length, pos + maxChars)
+                        val chunk = word.substring(pos, end)
+                        if (end < word.length) out += chunk else cur.append(chunk)
+                        pos = end
+                    }
                 }
             }
             if (cur.isNotEmpty()) out += cur.toString()
