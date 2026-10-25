@@ -353,10 +353,11 @@ object FlowchartLayout {
             }
             fun endpointShift(id: String): Float = nodeShiftX[id] ?: sgShiftX[id] ?: 0f
 
+            val pad = 14f * options.density
             val updatedEdges = edges.map { pe ->
                 val dxFrom = endpointShift(pe.edge.from)
                 val dxTo = endpointShift(pe.edge.to)
-                if (dxFrom == 0f && dxTo == 0f) {
+                val baseEdge = if (dxFrom == 0f && dxTo == 0f) {
                     pe
                 } else if (dxFrom == dxTo) {
                     pe.copy(
@@ -376,8 +377,105 @@ object FlowchartLayout {
                         labelRect = pe.labelRect?.let { it.copy(x = it.x + midDx) },
                     )
                 }
+                val deflectedPts = deflectEdgeAroundNodes(
+                    rawPts = baseEdge.points,
+                    fromId = pe.edge.from,
+                    toId = pe.edge.to,
+                    nodeRects = nodeRects,
+                    pad = pad,
+                )
+                if (deflectedPts === baseEdge.points) baseEdge else baseEdge.copy(points = deflectedPts)
             }
             return updatedEdges to updatedSubgraphs
+        }
+
+        private fun deflectEdgeAroundNodes(
+            rawPts: List<DiagramPoint>,
+            fromId: String,
+            toId: String,
+            nodeRects: Map<String, DiagramRect>,
+            pad: Float,
+        ): List<DiagramPoint> {
+            if (rawPts.size < 2 || fromId == toId) return rawPts
+            val obstacles = nodeRects.entries
+                .filter { it.key != fromId && it.key != toId }
+                .map { it.value }
+            if (obstacles.isEmpty()) return rawPts
+
+            fun clearXAtY(x: Float, y: Float, clearance: Float): Float {
+                val bandObs = obstacles.filter { y >= it.y - clearance && y <= it.bottom + clearance }
+                if (bandObs.none { x > it.x - clearance && x < it.right + clearance }) return x
+                val candidates = mutableListOf<Float>()
+                for (obs in bandObs) {
+                    candidates += obs.x - clearance
+                    candidates += obs.right + clearance
+                }
+                val valid = candidates.filter { cand ->
+                    bandObs.none { cand > it.x - clearance + 0.5f && cand < it.right + clearance - 0.5f }
+                }
+                return valid.minByOrNull { kotlin.math.abs(it - x) } ?: x
+            }
+
+            var pts = rawPts.toMutableList()
+            var changed = false
+
+            // 1. Push any interior waypoints that landed inside an unrelated node box outside it.
+            for (k in 1 until pts.lastIndex) {
+                val p = pts[k]
+                val nx = clearXAtY(p.x, p.y, pad)
+                if (nx != p.x) {
+                    pts[k] = DiagramPoint(nx, p.y)
+                    changed = true
+                }
+            }
+
+            // 2. If any segment still crosses an unrelated node box, route around its top/bottom corners.
+            val cornerMargin = 6f
+            repeat(4) {
+                val next = mutableListOf<DiagramPoint>()
+                var passChanged = false
+                for (i in 0 until pts.lastIndex) {
+                    val a = pts[i]
+                    val b = pts[i + 1]
+                    next += a
+                    val hit = obstacles.firstOrNull { obs ->
+                        ClassLayout.segmentIntersectsRect(a, b, obs)
+                    }
+                    if (hit != null) {
+                        val topY = hit.y - cornerMargin
+                        val botY = hit.bottom + cornerMargin
+                        val aInY = a.y >= hit.y && a.y <= hit.bottom
+                        val bInY = b.y >= hit.y && b.y <= hit.bottom
+                        if (aInY && bInY) {
+                            next += DiagramPoint(a.x, topY)
+                            next += DiagramPoint(b.x, topY)
+                        } else {
+                            val refX = when {
+                                aInY -> a.x
+                                bInY -> b.x
+                                kotlin.math.abs(b.y - a.y) > 1e-3f ->
+                                    a.x + (b.x - a.x) * ((hit.centerY - a.y) / (b.y - a.y))
+                                else -> (a.x + b.x) * 0.5f
+                            }
+                            val detourX = clearXAtY(refX, hit.centerY, pad)
+                            if (a.y <= b.y) {
+                                if (a.y < hit.y) next += DiagramPoint(detourX, topY)
+                                if (b.y > hit.bottom) next += DiagramPoint(detourX, botY)
+                            } else {
+                                if (a.y > hit.bottom) next += DiagramPoint(detourX, botY)
+                                if (b.y < hit.y) next += DiagramPoint(detourX, topY)
+                            }
+                        }
+                        passChanged = true
+                        changed = true
+                    }
+                }
+                next += pts.last()
+                pts = next
+                if (!passChanged) return@repeat
+            }
+
+            return if (changed) pts else rawPts
         }
     }
 }

@@ -177,6 +177,42 @@ class MaradonaSvgExporterTest {
         assertFalse(rectsOverlap(outerLeft.rect, freeNode1.rect), "outerLeft must not overlap unclustered Free1 node")
         assertFalse(rectsOverlap(outerRight.rect, freeNode1.rect), "outerRight must not overlap unclustered Free1 node")
         assertFalse(rectsOverlap(freeNode1.rect, freeNode2.rect), "Shifted unclustered Free1 and Free2 nodes must not overlap each other")
+
+        // Cross-subgraph edges after sibling separation must not pass through unrelated nodes.
+        val crossEdgeMmd = """
+            flowchart TB
+                subgraph s0
+                    n0
+                    n1
+                    n3
+                    n4
+                end
+                subgraph s1
+                    n2
+                    n6
+                end
+                n0 --> n1
+                n0 --> n3
+                n1 --> n4
+                n3 --> n6
+        """.trimIndent()
+        val crossChart = FlowchartParser.parse(crossEdgeMmd)
+        val crossLayout = FlowchartLayout.layout(
+            chart = crossChart,
+            nodeSize = { DiagramSize(100f, 44f) },
+            edgeLabelSize = { null },
+        )
+        for (pe in crossLayout.edges) {
+            for (pn in crossLayout.nodes) {
+                if (pn.node.id == pe.edge.from || pn.node.id == pe.edge.to) continue
+                for (i in 0 until pe.points.lastIndex) {
+                    assertFalse(
+                        dev.maradona.layout.ClassLayout.segmentIntersectsRect(pe.points[i], pe.points[i + 1], pn.rect),
+                        "Edge ${pe.edge.from}->${pe.edge.to} segment (${pe.points[i]} -> ${pe.points[i + 1]}) must not intersect unrelated node ${pn.node.id} (${pn.rect})",
+                    )
+                }
+            }
+        }
     }
 
     @Test
