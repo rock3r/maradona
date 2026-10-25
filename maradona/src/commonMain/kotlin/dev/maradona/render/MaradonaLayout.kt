@@ -81,7 +81,7 @@ fun MaradonaLayout(
             for ((index, edge) in chart.edges.withIndex()) {
                 val label = edge.label ?: continue
                 BasicText(
-                    text = annotatedLabel(label),
+                    text = annotatedLabel(label, theme.monospaceFontFamily),
                     modifier = Modifier
                         .layoutId("elabel:$index")
                         .background(theme.edgeLabelBackground)
@@ -100,7 +100,7 @@ fun MaradonaLayout(
             }
             for (sg in chart.subgraphs) {
                 BasicText(
-                    text = sg.label,
+                    text = annotatedLabel(sg.label, theme.monospaceFontFamily),
                     modifier = Modifier.layoutId("sg:${sg.id}"),
                     style = TextStyle(
                         color = theme.subgraphText,
