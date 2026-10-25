@@ -504,8 +504,8 @@ object MaradonaSvgExporter {
                 val d = model.diagram
                 val layout = QuadrantLayout.layout(diagram = d, options = options)
                 val pointCircles = layout.points.map { pt ->
-                    val fillHex = (parseCssColor(pt.point.color) ?: theme.accentFill).toSvgHex()
-                    val strokeHex = (parseCssColor(pt.point.strokeColor) ?: theme.accentBorder).toSvgHex()
+                    val fillHex = (parseCssColor(pt.point.style?.color) ?: theme.accentFill).toSvgHex()
+                    val strokeHex = (parseCssColor(pt.point.style?.strokeColor) ?: theme.accentBorder).toSvgHex()
                     """  <circle class="quadrant-point" cx="${fmt(pt.center.x)}" cy="${fmt(pt.center.y)}" r="${fmt(pt.radius)}" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(pt.strokeWidth)}"/>"""
                 }
                 buildGenericBoxSvg(
