@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +34,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.RadarDiagramLayout
 import dev.maradona.layout.RadarLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.RadarDiagram
 import dev.maradona.model.RadarGraticule
 import kotlin.math.cos
@@ -65,13 +68,16 @@ fun MaradonaRadarLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (RadarDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { RadarLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -112,13 +118,17 @@ fun MaradonaRadarLayout(
                         fontWeight = FontWeight.Medium,
                     ),
                 )
+                val axisClickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = axis.id, label = axis.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("axis_box:$idx")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Radar axis ${axis.label}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = "Radar axis ${axis.label}",
+                            traversalOrder = idx,
+                            event = axisClickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
 
@@ -135,13 +145,17 @@ fun MaradonaRadarLayout(
                             fontWeight = FontWeight.Normal,
                         ),
                     )
+                    val curveClickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = curve.id, label = curve.label) else null
                     Box(
                         modifier = Modifier
                             .layoutId("legend_box:$idx")
-                            .focusable()
-                            .semantics {
-                                contentDescription = "Radar curve ${curve.label}"
-                            },
+                            .diagramNodeInteraction(
+                                baseDescription = "Radar curve ${curve.label}",
+                                traversalOrder = diagram.axes.size + idx,
+                                event = curveClickEvent,
+                                onNodeClick = onNodeClick,
+                                uriHandler = uriHandler,
+                            ),
                     )
                 }
             }

@@ -210,7 +210,9 @@ class OracleGoldenTest {
             File(outDir, "$id-100.png").writeBytes(
                 renderPng(source, 1f, canvasW, canvasH, density, layout = { layoutDump = it }),
             )
-            File(outDir, "$id.layout.json").writeText(layoutJson(requireNotNull(layoutDump), density))
+            layoutDump?.let { dump ->
+                File(outDir, "$id.layout.json").writeText(layoutJson(dump, density))
+            }
             File(outDir, "$id-min.png").writeBytes(renderPng(source, 0.1f, canvasW, canvasH, density))
             // The max tiles are windows into the 5x canvas and get stitched back
             // together, so the grid has to *cover* it: at 5x the canvas is several

@@ -12,10 +12,15 @@ import androidx.compose.ui.unit.IntSize
  */
 object OracleGoldSizes {
     val content: Map<String, IntSize> = mapOf(
-        "basic-td" to IntSize(693, 979),
-        "edges-heads" to IntSize(432, 2239),
-        "shapes-lr" to IntSize(5350, 346),
-        "styling" to IntSize(311, 777),
-        "subgraphs" to IntSize(494, 1153),
+        "basic-td" to IntSize(710, 954),
+        "class-basic" to IntSize(208, 745),
+        "edges-heads" to IntSize(445, 2174),
+        "er-basic" to IntSize(312, 575),
+        "pie-basic" to IntSize(948, 801),
+        "sequence-basic" to IntSize(690, 514),
+        "shapes-lr" to IntSize(5586, 346),
+        "state-basic" to IntSize(260, 650),
+        "styling" to IntSize(308, 852),
+        "subgraphs" to IntSize(577, 1052),
     )
 }

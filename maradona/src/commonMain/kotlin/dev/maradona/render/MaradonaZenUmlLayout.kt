@@ -24,7 +24,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -39,6 +41,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.layout.ZenUmlLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.ZenUmlDiagram
 import dev.maradona.model.ZenUmlMessageKind
 import dev.maradona.model.ZenUmlParticipant
@@ -62,9 +65,11 @@ fun MaradonaZenUmlLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (ZenUmlDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ZenUmlLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
 
     val specs = remember(diagram) { ZenUmlLayout.collectSpecs(diagram) }
     val msgSpecs = specs.first
@@ -74,10 +79,20 @@ fun MaradonaZenUmlLayout(
             listOf(ZenUmlParticipant(id = "_STARTER_", label = "Starter"))
         }
     }
+    val participantSummaries = remember(effectiveParticipants, msgSpecs) {
+        val out = LinkedHashMap<String, MutableList<String>>()
+        for (p in effectiveParticipants) out[p.id] = mutableListOf()
+        for (m in msgSpecs) {
+            out[m.fromId]?.add("sends ${plainTextLabel(m.displayText)} to ${m.toId}")
+            out[m.toId]?.add("receives ${plainTextLabel(m.displayText)} from ${m.fromId}")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -122,22 +137,36 @@ fun MaradonaZenUmlLayout(
                 )
             }
 
-            for (p in effectiveParticipants) {
+            for ((pIdx, p) in effectiveParticipants.withIndex()) {
+                val msgSummary = participantSummaries[p.id]
+                val baseDesc = if (msgSummary.isNullOrBlank()) "Participant ${p.label}" else "Participant ${p.label}. $msgSummary"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = p.id, label = p.label) else null
                 ZenUmlParticipantCard(
                     participant = p,
                     theme = theme,
                     modifier = Modifier
                         .layoutId("p_top:${p.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Participant ${p.label}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = pIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
                 if (diagram.mirrorParticipants) {
                     ZenUmlParticipantCard(
                         participant = p,
                         theme = theme,
-                        modifier = Modifier.layoutId("p_bot:${p.id}"),
+                        modifier = Modifier
+                            .layoutId("p_bot:${p.id}")
+                            .diagramNodeInteraction(
+                                baseDescription = baseDesc,
+                                traversalOrder = effectiveParticipants.size + msgSpecs.size + pIdx,
+                                event = clickEvent,
+                                onNodeClick = onNodeClick,
+                                uriHandler = uriHandler,
+                            ),
                     )
                 }
             }

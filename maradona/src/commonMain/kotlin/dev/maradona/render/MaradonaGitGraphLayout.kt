@@ -21,7 +21,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +36,7 @@ import dev.maradona.layout.GitGraphLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.model.GitCommitType
 import dev.maradona.model.GitGraphDiagram
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.roundToInt
 
 private class GitGraphLayoutHolder {
@@ -53,9 +56,11 @@ fun MaradonaGitGraphLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (GitGraphDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { GitGraphLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val allBranchNames = remember(diagram) {
         (diagram.branches.map { it.name } + diagram.commits.map { it.branch }).distinct()
     }
@@ -63,6 +68,7 @@ fun MaradonaGitGraphLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -104,7 +110,7 @@ fun MaradonaGitGraphLayout(
                     )
                 }
             }
-            for (c in diagram.commits) {
+            for ((cIdx, c) in diagram.commits.withIndex()) {
                 if (GitGraphLayout.shouldShowCommitLabel(diagram, c)) {
                     BasicText(
                         text = c.id,
@@ -129,14 +135,19 @@ fun MaradonaGitGraphLayout(
                         ),
                     )
                 }
+                val tagSuffix = c.tag?.let { ", tag $it" }.orEmpty()
+                val baseDesc = "Commit ${c.id} on ${c.branch}$tagSuffix"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = c.id, label = c.id) else null
                 Box(
                     modifier = Modifier
                         .layoutId("cbox:${c.id}")
-                        .focusable()
-                        .semantics {
-                            val tagSuffix = c.tag?.let { ", tag $it" }.orEmpty()
-                            contentDescription = "Commit ${c.id} on ${c.branch}$tagSuffix"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = cIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

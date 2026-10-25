@@ -19,7 +19,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +32,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.XyChartDiagramLayout
 import dev.maradona.layout.XyChartLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.XyAxisSpec
 import dev.maradona.model.XyChartDiagram
 import dev.maradona.model.XyPlotType
@@ -66,9 +69,11 @@ fun MaradonaXyChartLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (XyChartDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { XyChartLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
 
     val xAxisPreviewTicks = remember(diagram) {
         when (val xa = diagram.xAxis) {
@@ -121,6 +126,7 @@ fun MaradonaXyChartLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -236,13 +242,23 @@ fun MaradonaXyChartLayout(
                 for ((pIdx, pt) in s.points.withIndex()) {
                     val itemId = if (s.type == XyPlotType.Bar) "barbox:bar_${sIdx}_$pIdx" else "ptbox:linept_${sIdx}_$pIdx"
                     val seriesName = s.title ?: "${s.type.name} ${sIdx + 1}"
+                    val baseDesc = "$seriesName point ${pIdx + 1}: ${pt.value}${pt.label?.let { " ($it)" } ?: ""}"
+                    val nodeId = "${s.id}_$pIdx"
+                    val clickEvent = if (onNodeClick != null) {
+                        MaradonaNodeClickEvent(nodeId = nodeId, label = "$seriesName: ${pt.value}")
+                    } else {
+                        null
+                    }
                     Box(
                         modifier = Modifier
                             .layoutId(itemId)
-                            .focusable()
-                            .semantics {
-                                contentDescription = "$seriesName point ${pIdx + 1}: ${pt.value}${pt.label?.let { " ($it)" } ?: ""}"
-                            },
+                            .diagramNodeInteraction(
+                                baseDescription = baseDesc,
+                                traversalOrder = sIdx * 100 + pIdx,
+                                event = clickEvent,
+                                onNodeClick = onNodeClick,
+                                uriHandler = uriHandler,
+                            ),
                     )
                 }
             }

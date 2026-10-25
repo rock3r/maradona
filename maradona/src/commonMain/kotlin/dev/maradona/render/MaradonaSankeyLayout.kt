@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SankeyLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SankeyLabelStyle
 import kotlin.math.abs
@@ -66,11 +69,13 @@ fun MaradonaSankeyLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (SankeyDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { SankeyLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
 
-    // Precompute formatted label texts for each node in diagram.nodes order.
+    // Precompute formatted label texts and flow summaries for each node in diagram.nodes order.
     val nodeLabelTexts = remember(diagram) {
         val inSums = DoubleArray(diagram.nodes.size)
         val outSums = DoubleArray(diagram.nodes.size)
@@ -87,10 +92,19 @@ fun MaradonaSankeyLayout(
             SankeyLayout.formatNodeLabel(node.id, v, diagram)
         }
     }
+    val nodeFlowSummaries = remember(diagram) {
+        val out = LinkedHashMap<String, MutableList<String>>()
+        for (l in diagram.links) {
+            out.getOrPut(l.source) { mutableListOf() }.add("flows to ${l.target} (${l.value})")
+            out.getOrPut(l.target) { mutableListOf() }.add("receives from ${l.source} (${l.value})")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -130,13 +144,23 @@ fun MaradonaSankeyLayout(
                     ),
                 )
                 val node = diagram.nodes[idx]
+                val flowDesc = nodeFlowSummaries[node.id]
+                val baseDesc = if (flowDesc.isNullOrBlank()) {
+                    "Sankey node ${lblText.replace('\n', ' ')}"
+                } else {
+                    "Sankey node ${lblText.replace('\n', ' ')}. $flowDesc"
+                }
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = node.id, label = node.id) else null
                 Box(
                     modifier = Modifier
                         .layoutId("nodebox:$idx")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Sankey node ${lblText.replace('\n', ' ')}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = idx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

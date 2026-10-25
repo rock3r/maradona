@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +35,7 @@ import dev.maradona.layout.JourneyLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.model.JourneyDiagram
 import dev.maradona.model.JourneyMood
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.roundToInt
 
 private class JourneyLayoutHolder {
@@ -58,15 +61,18 @@ fun MaradonaJourneyLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (JourneyDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { JourneyLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val allActors = remember(diagram) { JourneyLayout.allActors(diagram) }
     val sectionRuns = remember(diagram) { JourneyLayout.buildSectionRuns(diagram) }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -120,7 +126,7 @@ fun MaradonaJourneyLayout(
                     ),
                 )
             }
-            for (t in diagram.tasks) {
+            for ((tIdx, t) in diagram.tasks.withIndex()) {
                 BasicText(
                     text = annotatedLabel(t.label),
                     modifier = Modifier.layoutId("tlbl:${t.id}"),
@@ -132,14 +138,19 @@ fun MaradonaJourneyLayout(
                         textAlign = TextAlign.Center,
                     ),
                 )
+                val actorsDesc = if (t.actors.isNotEmpty()) " by ${t.actors.joinToString(", ")}" else ""
+                val baseDesc = "Journey task ${t.label}, score ${t.score}$actorsDesc"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = t.id, label = t.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("tbox:${t.id}")
-                        .focusable()
-                        .semantics {
-                            val actorsDesc = if (t.actors.isNotEmpty()) " by ${t.actors.joinToString(", ")}" else ""
-                            contentDescription = "Journey task ${t.label}, score ${t.score}$actorsDesc"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = tIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

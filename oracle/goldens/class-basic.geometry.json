@@ -1,0 +1,43 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  252,
+  822
+ ],
+ "content": [
+  14,
+  14,
+  208,
+  745
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-classId-Order-0",
+   "shape": "path",
+   "label": "Order",
+   "box": [
+    16,
+    16,
+    204,
+    251
+   ],
+   "label_box": [
+    19,
+    49,
+    198,
+    195
+   ],
+   "centre": [
+    118.0,
+    141.5
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

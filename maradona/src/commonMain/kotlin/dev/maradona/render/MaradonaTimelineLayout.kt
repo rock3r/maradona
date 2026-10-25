@@ -20,7 +20,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.TimelineDiagramLayout
 import dev.maradona.layout.TimelineLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.TimelineDiagram
 import dev.maradona.model.TimelineDirection
 import kotlin.math.roundToInt
@@ -59,14 +62,17 @@ fun MaradonaTimelineLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (TimelineDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { TimelineLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val sectionRuns = remember(diagram) { TimelineLayout.buildSectionRuns(diagram) }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -108,7 +114,7 @@ fun MaradonaTimelineLayout(
                     ),
                 )
             }
-            for (p in diagram.periods) {
+            for ((pIdx, p) in diagram.periods.withIndex()) {
                 BasicText(
                     text = annotatedLabel(p.title),
                     modifier = Modifier.layoutId("plbl:${p.id}"),
@@ -120,14 +126,19 @@ fun MaradonaTimelineLayout(
                         textAlign = TextAlign.Center,
                     ),
                 )
+                val evSummary = if (p.events.isNotEmpty()) ": ${p.events.joinToString(", ")}" else ""
+                val baseDesc = "Timeline period ${p.title}$evSummary"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = p.id, label = p.title) else null
                 Box(
                     modifier = Modifier
                         .layoutId("pbox:${p.id}")
-                        .focusable()
-                        .semantics {
-                            val evSummary = if (p.events.isNotEmpty()) ": ${p.events.joinToString(", ")}" else ""
-                            contentDescription = "Timeline period ${p.title}$evSummary"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = pIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
                 for ((eIdx, evText) in p.events.withIndex()) {
                     BasicText(
