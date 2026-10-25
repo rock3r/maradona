@@ -19,7 +19,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -31,6 +33,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.MindmapLayout
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.MindmapNode
 import dev.maradona.model.MindmapShape
@@ -58,13 +61,28 @@ fun MaradonaMindmapLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 18f, layerGap = 54f),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (MindmapDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { MindmapLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
+    val childSummaries = remember(diagram) {
+        val labelById = diagram.nodes.associate { it.id to it.label }
+        val childrenByParent = diagram.nodes.groupBy { it.parentId }
+        diagram.nodes.associate { n ->
+            val parentLabel = n.parentId?.let { labelById[it] }
+            val kids = childrenByParent[n.id].orEmpty().map { it.label }
+            n.id to buildList {
+                if (parentLabel != null) add("under $parentLabel")
+                if (kids.isNotEmpty()) add("branches to ${kids.joinToString(", ")}")
+            }.joinToString("; ")
+        }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -92,7 +110,7 @@ fun MaradonaMindmapLayout(
                     ),
                 )
             }
-            for (n in diagram.nodes) {
+            for ((nIdx, n) in diagram.nodes.withIndex()) {
                 val isRoot = n.parentId == null
                 val textColor = parseCssColor(n.style?.textColor) ?: theme.nodeText
                 val isLarge = "large" in n.classes
@@ -117,13 +135,19 @@ fun MaradonaMindmapLayout(
                         textAlign = TextAlign.Center,
                     ),
                 )
+                val summary = childSummaries[n.id]
+                val baseDesc = if (summary.isNullOrBlank()) "Mindmap node ${n.label}" else "Mindmap node ${n.label}. $summary"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = n.id, label = n.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("mmbox:${n.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Mindmap node ${n.label}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = nIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
         },

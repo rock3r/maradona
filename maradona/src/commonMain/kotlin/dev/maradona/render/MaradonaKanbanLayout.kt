@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +34,7 @@ import dev.maradona.layout.KanbanLayout
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.model.KanbanDiagram
 import dev.maradona.model.KanbanPriority
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.roundToInt
 
 private class KanbanLayoutHolder {
@@ -61,6 +63,7 @@ fun MaradonaKanbanLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (KanbanDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { KanbanLayoutHolder() }
@@ -69,6 +72,7 @@ fun MaradonaKanbanLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -97,6 +101,7 @@ fun MaradonaKanbanLayout(
                     ),
                 )
             }
+            var flatTaskIndex = 0
             for ((colIdx, col) in diagram.columns.withIndex()) {
                 BasicText(
                     text = annotatedLabel(col.label),
@@ -110,7 +115,19 @@ fun MaradonaKanbanLayout(
                     ),
                 )
                 for ((taskIdx, task) in col.tasks.withIndex()) {
+                    val order = flatTaskIndex++
                     val key = "$colIdx:$taskIdx"
+                    val ticketUrl = task.ticket?.takeIf { it.isNotBlank() }?.let { diagram.resolveTicketUrl(it) }
+                    val clickEvent = if (ticketUrl != null || onNodeClick != null) {
+                        MaradonaNodeClickEvent(
+                            nodeId = task.id,
+                            label = task.label,
+                            url = ticketUrl,
+                            tooltip = task.ticket,
+                        )
+                    } else {
+                        null
+                    }
                     BasicText(
                         text = annotatedLabel(task.label),
                         modifier = Modifier.layoutId("tasklbl:$key"),
@@ -122,11 +139,16 @@ fun MaradonaKanbanLayout(
                         ),
                     )
                     task.ticket?.takeIf { it.isNotBlank() }?.let { tkt ->
-                        val ticketUrl = diagram.resolveTicketUrl(tkt)
-                        val tktModifier = if (ticketUrl != null) {
+                        val tktModifier = if (ticketUrl != null || onNodeClick != null) {
                             Modifier
                                 .layoutId("tasktkt:$key")
-                                .clickable { runCatching { uriHandler.openUri(ticketUrl) } }
+                                .clickable {
+                                    if (onNodeClick != null && clickEvent != null) {
+                                        onNodeClick(clickEvent)
+                                    } else if (ticketUrl != null) {
+                                        runCatching { uriHandler.openUri(ticketUrl) }
+                                    }
+                                }
                         } else {
                             Modifier.layoutId("tasktkt:$key")
                         }
@@ -154,21 +176,25 @@ fun MaradonaKanbanLayout(
                             ),
                         )
                     }
+                    val meta = listOfNotNull(
+                        task.ticket?.let { "ticket $it" },
+                        task.assigned?.let { "assigned to $it" },
+                        task.rawPriority?.let { "priority $it" },
+                    ).joinToString(", ")
+                    val baseDesc = buildString {
+                        append("${col.label}: ${task.label}")
+                        if (meta.isNotEmpty()) append(" ($meta)")
+                    }
                     Box(
                         modifier = Modifier
                             .layoutId("taskbox:$key")
-                            .focusable()
-                            .semantics {
-                                val meta = listOfNotNull(
-                                    task.ticket?.let { "ticket $it" },
-                                    task.assigned?.let { "assigned to $it" },
-                                    task.rawPriority?.let { "priority $it" },
-                                ).joinToString(", ")
-                                contentDescription = buildString {
-                                    append("${col.label}: ${task.label}")
-                                    if (meta.isNotEmpty()) append(" ($meta)")
-                                }
-                            },
+                            .diagramNodeInteraction(
+                                baseDescription = baseDesc,
+                                traversalOrder = order,
+                                event = clickEvent,
+                                onNodeClick = onNodeClick,
+                                uriHandler = uriHandler,
+                            ),
                     )
                 }
             }

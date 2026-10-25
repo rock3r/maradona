@@ -37,6 +37,7 @@ data class ClassNode(
     val methods: List<ClassMember> = emptyList(),
     val namespaceId: String? = null,
     val style: NodeStyle? = null,
+    val action: NodeAction? = null,
 ) {
     val displayTitle: String
         get() = if (genericType.isNullOrBlank()) label else "$label<$genericType>"

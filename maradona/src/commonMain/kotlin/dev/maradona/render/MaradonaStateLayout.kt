@@ -24,7 +24,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +42,7 @@ import dev.maradona.layout.StateBoxMetrics
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.StateLayout
 import dev.maradona.model.Direction
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.StateKind
 import dev.maradona.model.StateNode
@@ -69,9 +72,12 @@ fun MaradonaStateLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 44f, layerGap = 48f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (StateDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { StateLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
+    val transitionDescriptions = remember(diagram) { stateTransitionDescriptions(diagram) }
     val compositeIds = remember(diagram) {
         diagram.states
             .filter { s ->
@@ -86,6 +92,7 @@ fun MaradonaStateLayout(
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -113,7 +120,7 @@ fun MaradonaStateLayout(
                     ),
                 )
             }
-            for (s in diagram.states) {
+            for ((sIdx, s) in diagram.states.withIndex()) {
                 val isComp = s.id in compositeIds
                 val textColor = parseCssColor(s.style?.textColor)
                     ?: if (isComp) theme.subgraphText else theme.nodeText
@@ -149,21 +156,28 @@ fun MaradonaStateLayout(
                         }
                     }
                 }
+                val baseTitle = when {
+                    s.kind == StateKind.Start -> "Start state"
+                    s.kind == StateKind.End -> "End state"
+                    s.kind == StateKind.Choice -> "Choice state ${s.id}"
+                    s.kind == StateKind.Fork -> "Fork state ${s.id}"
+                    s.kind == StateKind.Join -> "Join state ${s.id}"
+                    isComp -> "Composite state ${s.label}"
+                    else -> "State ${s.label}"
+                }
+                val trDesc = transitionDescriptions[s.id]
+                val fullDesc = if (trDesc.isNullOrBlank()) baseTitle else "$baseTitle. $trDesc"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = s.id, label = s.label) else null
                 Box(
                     modifier = Modifier
                         .layoutId("sbox:${s.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = when {
-                                s.kind == StateKind.Start -> "Start state"
-                                s.kind == StateKind.End -> "End state"
-                                s.kind == StateKind.Choice -> "Choice state ${s.id}"
-                                s.kind == StateKind.Fork -> "Fork state ${s.id}"
-                                s.kind == StateKind.Join -> "Join state ${s.id}"
-                                isComp -> "Composite state ${s.label}"
-                                else -> "State ${s.label}"
-                            }
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = fullDesc,
+                            traversalOrder = sIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
             for ((idx, note) in diagram.notes.withIndex()) {
@@ -342,6 +356,26 @@ fun MaradonaStateLayout(
             }
         }
     }
+}
+
+private fun stateTransitionDescriptions(diagram: StateDiagram): Map<String, String> {
+    val labelById = diagram.states.associate { s ->
+        s.id to when (s.kind) {
+            StateKind.Start -> "Start"
+            StateKind.End -> "End"
+            else -> s.label
+        }
+    }
+    val out = HashMap<String, MutableList<String>>()
+    for (s in diagram.states) out[s.id] = mutableListOf()
+    for (tr in diagram.transitions) {
+        val lbl = tr.label?.let { " ($it)" } ?: ""
+        val toName = labelById[tr.to] ?: tr.to
+        val fromName = labelById[tr.from] ?: tr.from
+        out[tr.from]?.add("transitions to $toName$lbl")
+        out[tr.to]?.add("transition from $fromName$lbl")
+    }
+    return out.mapValues { it.value.joinToString("; ") }
 }
 
 private fun DrawScope.drawStateUnderlay(

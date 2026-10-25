@@ -23,7 +23,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +41,7 @@ import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.model.ArchitectureDiagram
 import dev.maradona.model.ArchitecturePortDir
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -61,14 +64,30 @@ fun MaradonaArchitectureLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (ArchitectureDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ArchitectureLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val labelFontSp = diagram.config.fontSize.coerceAtLeast(1f)
+    val edgeSummaries = remember(diagram) {
+        val labelById = diagram.services.associate { it.id to (it.title?.takeIf { t -> t.isNotBlank() } ?: it.id) }
+        val out = HashMap<String, MutableList<String>>()
+        for (svc in diagram.services) out[svc.id] = mutableListOf()
+        for (e in diagram.edges) {
+            val lhsName = labelById[e.lhsId] ?: e.lhsId
+            val rhsName = labelById[e.rhsId] ?: e.rhsId
+            val lbl = e.title?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+            out[e.lhsId]?.add("connects to $rhsName$lbl")
+            out[e.rhsId]?.add("connected from $lhsName$lbl")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -113,7 +132,7 @@ fun MaradonaArchitectureLayout(
                 )
             }
 
-            for (svc in diagram.services) {
+            for ((svcIdx, svc) in diagram.services.withIndex()) {
                 val svcTitle = svc.title?.takeIf { it.isNotBlank() }
                 if (svcTitle != null) {
                     BasicText(
@@ -143,14 +162,20 @@ fun MaradonaArchitectureLayout(
                         ),
                     )
                 }
+                val desc = svc.title?.takeIf { it.isNotBlank() } ?: svc.id
+                val edgeDesc = edgeSummaries[svc.id]
+                val baseDesc = if (edgeDesc.isNullOrBlank()) "Architecture service $desc" else "Architecture service $desc. $edgeDesc"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = svc.id, label = desc) else null
                 Box(
                     modifier = Modifier
                         .layoutId("svcbox:${svc.id}")
-                        .focusable()
-                        .semantics {
-                            val desc = svc.title?.takeIf { it.isNotBlank() } ?: svc.id
-                            contentDescription = "Architecture service $desc"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = svcIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
 

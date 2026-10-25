@@ -21,6 +21,7 @@ data class GanttTask(
     val isVerticalMarker: Boolean = false,
     val startMs: Long,
     val endMs: Long,
+    val action: NodeAction? = null,
 )
 
 data class GanttDiagram(

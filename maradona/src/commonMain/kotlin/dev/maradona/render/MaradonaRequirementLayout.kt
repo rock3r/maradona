@@ -21,7 +21,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -37,6 +39,7 @@ import dev.maradona.layout.RequirementDiagramLayout
 import dev.maradona.layout.RequirementLayout
 import dev.maradona.model.Direction
 import dev.maradona.model.ElementItem
+import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.RequirementDiagram
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -65,14 +68,17 @@ fun MaradonaRequirementLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 56f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (RequirementDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { RequirementLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val allItems = remember(diagram) { diagram.items }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -138,17 +144,31 @@ fun MaradonaRequirementLayout(
                         ),
                     )
                 }
+                val details = item.bodyLines.joinToString("; ")
+                val baseDesc = buildString {
+                    append("${item.stereotype} ${item.name}")
+                    if (details.isNotEmpty()) append(": $details")
+                }
+                val docRefUrl = (item as? ElementItem)?.docRef?.takeIf { it.isNotBlank() }
+                val clickEvent = if (docRefUrl != null || onNodeClick != null) {
+                    MaradonaNodeClickEvent(
+                        nodeId = item.name,
+                        label = item.name,
+                        url = docRefUrl,
+                    )
+                } else {
+                    null
+                }
                 Box(
                     modifier = Modifier
                         .layoutId("box:$itemIdx")
-                        .focusable()
-                        .semantics {
-                            val details = item.bodyLines.joinToString("; ")
-                            contentDescription = buildString {
-                                append("${item.stereotype} ${item.name}")
-                                if (details.isNotEmpty()) append(": $details")
-                            }
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = itemIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
             for ((relIdx, rel) in diagram.relations.withIndex()) {

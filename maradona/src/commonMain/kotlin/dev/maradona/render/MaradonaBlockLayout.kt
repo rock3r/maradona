@@ -23,7 +23,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +46,7 @@ import dev.maradona.model.BlockDiagram
 import dev.maradona.model.BlockEdgePattern
 import dev.maradona.model.BlockItem
 import dev.maradona.model.BlockShape
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -68,14 +71,31 @@ fun MaradonaBlockLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (BlockDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { BlockLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
     val allNonSpaceBlocks = remember(diagram) { collectNonSpaceBlocks(diagram.children) }
+    val edgeSummaries = remember(diagram, allNonSpaceBlocks) {
+        val labelById = allNonSpaceBlocks.associate { it.id to it.label.ifEmpty { it.id } }
+        val out = HashMap<String, MutableList<String>>()
+        for (item in allNonSpaceBlocks) out[item.id] = mutableListOf()
+        for (edge in diagram.edges) {
+            if (edge.pattern == BlockEdgePattern.Invisible) continue
+            val toName = labelById[edge.to] ?: edge.to
+            val fromName = labelById[edge.from] ?: edge.from
+            val lbl = edge.label?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+            out[edge.from]?.add("connects to $toName$lbl")
+            out[edge.to]?.add("connected from $fromName$lbl")
+        }
+        out.mapValues { it.value.joinToString("; ") }
+    }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 val accParts = listOfNotNull(
                     diagram.accTitle?.takeIf { it.isNotBlank() },
                     diagram.accDescr?.takeIf { it.isNotBlank() },
@@ -104,7 +124,7 @@ fun MaradonaBlockLayout(
                 )
             }
 
-            for (item in allNonSpaceBlocks) {
+            for ((bIdx, item) in allNonSpaceBlocks.withIndex()) {
                 val customTextColor = parseCssColor(item.style?.textColor) ?: theme.nodeText
                 val fontWeight = when (item.style?.fontWeightBold) {
                     true -> FontWeight.Bold
@@ -124,14 +144,20 @@ fun MaradonaBlockLayout(
                         ),
                     )
                 }
+                val desc = item.label.ifEmpty { item.id }
+                val edgeDesc = edgeSummaries[item.id]
+                val baseDesc = if (edgeDesc.isNullOrBlank()) "Block $desc" else "Block $desc. $edgeDesc"
+                val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = item.id, label = desc) else null
                 Box(
                     modifier = Modifier
                         .layoutId("nodebox:${item.id}")
-                        .focusable()
-                        .semantics {
-                            val desc = item.label.ifEmpty { item.id }
-                            contentDescription = "Block $desc"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = bIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
 

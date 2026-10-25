@@ -23,7 +23,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -46,6 +48,7 @@ import dev.maradona.model.ClassMember
 import dev.maradona.model.ClassNode
 import dev.maradona.model.ClassRelationEnd
 import dev.maradona.model.Direction
+import dev.maradona.model.MaradonaNodeClickEvent
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -73,13 +76,17 @@ fun MaradonaClassLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 54f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
     onLayout: (ClassDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ClassLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
+    val relationDescriptions = remember(diagram) { classRelationDescriptions(diagram) }
 
     Layout(
         modifier = modifier
             .semantics {
+                isTraversalGroup = true
                 contentDescription =
                     "Class diagram. ${diagram.classes.size} classes, ${diagram.relations.size} relations."
             }
@@ -100,7 +107,7 @@ fun MaradonaClassLayout(
                     ),
                 )
             }
-            for (c in diagram.classes) {
+            for ((cIdx, c) in diagram.classes.withIndex()) {
                 val textColor = parseCssColor(c.style?.textColor) ?: theme.nodeText
                 Column(
                     modifier = Modifier.layoutId("chdr:${c.id}"),
@@ -157,13 +164,23 @@ fun MaradonaClassLayout(
                         }
                     }
                 }
+                val relDesc = relationDescriptions[c.id]
+                val baseDesc = buildString {
+                    append("Class ${c.displayTitle}")
+                    if (!relDesc.isNullOrBlank()) append(". $relDesc")
+                }
+                val clickEvent = c.action?.toClickEvent(c.id, c.displayTitle)
+                    ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = c.id, label = c.displayTitle) else null
                 Box(
                     modifier = Modifier
                         .layoutId("cbox:${c.id}")
-                        .focusable()
-                        .semantics {
-                            contentDescription = "Class ${c.displayTitle}"
-                        },
+                        .diagramNodeInteraction(
+                            baseDescription = baseDesc,
+                            traversalOrder = cIdx,
+                            event = clickEvent,
+                            onNodeClick = onNodeClick,
+                            uriHandler = uriHandler,
+                        ),
                 )
             }
             for ((idx, note) in diagram.notes.withIndex()) {
@@ -446,6 +463,17 @@ private fun MemberLine(
             textDecoration = if (member.classifier == ClassClassifier.Static) TextDecoration.Underline else TextDecoration.None,
         ),
     )
+}
+
+private fun classRelationDescriptions(diagram: ClassDiagram): Map<String, String> {
+    val out = HashMap<String, MutableList<String>>()
+    for (c in diagram.classes) out[c.id] = mutableListOf()
+    for (rel in diagram.relations) {
+        val lbl = rel.label?.let { " ($it)" } ?: ""
+        out[rel.from]?.add("relates to ${rel.to}$lbl")
+        out[rel.to]?.add("related from ${rel.from}$lbl")
+    }
+    return out.mapValues { it.value.joinToString("; ") }
 }
 
 private fun DrawScope.drawClassUnderlay(

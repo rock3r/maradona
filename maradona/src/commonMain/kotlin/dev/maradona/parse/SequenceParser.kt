@@ -249,8 +249,15 @@ object SequenceParser {
                     addSection(stmt.drop(3).trim(), lineNo)
                 lower.startsWith("option") && (stmt.length == 6 || stmt[6].isWhitespace()) ->
                     addSection(stmt.drop(6).trim(), lineNo)
-                lower.startsWith("link ") || lower.startsWith("links ") ||
-                    lower.startsWith("properties ") || lower.startsWith("details ") ||
+                lower.startsWith("link ") || lower.startsWith("links ") -> {
+                    ClickDirectiveParser.parseSequenceLinks(stmt)?.let { (actorId, parsedLinks) ->
+                        val id = unquoteId(actorId)
+                        ensureParticipant(id)
+                        val p = participants.getValue(id)
+                        participants[id] = p.copy(links = p.links + parsedLinks)
+                    }
+                }
+                lower.startsWith("properties ") || lower.startsWith("details ") ||
                     lower.startsWith("create ") || lower.startsWith("destroy ") -> Unit
                 (lower == "box" || lower.startsWith("box ")) && !containsArrow(stmt) ->
                     startBox(stmt.drop(3).trim(), lineNo)
@@ -321,7 +328,8 @@ object SequenceParser {
                 label = NodeRefReader.cleanLabel(rest)
             }
             if (id.isEmpty()) throw MaradonaParseException(lineNo, "Participant needs an id")
-            participants[id] = SequenceParticipant(id = id, label = label, kind = kind)
+            val existingLinks = participants[id]?.links.orEmpty()
+            participants[id] = SequenceParticipant(id = id, label = label, kind = kind, links = existingLinks)
             openBox?.let { box -> if (id !in box.participantIds) box.participantIds += id }
         }
 
