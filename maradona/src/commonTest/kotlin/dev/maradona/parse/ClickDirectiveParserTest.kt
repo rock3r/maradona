@@ -49,12 +49,12 @@ class ClickDirectiveParserTest {
                 +String email
               }
               class Payment
-              class `Animal Class!`["Animal"]
+              class `Animal~Class!`["Animal"]
               Customer --> Order : places
               link Order "https://example.com/order" "Order docs" _blank
               callback Customer "openCustomer" "Customer callback"
               click Payment href "https://example.com/payment" "Payment link"
-              link `Animal Class!` "https://example.com/animal" "Animal docs"
+              link `Animal~Class!` "https://example.com/animal" "Animal docs"
             """.trimIndent(),
         )
 
@@ -71,7 +71,7 @@ class ClickDirectiveParserTest {
         assertEquals("https://example.com/payment", payment.action?.url)
         assertEquals("Payment link", payment.action?.tooltip)
 
-        val animal = diagram.classes.first { it.id == "Animal Class!" }
+        val animal = diagram.classes.first { it.id == "Animal~Class!" }
         assertEquals("https://example.com/animal", animal.action?.url)
         assertEquals("Animal docs", animal.action?.tooltip)
     }

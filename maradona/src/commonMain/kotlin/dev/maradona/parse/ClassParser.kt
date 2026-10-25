@@ -358,7 +358,7 @@ object ClassParser {
                 lower.startsWith("click ") -> {
                     ClickDirectiveParser.parseClick(stmt.substring("click ".length).trim())?.let { parsed ->
                         for (rawId in parsed.nodeIds) {
-                            val id = unquoteClassId(rawId.substringBefore('~'))
+                            val id = normalizeClassTargetId(rawId)
                             if (id.isNotEmpty()) {
                                 val c = ensureClass(id)
                                 c.action = c.action?.merge(parsed.action) ?: parsed.action
@@ -369,7 +369,7 @@ object ClassParser {
                 lower.startsWith("link ") -> {
                     ClickDirectiveParser.parseClassLink(stmt.substring("link ".length).trim())?.let { parsed ->
                         for (rawId in parsed.nodeIds) {
-                            val id = unquoteClassId(rawId.substringBefore('~'))
+                            val id = normalizeClassTargetId(rawId)
                             if (id.isNotEmpty()) {
                                 val c = ensureClass(id)
                                 c.action = c.action?.merge(parsed.action) ?: parsed.action
@@ -380,7 +380,7 @@ object ClassParser {
                 lower.startsWith("callback ") -> {
                     ClickDirectiveParser.parseClassCallback(stmt.substring("callback ".length).trim())?.let { parsed ->
                         for (rawId in parsed.nodeIds) {
-                            val id = unquoteClassId(rawId.substringBefore('~'))
+                            val id = normalizeClassTargetId(rawId)
                             if (id.isNotEmpty()) {
                                 val c = ensureClass(id)
                                 c.action = c.action?.merge(parsed.action) ?: parsed.action
@@ -799,10 +799,15 @@ object ClassParser {
             }
         }
 
+        private fun normalizeClassTargetId(rawId: String): String {
+            val tildeIdx = findOutsideBackticks(rawId, '~')
+            return unquoteClassId(if (tildeIdx >= 0) rawId.substring(0, tildeIdx) else rawId)
+        }
+
         private fun parseStyle(rest: String) {
             val parts = rest.split(Regex("\\s+"), limit = 2)
             if (parts.size < 2) return
-            val id = unquoteClassId(parts[0].substringBefore('~'))
+            val id = normalizeClassTargetId(parts[0])
             if (id.isEmpty()) return
             val c = ensureClass(id)
             c.inlineStyle = (c.inlineStyle ?: NodeStyle()).merge(parseStyleProps(parts[1]))
