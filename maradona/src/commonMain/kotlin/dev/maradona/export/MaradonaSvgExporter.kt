@@ -299,7 +299,7 @@ object MaradonaSvgExporter {
                 val layout = RequirementLayout.layout(
                     diagram = d,
                     itemBoxSize = { item ->
-                        val hdrLines = listOf("<<${item.stereotype}>>") + plainTextLabel(item.name).split('\n')
+                        val hdrLines = listOf(item.stereotype) + plainTextLabel(item.name).split('\n')
                         val hdrSz = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
                         val hdrH = max(44f * dens, hdrSz.height + 16f * dens)
                         val bodySizes = item.bodyLines.map { defaultTextSize(it, theme.edgeLabelFontSize.value) }
@@ -988,8 +988,9 @@ object MaradonaSvgExporter {
 
                 val memberFont = theme.edgeLabelFontSize.value
                 val lineH = memberFont * 1.4f
+                val firstLineOffset = 6f + memberFont * 0.85f
                 for ((idx, attr) in c.attributes.withIndex()) {
-                    val ay = div1Y + 14f + idx * lineH
+                    val ay = div1Y + firstLineOffset + idx * lineH
                     val styleAttr = when (attr.classifier) {
                         ClassClassifier.Abstract -> """ font-style="italic""""
                         ClassClassifier.Static -> """ text-decoration="underline""""
@@ -998,7 +999,7 @@ object MaradonaSvgExporter {
                     sb.append("""    <text x="${fmt(r.x + 10f)}" y="${fmt(ay)}" text-anchor="start" fill="$textHex" font-family="sans-serif" font-size="${fmt(memberFont)}"$styleAttr>${escapeXml(attr.displayText)}</text>""").append('\n')
                 }
                 for ((idx, meth) in c.methods.withIndex()) {
-                    val my = div2Y + 14f + idx * lineH
+                    val my = div2Y + firstLineOffset + idx * lineH
                     val styleAttr = when (meth.classifier) {
                         ClassClassifier.Abstract -> """ font-style="italic""""
                         ClassClassifier.Static -> """ text-decoration="underline""""
@@ -1266,7 +1267,7 @@ object MaradonaSvgExporter {
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$bodyFillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
             val hdrH = pi.headerHeight.coerceAtMost(r.height)
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(hdrH)}" fill="$headerFillHex"/>""").append('\n')
-            val hdrLines = listOf("<<${pi.item.stereotype}>>") + plainTextLabel(pi.item.name).split('\n')
+            val hdrLines = listOf(pi.item.stereotype) + plainTextLabel(pi.item.name).split('\n')
             if (pi.bodyLineHeights.isNotEmpty() && pi.headerHeight < r.height) {
                 val divY = r.y + pi.headerHeight
                 sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(divY)}" x2="${fmt(r.right)}" y2="${fmt(divY)}" stroke="$strokeHex" stroke-width="1.1"/>""").append('\n')
@@ -2190,14 +2191,48 @@ object MaradonaSvgExporter {
         theme: MaradonaTheme = MaradonaTheme.light(),
     ): String {
         val sb = startSvgDocument(layout.width, layout.height, theme, diagram.title, layout.titleRect)
+        val nodeColors = layout.nodes.associate { pn ->
+            val col = parseCssColor(pn.node.color)
+                ?: parseCssColor(diagram.nodeColors[pn.node.id])
+                ?: theme.seriesColor(pn.nodeIndex)
+            pn.nodeIndex to col
+        }
+        val linkMode = diagram.linkColor.trim().lowercase()
+        val customLinkColor = if (linkMode != "gradient" && linkMode != "source" && linkMode != "target") {
+            parseCssColor(diagram.linkColor)
+        } else {
+            null
+        }
+        if (linkMode == "gradient" && layout.links.isNotEmpty()) {
+            sb.append("  <defs>\n")
+            for (pl in layout.links) {
+                val srcHex = (nodeColors[pl.sourceNodeIndex] ?: theme.seriesColor(0)).toSvgHex()
+                val dstHex = (nodeColors[pl.targetNodeIndex] ?: theme.seriesColor(1)).toSvgHex()
+                sb.append(
+                    """    <linearGradient id="sankey-grad-${pl.linkIndex}" gradientUnits="userSpaceOnUse" x1="${fmt(pl.start.x)}" y1="${fmt(pl.start.y)}" x2="${fmt(pl.end.x)}" y2="${fmt(pl.end.y)}">""" +
+                        """<stop offset="0%" stop-color="$srcHex"/>""" +
+                        """<stop offset="100%" stop-color="$dstHex"/>""" +
+                        """</linearGradient>""",
+                ).append('\n')
+            }
+            sb.append("  </defs>\n")
+        }
         for (pl in layout.links) {
-            val strokeHex = theme.seriesColor(pl.sourceNodeIndex).toSvgHex()
+            val srcCol = nodeColors[pl.sourceNodeIndex] ?: theme.seriesColor(0)
+            val dstCol = nodeColors[pl.targetNodeIndex] ?: theme.seriesColor(1)
+            val strokeRef = when (linkMode) {
+                "gradient" -> "url(#sankey-grad-${pl.linkIndex})"
+                "target" -> dstCol.toSvgHex()
+                "source" -> srcCol.toSvgHex()
+                else -> (customLinkColor ?: srcCol).toSvgHex()
+            }
             val pathD = "M ${fmt(pl.start.x)} ${fmt(pl.start.y)} C ${fmt(pl.control1.x)} ${fmt(pl.control1.y)}, ${fmt(pl.control2.x)} ${fmt(pl.control2.y)}, ${fmt(pl.end.x)} ${fmt(pl.end.y)}"
-            sb.append("""  <path class="sankey-link" d="$pathD" fill="none" stroke="$strokeHex" stroke-width="${fmt(pl.thickness.coerceAtLeast(1f))}" stroke-opacity="0.45"/>""").append('\n')
+            sb.append("""  <path class="sankey-link" d="$pathD" fill="none" stroke="$strokeRef" stroke-width="${fmt(pl.thickness.coerceAtLeast(1f))}" stroke-opacity="0.45"/>""").append('\n')
         }
         for (pn in layout.nodes) {
             val r = pn.rect
-            sb.append("""  <rect class="sankey-node" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="${theme.seriesColor(pn.nodeIndex).toSvgHex()}" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
+            val fillHex = (nodeColors[pn.nodeIndex] ?: theme.seriesColor(pn.nodeIndex)).toSvgHex()
+            sb.append("""  <rect class="sankey-node" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
             if (pn.labelText.isNotBlank()) {
                 appendMultilineText(sb, "  ", pn.labelRect.centerX, pn.labelRect.centerY, plainTextLabel(pn.labelText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             }
@@ -2230,7 +2265,25 @@ object MaradonaSvgExporter {
                     sb.append("""  <text x="${fmt(r.right - 3f)}" y="${fmt(bitY)}" text-anchor="end" fill="$textHex" font-family="sans-serif" font-size="9.5">${escapeXml(pb.trailingBitLabel)}</text>""").append('\n')
                 }
             }
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(pb.block.label).split('\n'), textHex, theme.edgeLabelFontSize.value)
+            val availW = (r.width - 6f).coerceAtLeast(10f)
+            val plain = plainTextLabel(pb.block.label).replace('\n', ' ')
+            val len = plain.length.coerceAtLeast(1)
+            val lblSp = when {
+                pb.block.bits == 1 && len >= 3 -> 9.5f
+                len * 7.2f <= availW -> 12.5f
+                len * 6.2f <= availW -> 11f
+                len * 5.4f <= availW -> 9.5f
+                else -> 9f
+            }
+            val maxChars = (availW / (lblSp * 0.58f)).toInt().coerceAtLeast(1)
+            val fitted = if (plain.length <= maxChars) {
+                plain
+            } else if (maxChars <= 1) {
+                plain.take(1)
+            } else {
+                plain.take(maxChars - 1) + "…"
+            }
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, listOf(fitted), textHex, lblSp)
         }
         sb.append("</svg>")
         return sb.toString()

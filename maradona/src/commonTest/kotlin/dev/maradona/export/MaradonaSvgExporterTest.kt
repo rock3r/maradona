@@ -211,27 +211,39 @@ class MaradonaSvgExporterTest {
         assertTrue(kanbanSvg.contains("class=\"kanban-priority-stripe\" data-priority=\"veryhigh\""), "Expected Kanban priority stripe")
         assertTrue(kanbanSvg.contains("<a href=\"https://issues.example.com/MRD-1\">"), "Expected Kanban ticket link")
 
-        // 18. Sankey
+        // 18. Sankey (with gradient linkColor and custom nodeColors)
         val sankeySvg = MaradonaSvgExporter.exportToSvg(
             """
+            ---
+            config:
+              sankey:
+                linkColor: gradient
+                nodeColors:
+                  Solar: '#f59e0b'
+                  Grid: '#3b82f6'
+            ---
             sankey-beta
               Solar,Grid,120
               Grid,Homes,100
             """.trimIndent(),
         )
         assertTrue(sankeySvg.contains("class=\"sankey-link\""), "Expected Sankey cubic Bezier link")
+        assertTrue(sankeySvg.contains("<linearGradient id=\"sankey-grad-0\""), "Expected Sankey gradient definition")
+        assertTrue(sankeySvg.contains("stroke=\"url(#sankey-grad-0)\""), "Expected Sankey link to use gradient stroke")
+        assertTrue(sankeySvg.contains("fill=\"#F59E0B\""), "Expected Sankey node to use configured nodeColors")
         assertTrue(sankeySvg.contains("class=\"sankey-node\""), "Expected Sankey node")
 
-        // 19. Packet
+        // 19. Packet (including narrow single-bit field whose label is truncated to fit)
         val packetSvg = MaradonaSvgExporter.exportToSvg(
             """
             packet-beta
               0-15: "Source Port"
-              16: "ACK"
+              16: "VeryLongSingleBitFlagLabel"
             """.trimIndent(),
         )
         assertTrue(packetSvg.contains("class=\"packet-block\""), "Expected packet block")
         assertTrue(packetSvg.contains("Source Port"), "Expected packet field label")
+        assertFalse(packetSvg.contains(">VeryLongSingleBitFlagLabel</text>"), "Expected narrow 1-bit packet field label to be truncated")
 
         // 20. Radar
         val radarSvg = MaradonaSvgExporter.exportToSvg(
@@ -395,6 +407,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(reqSvg.contains("&lt;&lt;Requirement&gt;&gt;"), "Expected Requirement stereotype")
+        assertFalse(reqSvg.contains("&lt;&lt;&lt;&lt;Requirement&gt;&gt;&gt;&gt;"), "Requirement stereotype must not double-wrap <<...>>")
         assertTrue(reqSvg.contains("data-marker=\"contains-circle-cross\""), "Expected contains source marker")
         assertTrue(reqSvg.contains("<a href=\"https://docs.example.com/auth\">"), "Expected Element docRef link")
 
