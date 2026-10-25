@@ -169,8 +169,11 @@ object MaradonaSvgExporter {
                 val layout = SequenceLayout.layout(
                     diagram = d,
                     participantLabelSize = { p -> defaultTextSize(p.label, theme.nodeFontSize.value) },
-                    messageLabelSize = { _, m -> defaultTextSize(m.text, theme.nodeFontSize.value) },
-                    noteTextSize = { _, n -> defaultTextSize(n.text, theme.nodeFontSize.value) },
+                    messageLabelSize = { idx, m ->
+                        val msgLabel = if (d.autonumber && m.text.isNotBlank()) "${idx + 1}. ${m.text}" else m.text
+                        defaultTextSize(msgLabel, theme.nodeFontSize.value)
+                    },
+                    noteTextSize = { _, n -> defaultTextSize(n.text, theme.edgeLabelFontSize.value) },
                     blockLabelSize = { _, _, b -> defaultTextSize(b, theme.edgeLabelFontSize.value) },
                     boxLabelSize = { _, bx -> bx.label?.let { defaultTextSize(it, theme.subgraphFontSize.value) } ?: DiagramSize(0f, 0f) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
@@ -2071,10 +2074,20 @@ object MaradonaSvgExporter {
             )
         }
 
+        fun resolveXySeriesColor(seriesIndex: Int, explicitColor: String?): Color {
+            parseCssColor(explicitColor)?.let { return it }
+            if (diagram.plotColorPalette.isNotEmpty()) {
+                val raw = diagram.plotColorPalette[seriesIndex % diagram.plotColorPalette.size]
+                parseCssColor(raw)?.let { return it }
+            }
+            return theme.seriesColor(seriesIndex)
+        }
+
         // 2. Bar series (drawn before line series so bars never obscure line plots)
         for (b in layout.bars) {
             val r = b.rect
-            val colorHex = theme.seriesColor(b.seriesIndex).toSvgHex()
+            val explicitCol = diagram.plots.getOrNull(b.seriesIndex)?.color
+            val colorHex = resolveXySeriesColor(b.seriesIndex, explicitCol).toSvgHex()
             sb.append("""  <rect class="xy-bar" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$colorHex" stroke="$colorHex" stroke-width="1"/>""").append('\n')
             val dl = b.dataLabel
             val dlr = b.dataLabelRect
@@ -2086,7 +2099,7 @@ object MaradonaSvgExporter {
         // 3. Line series and point markers (drawn above bars; single-point series still emit point markers)
         val bgHex = theme.background.toSvgHex()
         for (ls in layout.lines) {
-            val strokeHex = theme.seriesColor(ls.seriesIndex).toSvgHex()
+            val strokeHex = resolveXySeriesColor(ls.seriesIndex, ls.series.color).toSvgHex()
             if (ls.points.size >= 2) {
                 sb.append("""  <path class="xy-line" d="${buildSvgEdgePath(ls.points.map { it.position })}" fill="none" stroke="$strokeHex" stroke-width="2.2"/>""").append('\n')
             }
@@ -2103,7 +2116,7 @@ object MaradonaSvgExporter {
         // 4. Legend items
         for (li in layout.legendItems) {
             val mr = li.markerRect
-            val colorHex = theme.seriesColor(li.seriesIndex).toSvgHex()
+            val colorHex = resolveXySeriesColor(li.seriesIndex, li.series.color).toSvgHex()
             sb.append("""  <rect x="${fmt(mr.x)}" y="${fmt(mr.y)}" width="${fmt(mr.width)}" height="${fmt(mr.height)}" fill="$colorHex"/>""").append('\n')
             val legendText = li.series.title ?: li.series.id
             appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(legendText).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
@@ -2320,9 +2333,11 @@ object MaradonaSvgExporter {
             appendMultilineText(sb, "  ", pa.labelRect.centerX, pa.labelRect.centerY, plainTextLabel(pa.axis.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
         }
         val fillAlpha = diagram.config.curveOpacity.coerceIn(0f, 1f)
+        fun resolveRadarColor(curveIndex: Int): Color =
+            parseCssColor(diagram.config.customPalette[curveIndex]) ?: theme.seriesColor(curveIndex)
         for (pc in layout.curves) {
             if (pc.points.isEmpty()) continue
-            val cColor = theme.seriesColor(pc.curveIndex)
+            val cColor = resolveRadarColor(pc.curveIndex)
             val strokeHex = cColor.toSvgHex()
             val fillHex = cColor.copy(alpha = fillAlpha).toSvgHex()
             if (pc.points.size >= 2) {
@@ -2334,7 +2349,7 @@ object MaradonaSvgExporter {
             }
         }
         for (li in layout.legendItems) {
-            val cColor = theme.seriesColor(li.curveIndex)
+            val cColor = resolveRadarColor(li.curveIndex)
             val sr = li.swatchRect
             sb.append("""  <rect x="${fmt(sr.x)}" y="${fmt(sr.y)}" width="${fmt(sr.width)}" height="${fmt(sr.height)}" fill="${cColor.copy(alpha = max(0.35f, fillAlpha)).toSvgHex()}" stroke="${cColor.toSvgHex()}" stroke-width="1.2"/>""").append('\n')
             appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(li.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)

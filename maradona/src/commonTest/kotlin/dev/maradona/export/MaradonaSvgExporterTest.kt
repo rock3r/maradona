@@ -179,9 +179,15 @@ class MaradonaSvgExporterTest {
         val qPointIdx = quadrantSvg.indexOf("class=\"quadrant-point\"")
         assertTrue(qPointIdx > 0, "Expected quadrant data point circle")
 
-        // 16. XY Chart (axes, ticks, rotated Y-axis title, bars before lines, single-point line marker)
+        // 16. XY Chart (axes, ticks, rotated Y-axis title, bars before lines, single-point line marker, plotColorPalette)
         val xySvg = MaradonaSvgExporter.exportToSvg(
             """
+            ---
+            config:
+              themeVariables:
+                xyChart:
+                  plotColorPalette: "#10B981, #EF4444"
+            ---
             xychart-beta
                 title "Revenue"
                 x-axis [Jan]
@@ -194,6 +200,8 @@ class MaradonaSvgExporterTest {
         val linePtIdx = xySvg.indexOf("class=\"xy-line-point\"")
         assertTrue(barIdx in 1 until linePtIdx, "Expected XY bar to be emitted before XY line point marker")
         assertTrue(xySvg.contains("transform=\"rotate(-90"), "Expected rotated Y-axis title")
+        assertTrue(xySvg.contains("fill=\"#10B981\""), "Expected XY bar to use plotColorPalette")
+        assertTrue(xySvg.contains("fill=\"#EF4444\""), "Expected XY line point to use plotColorPalette")
 
         // 17. Kanban (with priority stripe and ticket link)
         val kanbanSvg = MaradonaSvgExporter.exportToSvg(
@@ -245,15 +253,21 @@ class MaradonaSvgExporterTest {
         assertTrue(packetSvg.contains("Source Port"), "Expected packet field label")
         assertFalse(packetSvg.contains(">VeryLongSingleBitFlagLabel</text>"), "Expected narrow 1-bit packet field label to be truncated")
 
-        // 20. Radar
+        // 20. Radar (with custom cScale0 palette)
         val radarSvg = MaradonaSvgExporter.exportToSvg(
             """
+            ---
+            config:
+              themeVariables:
+                cScale0: '#8B5CF6'
+            ---
             radar-beta
               axis a["Speed"], b["Reliability"], c["Memory"]
               curve m["Maradona"]{90, 95, 88}
             """.trimIndent(),
         )
         assertTrue(radarSvg.contains("class=\"radar-curve\""), "Expected radar curve polygon")
+        assertTrue(radarSvg.contains("stroke=\"#8B5CF6\""), "Expected radar curve to use custom cScale0 palette")
 
         // 21. Block (with composite container, diamond, and multidirectional block arrow)
         val blockSvg = MaradonaSvgExporter.exportToSvg(
