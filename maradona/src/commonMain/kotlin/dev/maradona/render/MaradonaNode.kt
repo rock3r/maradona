@@ -1,17 +1,11 @@
 package dev.maradona.render
 
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.dp
-import dev.maradona.layout.NodeSizing
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -19,14 +13,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
+import dev.maradona.layout.NodeSizing
 import dev.maradona.model.FlowNode
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.NodeShape
@@ -66,19 +60,41 @@ fun MaradonaNode(
         textAlign = TextAlign.Center,
     )
     val measurer = rememberTextMeasurer()
-    val wrappedLabel = annotatedLabel(node.label)
+    val inlineImages = remember(node.label) { extractInlineImages(node.label) }
+    val inlineContent = rememberInlineImageContent(inlineImages)
+    val wrappedLabel = annotatedLabel(node.label, theme.monospaceFontFamily, inlineContent.keys)
+    val placeholderRanges = remember(wrappedLabel, inlineContent) {
+        if (inlineContent.isEmpty()) {
+            emptyList()
+        } else {
+            wrappedLabel.getStringAnnotations(0, wrappedLabel.length).mapNotNull { range ->
+                val ic = inlineContent[range.item] ?: return@mapNotNull null
+                androidx.compose.ui.text.AnnotatedString.Range(
+                    item = ic.placeholder,
+                    start = range.start,
+                    end = range.end,
+                )
+            }
+        }
+    }
     val wrapPx = with(LocalDensity.current) { NodeSizing.WRAPPING_WIDTH.dp.roundToPx() }
-    val measured = measurer.measure(wrappedLabel, textStyle, constraints = Constraints(maxWidth = wrapPx))
+    val measured = measurer.measure(
+        text = wrappedLabel,
+        style = textStyle,
+        constraints = Constraints(maxWidth = wrapPx),
+        placeholders = placeholderRanges,
+    )
     // Mermaid's label box is `lines x (fontSize * 1.5)` tall (its SVG sets
     // line-height: 1.5), not the font's tight line height, so derive it from the
-    // line count rather than from the measured text height.
+    // line count unless inline image placeholders make the measured height taller.
+    val densityVal = LocalDensity.current.density
     val labelBox = NodeSizing.labelBox(
         node.shape,
-        measured.size.width / LocalDensity.current.density,
-        measured.lineCount * theme.nodeFontSize.value * 1.5f,
+        measured.size.width / densityVal,
+        maxOf(measured.lineCount * theme.nodeFontSize.value * 1.5f, measured.size.height / densityVal),
     )
     val nodeBox = NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
-    val plainLabel = node.label.replace("**", "").replace("*", "")
+    val plainLabel = plainTextLabel(node.label)
     val description = if (connectionsDescription.isNullOrBlank()) {
         plainLabel
     } else {
@@ -152,59 +168,16 @@ fun MaradonaNode(
             NodeShape.Cylinder -> {
                 val rx = nodeBox.width / 2f
                 val ry = rx / (2.5f + nodeBox.width / 50f)
-                Modifier. offset(y = (ry * 0.75f).dp)
+                Modifier.offset(y = (ry * 0.75f).dp)
             }
             NodeShape.Asymmetric -> Modifier.offset(x = (nodeBox.height / 8f).dp)
             else -> Modifier
         }
-        BasicText(text = wrappedLabel, style = textStyle, modifier = labelModifier)
+        BasicText(
+            text = wrappedLabel,
+            style = textStyle,
+            modifier = labelModifier,
+            inlineContent = inlineContent,
+        )
     }
-}
-
-/**
- * Turns the parser's `**bold**` / `*italic*` markers (normalised from
- * `<b>`/`<i>` in the source) into [AnnotatedString] spans.
- * This is the extent of rich text in v1 — no HTML layout.
- */
-fun annotatedLabel(label: String): AnnotatedString = buildAnnotatedString {
-    var i = 0
-    var bold = false
-    var italic = false
-    val plain = StringBuilder()
-    fun flush() {
-        if (plain.isEmpty()) return
-        val text = plain.toString()
-        plain.clear()
-        when {
-            bold && italic -> withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) { append(text) }
-            bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text) }
-            italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(text) }
-            else -> append(text)
-        }
-    }
-    while (i < label.length) {
-        when {
-            label.startsWith("**", i) && (bold || label.indexOf("**", i + 2) >= 0) -> {
-                flush(); bold = !bold; i += 2
-            }
-            label[i] == '*' && !label.startsWith("**", i) && (italic || hasClosingSingleStar(label, i + 1)) -> {
-                flush(); italic = !italic; i += 1
-            }
-            else -> { plain.append(label[i]); i += 1 }
-        }
-    }
-    flush()
-}
-
-private fun hasClosingSingleStar(s: String, from: Int): Boolean {
-    var j = from
-    while (j < s.length) {
-        if (s.startsWith("**", j)) {
-            j += 2
-            continue
-        }
-        if (s[j] == '*') return true
-        j++
-    }
-    return false
 }

@@ -127,9 +127,9 @@ fun MaradonaClassLayout(
                         )
                     }
                     val titleText = if (c.genericType.isNullOrBlank()) {
-                        annotatedLabel(c.label)
+                        annotatedLabel(c.label, theme.monospaceFontFamily)
                     } else {
-                        annotatedLabel(c.label) + AnnotatedString("<${c.genericType}>")
+                        annotatedLabel(c.label, theme.monospaceFontFamily) + AnnotatedString("<${c.genericType}>")
                     }
                     BasicText(
                         text = titleText,
@@ -164,13 +164,14 @@ fun MaradonaClassLayout(
                         }
                     }
                 }
+                val plainClassTitle = plainTextLabel(c.displayTitle)
                 val relDesc = relationDescriptions[c.id]
                 val baseDesc = buildString {
-                    append("Class ${c.displayTitle}")
+                    append("Class $plainClassTitle")
                     if (!relDesc.isNullOrBlank()) append(". $relDesc")
                 }
-                val clickEvent = c.action?.toClickEvent(c.id, c.displayTitle)
-                    ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = c.id, label = c.displayTitle) else null
+                val clickEvent = c.action?.toClickEvent(c.id, plainClassTitle)
+                    ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = c.id, label = plainClassTitle) else null
                 Box(
                     modifier = Modifier
                         .layoutId("cbox:${c.id}")
@@ -189,7 +190,7 @@ fun MaradonaClassLayout(
                         .layoutId("note:$idx")
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                         .semantics {
-                            contentDescription = "Note: ${note.text.replace("*", "")}"
+                            contentDescription = "Note: ${plainTextLabel(note.text)}"
                         },
                 ) {
                     BasicText(
@@ -469,7 +470,7 @@ private fun classRelationDescriptions(diagram: ClassDiagram): Map<String, String
     val out = HashMap<String, MutableList<String>>()
     for (c in diagram.classes) out[c.id] = mutableListOf()
     for (rel in diagram.relations) {
-        val lbl = rel.label?.let { " ($it)" } ?: ""
+        val lbl = rel.label?.let { " (${plainTextLabel(it)})" } ?: ""
         out[rel.from]?.add("relates to ${rel.to}$lbl")
         out[rel.to]?.add("related from ${rel.from}$lbl")
     }

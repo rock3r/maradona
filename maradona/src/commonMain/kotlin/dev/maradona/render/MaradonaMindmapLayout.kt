@@ -120,9 +120,9 @@ fun MaradonaMindmapLayout(
                     else -> theme.nodeFontSize
                 }
                 val displayAnnotated = if (!n.icon.isNullOrBlank()) {
-                    AnnotatedString("◈ ") + annotatedLabel(n.label)
+                    AnnotatedString("${resolveMermaidIconGlyph(n.icon)} ") + annotatedLabel(n.label, theme.monospaceFontFamily)
                 } else {
-                    annotatedLabel(n.label)
+                    annotatedLabel(n.label, theme.monospaceFontFamily)
                 }
                 BasicText(
                     text = displayAnnotated,

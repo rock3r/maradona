@@ -616,23 +616,144 @@ internal object NodeRefReader {
         if (text.length >= 2 && text.first() == '`' && text.last() == '`') {
             text = text.substring(1, text.length - 1)
         }
-        text = text
-            .replace(Regex("(?i)<br\\s*/?>"), "\n")
-            .replace(Regex("(?i)<b>"), "**").replace(Regex("(?i)</b>"), "**")
-            .replace(Regex("(?i)<strong>"), "**").replace(Regex("(?i)</strong>"), "**")
-            .replace(Regex("(?i)<i>"), "*").replace(Regex("(?i)</i>"), "*")
-            .replace(Regex("(?i)<em>"), "*").replace(Regex("(?i)</em>"), "*")
-            .replace(Regex("(?i)</?(?:span|div|p|sub|sup|font|small|mark|u|s|del|ins|code)(?:\\s[^>]*)?>"), "")
-            .replace("&quot;", "\"").replace("#quot;", "\"")
-            .replace("&#39;", "'").replace("&apos;", "'")
-            .replace("&lt;", "<").replace("#lt;", "<")
-            .replace("&gt;", ">").replace("#gt;", ">")
-            .replace("&amp;", "&").replace("#amp;", "&")
-            .replace(Regex("&?#(\\d{1,5});")) { m ->
-                val code = m.groupValues[1].toIntOrNull()
-                if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
-            }
+        text = transformOutsideInlineCode(text) { segment ->
+            segment
+                .replace(Regex("""(?i)<br\s*/?>"""), "\n")
+                .replace(Regex("""(?i)<(?:b|strong)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "**")
+                .replace(Regex("""(?i)</(?:b|strong)\s*>"""), "**")
+                .replace(Regex("""(?i)<(?:i|em)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "*")
+                .replace(Regex("""(?i)</(?:i|em)\s*>"""), "*")
+                .replace(Regex("""(?i)<(u|ins|s|del|strike|sub|sup|code)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>""")) { "<${it.groupValues[1].lowercase()}>" }
+                .replace(Regex("""(?i)</(u|ins|s|del|strike|sub|sup|code)\s*>""")) { "</${it.groupValues[1].lowercase()}>" }
+                .replace(Regex("""(?i)</?(?:span|div|p|font|small|mark)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>"""), "")
+        }
+        text = transformOutsideImgTags(text) { segment ->
+            val escapedTagGuard = "&\u200Blt;"
+            segment
+                .replace(
+                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
+                    escapedTagGuard,
+                )
+                .replace("&quot;", "\"").replace("#quot;", "\"")
+                .replace("&#39;", "'").replace("&apos;", "'")
+                .replace("&lt;", "<").replace("#lt;", "<")
+                .replace("&gt;", ">").replace("#gt;", ">")
+                .replace("&amp;", "&").replace("#amp;", "&")
+                .replace(Regex("&?#(\\d{1,5});")) { m ->
+                    val code = m.groupValues[1].toIntOrNull()
+                    if (code != null && code in 32..0xFFFF) code.toChar().toString() else m.value
+                }
+        }
         return text.trim()
+    }
+
+    private fun transformOutsideImgTags(s: String, transform: (String) -> String): String {
+        if ("<img" !in s.lowercase()) return transform(s)
+        val out = StringBuilder()
+        val buf = StringBuilder()
+        var i = 0
+        fun flush() {
+            if (buf.isNotEmpty()) {
+                out.append(transform(buf.toString()))
+                buf.clear()
+            }
+        }
+        while (i < s.length) {
+            if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
+                i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
+            ) {
+                val tagEnd = findTagClose(s, i + 4)
+                if (tagEnd >= 0) {
+                    flush()
+                    out.append(s, i, tagEnd + 1)
+                    i = tagEnd + 1
+                    continue
+                }
+            }
+            buf.append(s[i])
+            i++
+        }
+        flush()
+        return out.toString()
+    }
+
+    private val MD_IMAGE_SPAN_REGEX = Regex("""!\[([^\]]*)]\(((?:[^()\s]|\([^()\s]*\))+)\)""")
+
+    private fun findTagClose(s: String, startAfterTagName: Int): Int {
+        var j = startAfterTagName
+        var quote: Char? = null
+        while (j < s.length) {
+            val c = s[j]
+            if (quote != null) {
+                if (c == quote) quote = null
+            } else if (c == '"' || c == '\'') {
+                quote = c
+            } else if (c == '>') {
+                return j
+            }
+            j++
+        }
+        return -1
+    }
+
+    private fun transformOutsideInlineCode(s: String, transform: (String) -> String): String {
+        if ('`' !in s && "<code" !in s.lowercase()) return transform(s)
+        val out = StringBuilder()
+        val nonCode = StringBuilder()
+        var i = 0
+        fun flush() {
+            if (nonCode.isNotEmpty()) {
+                out.append(transform(nonCode.toString()))
+                nonCode.clear()
+            }
+        }
+        while (i < s.length) {
+            if (s.regionMatches(i, "<img", 0, 4, ignoreCase = true) &&
+                i + 4 < s.length && (s[i + 4].isWhitespace() || s[i + 4] == '/' || s[i + 4] == '>')
+            ) {
+                val tagEnd = findTagClose(s, i + 4)
+                if (tagEnd >= 0) {
+                    nonCode.append(s, i, tagEnd + 1)
+                    i = tagEnd + 1
+                    continue
+                }
+            }
+            if (s.startsWith("![", i)) {
+                val mdMatch = MD_IMAGE_SPAN_REGEX.find(s, i)
+                if (mdMatch != null && mdMatch.range.first == i) {
+                    nonCode.append(mdMatch.value)
+                    i = mdMatch.range.last + 1
+                    continue
+                }
+            }
+            if (s[i] == '`') {
+                val close = s.indexOf('`', i + 1)
+                if (close > i) {
+                    flush()
+                    out.append(s, i, close + 1)
+                    i = close + 1
+                    continue
+                }
+            }
+            if (s.regionMatches(i, "<code", 0, 5, ignoreCase = true) &&
+                i + 5 < s.length && (s[i + 5] == '>' || s[i + 5].isWhitespace())
+            ) {
+                val openEnd = findTagClose(s, i + 5)
+                val close = if (openEnd >= 0) s.indexOf("</code>", openEnd + 1, ignoreCase = true) else -1
+                if (openEnd >= 0 && close >= 0) {
+                    flush()
+                    out.append("<code>")
+                    out.append(s, openEnd + 1, close)
+                    out.append("</code>")
+                    i = close + 7
+                    continue
+                }
+            }
+            nonCode.append(s[i])
+            i++
+        }
+        flush()
+        return out.toString()
     }
 }
 

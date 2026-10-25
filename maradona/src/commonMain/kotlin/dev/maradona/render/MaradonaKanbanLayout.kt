@@ -103,8 +103,13 @@ fun MaradonaKanbanLayout(
             }
             var flatTaskIndex = 0
             for ((colIdx, col) in diagram.columns.withIndex()) {
+                val colHeaderLabel = if (!col.icon.isNullOrBlank()) {
+                    "${resolveMermaidIconGlyph(col.icon)} ${col.label}"
+                } else {
+                    col.label
+                }
                 BasicText(
-                    text = annotatedLabel(col.label),
+                    text = annotatedLabel(colHeaderLabel, theme.monospaceFontFamily),
                     modifier = Modifier.layoutId("colhdr:$colIdx"),
                     style = TextStyle(
                         color = theme.nodeText,
@@ -128,8 +133,13 @@ fun MaradonaKanbanLayout(
                     } else {
                         null
                     }
+                    val taskDisplayLabel = if (!task.icon.isNullOrBlank()) {
+                        "${resolveMermaidIconGlyph(task.icon)} ${task.label}"
+                    } else {
+                        task.label
+                    }
                     BasicText(
-                        text = annotatedLabel(task.label),
+                        text = annotatedLabel(taskDisplayLabel, theme.monospaceFontFamily),
                         modifier = Modifier.layoutId("tasklbl:$key"),
                         style = TextStyle(
                             color = theme.nodeText,
