@@ -59,13 +59,12 @@ private class ZenUmlLayoutHolder {
 @Composable
 fun MaradonaZenUmlLayout(
     diagram: ZenUmlDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (ZenUmlDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { ZenUmlLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
 
     val specs = remember(diagram) { ZenUmlLayout.collectSpecs(diagram) }
     val msgSpecs = specs.first
@@ -90,7 +89,7 @@ fun MaradonaZenUmlLayout(
                 }
             }
             .drawBehind {
-                holder.layout?.let { drawZenUmlUnderlay(it, theme, isDark) }
+                holder.layout?.let { drawZenUmlUnderlay(it, theme) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
@@ -100,7 +99,7 @@ fun MaradonaZenUmlLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -116,7 +115,7 @@ fun MaradonaZenUmlLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.5.sp,
+                        fontSize = theme.scaledSp(11.5f),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
@@ -152,8 +151,8 @@ fun MaradonaZenUmlLayout(
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                         style = TextStyle(
                             color = theme.nodeText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.5.sp,
+                            fontFamily = theme.monospaceFontFamily,
+                            fontSize = theme.scaledSp(11.5f),
                             fontWeight = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontWeight.Normal else FontWeight.Medium,
                             fontStyle = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontStyle.Italic else FontStyle.Normal,
                         ),
@@ -167,9 +166,9 @@ fun MaradonaZenUmlLayout(
                             .widthIn(max = 220.dp)
                             .padding(horizontal = 6.dp, vertical = 3.dp),
                         style = TextStyle(
-                            color = theme.nodeText.copy(alpha = 0.85f),
+                            color = theme.noteText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = theme.scaledSp(10.5f),
                             fontStyle = FontStyle.Italic,
                         ),
                     )
@@ -184,8 +183,8 @@ fun MaradonaZenUmlLayout(
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                     style = TextStyle(
                         color = theme.nodeText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        fontFamily = theme.monospaceFontFamily,
+                        fontSize = theme.captionFontSize,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
@@ -197,8 +196,8 @@ fun MaradonaZenUmlLayout(
                             .padding(horizontal = 4.dp, vertical = 2.dp),
                         style = TextStyle(
                             color = theme.nodeText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
+                            fontFamily = theme.monospaceFontFamily,
+                            fontSize = theme.captionFontSize,
                             fontWeight = FontWeight.Medium,
                         ),
                     )
@@ -211,8 +210,8 @@ fun MaradonaZenUmlLayout(
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                         style = TextStyle(
                             color = theme.nodeText,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.5.sp,
+                            fontFamily = theme.monospaceFontFamily,
+                            fontSize = theme.scaledSp(10.5f),
                             fontWeight = FontWeight.SemiBold,
                         ),
                     )
@@ -437,7 +436,7 @@ private fun ZenUmlParticipantCard(
                 style = TextStyle(
                     color = theme.nodeText.copy(alpha = 0.78f),
                     fontFamily = theme.fontFamily,
-                    fontSize = 10.sp,
+                    fontSize = theme.scaledSp(10f),
                     fontStyle = FontStyle.Italic,
                     textAlign = TextAlign.Center,
                 ),
@@ -448,7 +447,7 @@ private fun ZenUmlParticipantCard(
             style = TextStyle(
                 color = theme.nodeText,
                 fontFamily = theme.fontFamily,
-                fontSize = 13.sp,
+                fontSize = theme.scaledSp(13f),
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             ),
@@ -459,7 +458,6 @@ private fun ZenUmlParticipantCard(
 private fun DrawScope.drawZenUmlUnderlay(
     layout: ZenUmlDiagramLayout,
     theme: MaradonaTheme,
-    isDark: Boolean,
 ) {
     val lifelineDash = PathEffect.dashPathEffect(floatArrayOf(6f * density, 5f * density), 0f)
     val returnDash = PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
@@ -496,7 +494,7 @@ private fun DrawScope.drawZenUmlUnderlay(
     }
 
     // 3. Control Blocks (frames, tabs, dividers)
-    val frameFill = if (isDark) Color(0xFF1E293B).copy(alpha = 0.25f) else Color(0xFFF8FAFC).copy(alpha = 0.45f)
+    val frameFill = theme.subgraphFill.copy(alpha = 0.45f)
     val frameStroke = theme.subgraphBorder
     for (pb in layout.blocks) {
         val r = pb.rect
@@ -543,8 +541,8 @@ private fun DrawScope.drawZenUmlUnderlay(
     }
 
     // 4. Activation bars (shallowest first so nested self-call activations render on top)
-    val actFill = if (isDark) Color(0xFF1E3A8A) else Color(0xFFDBEAFE)
-    val actStroke = if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
+    val actFill = theme.accentFill
+    val actStroke = theme.accentBorder
     for (act in layout.activations.sortedBy { it.depth }) {
         val r = act.rect
         val cr = CornerRadius(2f * density, 2f * density)
@@ -571,8 +569,8 @@ private fun DrawScope.drawZenUmlUnderlay(
     }
 
     // 6. Messages & Comments
-    val commentFill = if (isDark) Color(0xFFFEF3C7).copy(alpha = 0.16f) else Color(0xFFFEF9C3)
-    val commentBorder = if (isDark) Color(0xFFF59E0B).copy(alpha = 0.6f) else Color(0xFFEAB308)
+    val commentFill = theme.noteFill
+    val commentBorder = theme.noteBorder
     for (pm in layout.messages) {
         pm.commentRect?.let { cr ->
             val corner = CornerRadius(4f * density, 4f * density)

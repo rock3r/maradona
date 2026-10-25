@@ -68,7 +68,7 @@ private class ClassLayoutHolder {
 @Composable
 fun MaradonaClassLayout(
     diagram: ClassDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 54f),
@@ -94,7 +94,7 @@ fun MaradonaClassLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -113,7 +113,7 @@ fun MaradonaClassLayout(
                             style = TextStyle(
                                 color = textColor,
                                 fontFamily = theme.fontFamily,
-                                fontSize = 11.sp,
+                                fontSize = theme.captionFontSize,
                                 fontStyle = FontStyle.Italic,
                                 textAlign = TextAlign.Center,
                             ),
@@ -178,9 +178,9 @@ fun MaradonaClassLayout(
                     BasicText(
                         text = annotatedLabel(note.text),
                         style = TextStyle(
-                            color = Color(0xFF333333),
+                            color = theme.noteText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             textAlign = TextAlign.Start,
                         ),
                     )
@@ -211,7 +211,7 @@ fun MaradonaClassLayout(
                         style = TextStyle(
                             color = theme.edgeLabelText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.sp,
+                            fontSize = theme.captionFontSize,
                         ),
                     )
                 }
@@ -224,7 +224,7 @@ fun MaradonaClassLayout(
                         style = TextStyle(
                             color = theme.edgeLabelText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.sp,
+                            fontSize = theme.captionFontSize,
                         ),
                     )
                 }
@@ -441,7 +441,7 @@ private fun MemberLine(
         style = TextStyle(
             color = textColor,
             fontFamily = theme.fontFamily,
-            fontSize = 12.sp,
+            fontSize = theme.edgeLabelFontSize,
             fontStyle = if (member.classifier == ClassClassifier.Abstract) FontStyle.Italic else FontStyle.Normal,
             textDecoration = if (member.classifier == ClassClassifier.Static) TextDecoration.Underline else TextDecoration.None,
         ),
@@ -604,9 +604,9 @@ private fun DrawScope.drawClassUnderlay(
         }
     }
 
-    // 5. Sticky notes (`#FFF5AD` fill and `#E3D296` border matching Mermaid).
-    val noteFill = Color(0xFFFFF5AD)
-    val noteBorder = Color(0xFFE3D296)
+    // 5. Sticky notes (fill and border from theme).
+    val noteFill = theme.noteFill
+    val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
         drawRect(

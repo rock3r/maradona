@@ -39,30 +39,12 @@ private class KanbanLayoutHolder {
     var layout: KanbanDiagramLayout? = null
 }
 
-private val KANBAN_COLUMN_FILLS_LIGHT = listOf(
-    Color(0xFFEAF2FA), // Blue tint
-    Color(0xFFF6EFE2), // Warm sand
-    Color(0xFFE8F4EE), // Mint tint
-    Color(0xFFF3EBF8), // Lavender tint
-    Color(0xFFF8ECEB), // Rose tint
-    Color(0xFFEEF2E6), // Olive tint
-)
-
-private val KANBAN_COLUMN_FILLS_DARK = listOf(
-    Color(0xFF172736),
-    Color(0xFF2B2418),
-    Color(0xFF162A22),
-    Color(0xFF251D30),
-    Color(0xFF2D1C1C),
-    Color(0xFF212619),
-)
-
-private fun priorityStripeColor(priority: KanbanPriority?, isDark: Boolean): Color? = when (priority) {
-    KanbanPriority.VeryHigh -> if (isDark) Color(0xFFEB5757) else Color(0xFFD14D41)
-    KanbanPriority.High -> if (isDark) Color(0xFFF2994A) else Color(0xFFDA702C)
+private fun priorityStripeColor(priority: KanbanPriority?, theme: MaradonaTheme): Color? = when (priority) {
+    KanbanPriority.VeryHigh -> theme.criticalBorder
+    KanbanPriority.High -> theme.warningBorder
     KanbanPriority.Medium -> null
-    KanbanPriority.Low -> if (isDark) Color(0xFF4385BE) else Color(0xFF205EA6)
-    KanbanPriority.VeryLow -> if (isDark) Color(0xFF66A3D2) else Color(0xFF5B9BD5)
+    KanbanPriority.Low -> theme.accentBorder
+    KanbanPriority.VeryLow -> theme.seriesColor(1)
     null -> null
 }
 
@@ -76,7 +58,7 @@ private fun priorityStripeColor(priority: KanbanPriority?, isDark: Boolean): Col
 @Composable
 fun MaradonaKanbanLayout(
     diagram: KanbanDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (KanbanDiagramLayout) -> Unit = {},
@@ -109,7 +91,7 @@ fun MaradonaKanbanLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -122,7 +104,7 @@ fun MaradonaKanbanLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.5.sp,
+                        fontSize = theme.scaledSp(13.5f),
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -135,7 +117,7 @@ fun MaradonaKanbanLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             fontWeight = FontWeight.Normal,
                         ),
                     )
@@ -154,7 +136,7 @@ fun MaradonaKanbanLayout(
                             style = TextStyle(
                                 color = theme.nodeText.copy(alpha = 0.78f),
                                 fontFamily = theme.fontFamily,
-                                fontSize = 10.5.sp,
+                                fontSize = theme.scaledSp(10.5f),
                                 fontWeight = FontWeight.Medium,
                                 textDecoration = if (ticketUrl != null) TextDecoration.Underline else TextDecoration.None,
                             ),
@@ -167,7 +149,7 @@ fun MaradonaKanbanLayout(
                             style = TextStyle(
                                 color = theme.nodeText.copy(alpha = 0.75f),
                                 fontFamily = theme.fontFamily,
-                                fontSize = 10.5.sp,
+                                fontSize = theme.scaledSp(10.5f),
                                 fontWeight = FontWeight.Normal,
                             ),
                         )
@@ -348,13 +330,11 @@ private fun DrawScope.drawKanbanUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val colPalette = if (isDark) KANBAN_COLUMN_FILLS_DARK else KANBAN_COLUMN_FILLS_LIGHT
     val colCorner = CornerRadius(6f * unit, 6f * unit)
     val cardCorner = CornerRadius(5f * unit, 5f * unit)
 
     for (col in layout.columns) {
-        val colFill = colPalette[col.columnIndex % colPalette.size]
+        val colFill = androidx.compose.ui.graphics.lerp(theme.seriesFill(col.columnIndex), theme.background, 0.45f)
         drawRoundRect(
             color = colFill,
             topLeft = Offset(col.rect.x, col.rect.y),
@@ -384,7 +364,7 @@ private fun DrawScope.drawKanbanUnderlay(
                 cornerRadius = cardCorner,
                 style = Stroke(width = 1.1f * unit),
             )
-            val stripeCol = priorityStripeColor(pt.task.priority, isDark)
+            val stripeCol = priorityStripeColor(pt.task.priority, theme)
             if (stripeCol != null) {
                 val insetY = 3.5f * unit
                 val lineX = cr.x + 3f * unit

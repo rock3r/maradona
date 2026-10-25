@@ -60,7 +60,7 @@ private class RequirementLayoutHolder {
 @Composable
 fun MaradonaRequirementLayout(
     diagram: RequirementDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 56f),
@@ -94,7 +94,7 @@ fun MaradonaRequirementLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -109,7 +109,7 @@ fun MaradonaRequirementLayout(
                     style = TextStyle(
                         color = textColor.copy(alpha = 0.78f),
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.sp,
+                        fontSize = theme.captionFontSize,
                         fontStyle = FontStyle.Italic,
                         fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
                         textAlign = TextAlign.Center,
@@ -121,7 +121,7 @@ fun MaradonaRequirementLayout(
                     style = TextStyle(
                         color = textColor,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.5.sp,
+                        fontSize = theme.scaledSp(13.5f),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
@@ -133,7 +133,7 @@ fun MaradonaRequirementLayout(
                         style = TextStyle(
                             color = textColor,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.scaledSp(11.5f),
                             fontWeight = if (isBold) FontWeight.SemiBold else FontWeight.Normal,
                         ),
                     )
@@ -158,7 +158,7 @@ fun MaradonaRequirementLayout(
                     style = TextStyle(
                         color = theme.edgeLabelText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 11.sp,
+                        fontSize = theme.captionFontSize,
                         fontStyle = FontStyle.Italic,
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
@@ -363,9 +363,8 @@ private fun DrawScope.drawRequirementUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val defaultReqHeaderFill = if (isDark) Color(0xFF1A2B3C) else Color(0xFFEAF2FA)
-    val defaultElemHeaderFill = if (isDark) Color(0xFF1A2E26) else Color(0xFFE8F4EE)
+    val defaultReqHeaderFill = theme.accentFill
+    val defaultElemHeaderFill = theme.secondaryFill
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(7f * unit, 5f * unit), 0f)
 
     // 1. Requirement & Element boxes.

@@ -45,33 +45,6 @@ private data class JourneySectionPalette(
     val border: Color,
 )
 
-private val JOURNEY_SECTION_PALETTE_LIGHT = listOf(
-    JourneySectionPalette(Color(0xFFC7DFF2), Color(0xFFEDF4FA), Color(0xFF205EA6)),
-    JourneySectionPalette(Color(0xFFC3E4DF), Color(0xFFECF6F4), Color(0xFF24837B)),
-    JourneySectionPalette(Color(0xFFEFDFB4), Color(0xFFFAF4E4), Color(0xFFAD8301)),
-    JourneySectionPalette(Color(0xFFE5CADB), Color(0xFFF7EEF4), Color(0xFFA02F6F)),
-    JourneySectionPalette(Color(0xFFD9E6B8), Color(0xFFF3F7E6), Color(0xFF66800B)),
-    JourneySectionPalette(Color(0xFFF2D2C2), Color(0xFFFBF0EA), Color(0xFFBC5215)),
-)
-
-private val JOURNEY_SECTION_PALETTE_DARK = listOf(
-    JourneySectionPalette(Color(0xFF1F3D58), Color(0xFF162838), Color(0xFF4385BE)),
-    JourneySectionPalette(Color(0xFF1C423E), Color(0xFF142C29), Color(0xFF3AA99F)),
-    JourneySectionPalette(Color(0xFF473715), Color(0xFF2D2310), Color(0xFFD0A215)),
-    JourneySectionPalette(Color(0xFF462237), Color(0xFF2C1723), Color(0xFFCE5D97)),
-    JourneySectionPalette(Color(0xFF323E14), Color(0xFF20280E), Color(0xFF879A39)),
-    JourneySectionPalette(Color(0xFF4A2817), Color(0xFF2E1A10), Color(0xFFDA702C)),
-)
-
-private val ACTOR_COLORS = listOf(
-    Color(0xFF5DA5DA) to Color(0xFF1D4F7A),
-    Color(0xFF60BD68) to Color(0xFF236329),
-    Color(0xFFFAA43A) to Color(0xFF8C5108),
-    Color(0xFFF17CB0) to Color(0xFF872652),
-    Color(0xFFB276B2) to Color(0xFF5D2D5D),
-    Color(0xFFDECF3F) to Color(0xFF756B0E),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `journey` (User Journey) diagrams.
  *
@@ -82,7 +55,7 @@ private val ACTOR_COLORS = listOf(
 @Composable
 fun MaradonaJourneyLayout(
     diagram: JourneyDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (JourneyDiagramLayout) -> Unit = {},
@@ -115,7 +88,7 @@ fun MaradonaJourneyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -128,7 +101,7 @@ fun MaradonaJourneyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -141,7 +114,7 @@ fun MaradonaJourneyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
@@ -154,7 +127,7 @@ fun MaradonaJourneyLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                     ),
@@ -287,13 +260,19 @@ private fun DrawScope.drawJourneyUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val sectionPalette = if (isDark) JOURNEY_SECTION_PALETTE_DARK else JOURNEY_SECTION_PALETTE_LIGHT
     val dash = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
+
+    fun sectionColors(index: Int): JourneySectionPalette {
+        val border = theme.seriesColor(index)
+        val sectionFill = theme.seriesFill(index)
+        val taskFill = androidx.compose.ui.graphics.lerp(sectionFill, theme.background, 0.55f)
+        return JourneySectionPalette(sectionFill, taskFill, border)
+    }
 
     // 1. Actor legend badges.
     for (al in layout.actorLegend) {
-        val (fill, stroke) = ACTOR_COLORS[al.actorIndex.mod(ACTOR_COLORS.size)]
+        val fill = theme.seriesFill(al.actorIndex)
+        val stroke = theme.seriesColor(al.actorIndex)
         val center = Offset(al.circleCenter.x, al.circleCenter.y)
         drawCircle(color = fill, radius = al.circleRadius, center = center)
         drawCircle(color = stroke, radius = al.circleRadius, center = center, style = Stroke(width = 1.4f * unit))
@@ -301,7 +280,7 @@ private fun DrawScope.drawJourneyUnderlay(
 
     // 2. Section banners.
     for (sec in layout.sections) {
-        val colors = sectionPalette[sec.sectionIndex.mod(sectionPalette.size)]
+        val colors = sectionColors(sec.sectionIndex)
         val r = sec.rect
         val cr = CornerRadius(7f * unit, 7f * unit)
         drawRoundRect(
@@ -340,12 +319,12 @@ private fun DrawScope.drawJourneyUnderlay(
     drawPath(path = arrowPath, color = spineColor)
 
     // 4. Task score lines, mood faces, task cards, and actor dots.
-    val faceFill = if (isDark) Color(0xFF3E351B) else Color(0xFFFFF8DC)
-    val faceStroke = if (isDark) Color(0xFFD0A215) else Color(0xFF878580)
-    val featureColor = if (isDark) Color(0xFFCECDC3) else Color(0xFF575653)
+    val faceFill = theme.noteFill
+    val faceStroke = theme.noteBorder
+    val featureColor = theme.noteText
 
     for (pt in layout.tasks) {
-        val colors = sectionPalette[pt.sectionIndex.mod(sectionPalette.size)]
+        val colors = sectionColors(pt.sectionIndex)
 
         // Vertical dashed score line.
         drawLine(
@@ -375,7 +354,8 @@ private fun DrawScope.drawJourneyUnderlay(
 
         // Actor dots along top of task card.
         for (dot in pt.actorDots) {
-            val (aFill, aStroke) = ACTOR_COLORS[dot.actorIndex.mod(ACTOR_COLORS.size)]
+            val aFill = theme.seriesFill(dot.actorIndex)
+            val aStroke = theme.seriesColor(dot.actorIndex)
             val dCenter = Offset(dot.center.x, dot.center.y)
             drawCircle(color = aFill, radius = dot.radius, center = dCenter)
             drawCircle(color = aStroke, radius = dot.radius, center = dCenter, style = Stroke(width = 1.2f * unit))

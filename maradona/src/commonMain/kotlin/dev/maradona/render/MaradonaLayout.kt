@@ -35,7 +35,7 @@ private class LayoutHolder {
 @Composable
 fun MaradonaLayout(
     chart: Flowchart,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),

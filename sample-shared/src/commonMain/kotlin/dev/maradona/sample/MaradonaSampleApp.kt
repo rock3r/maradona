@@ -1,5 +1,6 @@
 package dev.maradona.sample
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -11,10 +12,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.darkColorScheme
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.maradona.render.LocalMaradonaTheme
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 
@@ -401,10 +403,20 @@ private val examples = linkedMapOf(
     """.trimIndent(),
 )
 
+enum class SampleThemePreset(
+    val displayName: String,
+    val theme: MaradonaTheme,
+) {
+    Light("Light", MaradonaTheme.light()),
+    Dark("Dark", MaradonaTheme.dark()),
+    JewelLight("Jewel Light", MaradonaTheme.jewelLight()),
+    JewelDark("Jewel Dark", MaradonaTheme.jewelDark()),
+}
+
 private class SampleState(
-    val dark: Boolean,
+    val themePreset: SampleThemePreset,
     val source: String,
-    val onDarkChange: (Boolean) -> Unit,
+    val onThemePresetChange: (SampleThemePreset) -> Unit,
     val onSourceChange: (String) -> Unit,
 )
 
@@ -422,26 +434,28 @@ fun MaradonaSampleApp(
         OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY, oracleDensity, oracleSeq)
         return
     }
-    var dark by remember { mutableStateOf(false) }
+    var themePreset by remember { mutableStateOf(SampleThemePreset.Light) }
     var source by remember { mutableStateOf(examples.getValue("Basic")) }
     val state = SampleState(
-        dark = dark,
+        themePreset = themePreset,
         source = source,
-        onDarkChange = { dark = it },
+        onThemePresetChange = { themePreset = it },
         onSourceChange = { source = it },
     )
 
-    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-            if (maxWidth >= 600.dp) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    EditorPanel(state, modifier = Modifier.width(380.dp).fillMaxHeight())
-                    Diagram(state, modifier = Modifier.weight(1f).fillMaxSize())
-                }
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Diagram(state, modifier = Modifier.weight(1f).fillMaxWidth())
-                    EditorPanel(state, modifier = Modifier.fillMaxWidth(), compact = true)
+    MaterialTheme(colorScheme = if (themePreset.theme.isDark) darkColorScheme() else lightColorScheme()) {
+        CompositionLocalProvider(LocalMaradonaTheme provides themePreset.theme) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                if (maxWidth >= 600.dp) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        EditorPanel(state, modifier = Modifier.width(380.dp).fillMaxHeight())
+                        Diagram(state, modifier = Modifier.weight(1f).fillMaxSize())
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Diagram(state, modifier = Modifier.weight(1f).fillMaxWidth())
+                        EditorPanel(state, modifier = Modifier.fillMaxWidth(), compact = true)
+                    }
                 }
             }
         }
@@ -528,7 +542,6 @@ private fun OracleMode(
 private fun Diagram(state: SampleState, modifier: Modifier = Modifier) {
     MaradonaDiagram(
         source = state.source,
-        theme = if (state.dark) MaradonaTheme.dark() else MaradonaTheme.light(),
         modifier = modifier,
     )
 }
@@ -541,6 +554,7 @@ private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compa
     ) {
         Text("Maradona sample", style = MaterialTheme.typography.titleMedium)
         Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -557,15 +571,21 @@ private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compa
                 Modifier.weight(1f).fillMaxHeight()
             },
             textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-            label = { Text("Mermaid flowchart") },
+            label = { Text("Mermaid diagram") },
         )
         Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Switch(checked = state.dark, onCheckedChange = state.onDarkChange)
-            Text("Dark theme")
-            Button(onClick = { state.onSourceChange(examples.getValue("Basic")) }) { Text("Reset") }
+            for (preset in SampleThemePreset.entries) {
+                if (state.themePreset == preset) {
+                    Button(onClick = { state.onThemePresetChange(preset) }) { Text(preset.displayName) }
+                } else {
+                    OutlinedButton(onClick = { state.onThemePresetChange(preset) }) { Text(preset.displayName) }
+                }
+            }
+            OutlinedButton(onClick = { state.onSourceChange(examples.getValue("Basic")) }) { Text("Reset") }
         }
         Text(
             "Pan by dragging. Pinch or ⌘/Ctrl+scroll to zoom. Double-tap to reset.",

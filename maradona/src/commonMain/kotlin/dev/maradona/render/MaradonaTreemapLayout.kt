@@ -42,28 +42,6 @@ private class TreemapLayoutHolder {
     var layout: TreemapDiagramLayout? = null
 }
 
-private val TREEMAP_PALETTE_LIGHT = listOf(
-    Color(0xFF4E79A7),
-    Color(0xFFF28E2B),
-    Color(0xFF59A14F),
-    Color(0xFFE15759),
-    Color(0xFF76B7B2),
-    Color(0xFFEDC948),
-    Color(0xFFB07AA1),
-    Color(0xFF9C755F),
-)
-
-private val TREEMAP_PALETTE_DARK = listOf(
-    Color(0xFF5B8CC0),
-    Color(0xFFF59D3D),
-    Color(0xFF6BB361),
-    Color(0xFFEB6B6D),
-    Color(0xFF88C6C1),
-    Color(0xFFF2D45C),
-    Color(0xFFC18EB3),
-    Color(0xFFB08973),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `treemap` / `treemap-beta` diagrams.
  *
@@ -74,13 +52,13 @@ private val TREEMAP_PALETTE_DARK = listOf(
 @Composable
 fun MaradonaTreemapLayout(
     diagram: TreemapDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (TreemapDiagramLayout) -> Unit = {},
 ) {
     val holder = remember { TreemapLayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
+    val isDark = theme.isDark
 
     // Precompute layout so we know exact section and leaf counts and adaptive font sizes.
     val baseSectionsAndLeaves = remember(diagram) {
@@ -114,7 +92,7 @@ fun MaradonaTreemapLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -131,7 +109,7 @@ fun MaradonaTreemapLayout(
                     style = TextStyle(
                         color = customText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
@@ -143,7 +121,7 @@ fun MaradonaTreemapLayout(
                         style = TextStyle(
                             color = customText.copy(alpha = 0.8f),
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.5.sp,
+                            fontSize = theme.scaledSp(10.5f),
                             fontStyle = FontStyle.Italic,
                         ),
                     )
@@ -166,7 +144,7 @@ fun MaradonaTreemapLayout(
                     style = TextStyle(
                         color = customText,
                         fontFamily = theme.fontFamily,
-                        fontSize = lblFontSp.sp,
+                        fontSize = theme.scaledSp(lblFontSp),
                         fontWeight = fontWeight,
                         textAlign = TextAlign.Center,
                     ),
@@ -180,7 +158,7 @@ fun MaradonaTreemapLayout(
                         style = TextStyle(
                             color = customText.copy(alpha = 0.85f),
                             fontFamily = theme.fontFamily,
-                            fontSize = valFontSp.sp,
+                            fontSize = theme.scaledSp(valFontSp),
                             fontWeight = FontWeight.Normal,
                             textAlign = TextAlign.Center,
                         ),
@@ -361,12 +339,11 @@ private fun DrawScope.drawTreemapUnderlay(
     theme: MaradonaTheme,
     isDark: Boolean,
 ) {
-    val palette = if (isDark) TREEMAP_PALETTE_DARK else TREEMAP_PALETTE_LIGHT
     val baseBorderW = diagram.config.borderWidth.coerceAtLeast(0f)
 
     // 1. Sections
     for (sec in layout.sections) {
-        val baseColor = palette[sec.colorIndex % palette.size]
+        val baseColor = theme.seriesColor(sec.colorIndex)
         val customFill = parseCssColor(sec.node.style?.fill)
         val customStroke = parseCssColor(sec.node.style?.stroke)
         val fillColor = customFill?.copy(alpha = 0.25f) ?: baseColor.copy(alpha = if (isDark) 0.22f else 0.16f)
@@ -394,7 +371,7 @@ private fun DrawScope.drawTreemapUnderlay(
 
     // 2. Leaves
     for (leaf in layout.leaves) {
-        val baseColor = palette[leaf.colorIndex % palette.size]
+        val baseColor = theme.seriesColor(leaf.colorIndex)
         val customFill = parseCssColor(leaf.node.style?.fill)
         val customStroke = parseCssColor(leaf.node.style?.stroke)
         val fillColor = customFill?.copy(alpha = 0.42f) ?: baseColor.copy(alpha = if (isDark) 0.42f else 0.32f)

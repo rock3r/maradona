@@ -59,59 +59,60 @@ private data class C4CardColors(
     val text: Color,
 )
 
-private fun resolveC4ElementColors(element: C4Element): C4CardColors {
+private fun resolveC4ElementColors(element: C4Element, theme: MaradonaTheme): C4CardColors {
+    val p = theme.c4Palette
     val defaultColors = when (element.kind) {
         C4ElementKind.PERSON -> C4CardColors(
-            fill = Color(0xFF08427B),
-            border = Color(0xFF073B6F),
-            text = Color.White,
+            fill = p.personFill,
+            border = p.personBorder,
+            text = p.personText,
         )
         C4ElementKind.PERSON_EXT -> C4CardColors(
-            fill = Color(0xFF686868),
-            border = Color(0xFF5A5A5A),
-            text = Color.White,
+            fill = p.externalFill,
+            border = p.externalBorder,
+            text = p.externalText,
         )
         C4ElementKind.SYSTEM,
         C4ElementKind.SYSTEM_DB,
         C4ElementKind.SYSTEM_QUEUE, -> C4CardColors(
-            fill = Color(0xFF1168BD),
-            border = Color(0xFF0B4884),
-            text = Color.White,
+            fill = p.systemFill,
+            border = p.systemBorder,
+            text = p.systemText,
         )
         C4ElementKind.SYSTEM_EXT,
         C4ElementKind.SYSTEM_DB_EXT,
         C4ElementKind.SYSTEM_QUEUE_EXT, -> C4CardColors(
-            fill = Color(0xFF999999),
-            border = Color(0xFF7A7A7A),
-            text = Color.White,
+            fill = p.externalFill,
+            border = p.externalBorder,
+            text = p.externalText,
         )
         C4ElementKind.CONTAINER,
         C4ElementKind.CONTAINER_DB,
         C4ElementKind.CONTAINER_QUEUE, -> C4CardColors(
-            fill = Color(0xFF438DD5),
-            border = Color(0xFF2E6295),
-            text = Color.White,
+            fill = p.containerFill,
+            border = p.containerBorder,
+            text = p.containerText,
         )
         C4ElementKind.CONTAINER_EXT,
         C4ElementKind.CONTAINER_DB_EXT,
         C4ElementKind.CONTAINER_QUEUE_EXT, -> C4CardColors(
-            fill = Color(0xFF8C8C8C),
-            border = Color(0xFF6E6E6E),
-            text = Color.White,
+            fill = p.externalFill,
+            border = p.externalBorder,
+            text = p.externalText,
         )
         C4ElementKind.COMPONENT,
         C4ElementKind.COMPONENT_DB,
         C4ElementKind.COMPONENT_QUEUE, -> C4CardColors(
-            fill = Color(0xFF85BBF0),
-            border = Color(0xFF5D82A8),
-            text = Color(0xFF0B2545),
+            fill = p.componentFill,
+            border = p.componentBorder,
+            text = p.componentText,
         )
         C4ElementKind.COMPONENT_EXT,
         C4ElementKind.COMPONENT_DB_EXT,
         C4ElementKind.COMPONENT_QUEUE_EXT, -> C4CardColors(
-            fill = Color(0xFFCCCCCC),
-            border = Color(0xFF999999),
-            text = Color(0xFF1F2937),
+            fill = p.externalFill,
+            border = p.externalBorder,
+            text = p.externalText,
         )
     }
 
@@ -131,13 +132,13 @@ private fun resolveC4ElementColors(element: C4Element): C4CardColors {
 @Composable
 fun MaradonaC4Layout(
     diagram: C4Diagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (C4DiagramLayout) -> Unit = {},
 ) {
     val holder = remember { C4LayoutHolder() }
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
+    val isDark = theme.isDark
 
     Layout(
         modifier = modifier
@@ -163,7 +164,7 @@ fun MaradonaC4Layout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -183,7 +184,7 @@ fun MaradonaC4Layout(
                         style = TextStyle(
                             color = hdrColor,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.5.sp,
+                            fontSize = theme.scaledSp(12.5f),
                             fontWeight = FontWeight.Bold,
                         ),
                     )
@@ -192,14 +193,14 @@ fun MaradonaC4Layout(
                         style = TextStyle(
                             color = hdrColor.copy(alpha = 0.78f),
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.sp,
+                            fontSize = theme.scaledSp(10f),
                         ),
                     )
                 }
             }
 
             for (el in diagram.elements) {
-                val colors = resolveC4ElementColors(el)
+                val colors = resolveC4ElementColors(el, theme)
                 val topPad = when {
                     el.kind.isPerson -> 26.dp
                     el.kind.isDatabase -> 16.dp
@@ -223,7 +224,7 @@ fun MaradonaC4Layout(
                         style = TextStyle(
                             color = colors.text.copy(alpha = 0.88f),
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.sp,
+                            fontSize = theme.scaledSp(10f),
                             fontStyle = FontStyle.Italic,
                             textAlign = TextAlign.Center,
                         ),
@@ -233,7 +234,7 @@ fun MaradonaC4Layout(
                         style = TextStyle(
                             color = colors.text,
                             fontFamily = theme.fontFamily,
-                            fontSize = 13.5.sp,
+                            fontSize = theme.scaledSp(13.5f),
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                         ),
@@ -244,7 +245,7 @@ fun MaradonaC4Layout(
                             style = TextStyle(
                                 color = colors.text.copy(alpha = 0.92f),
                                 fontFamily = theme.fontFamily,
-                                fontSize = 11.sp,
+                                fontSize = theme.captionFontSize,
                                 textAlign = TextAlign.Center,
                             ),
                         )
@@ -271,7 +272,7 @@ fun MaradonaC4Layout(
                                 style = TextStyle(
                                     color = txtColor,
                                     fontFamily = theme.fontFamily,
-                                    fontSize = 10.5.sp,
+                                    fontSize = theme.scaledSp(10.5f),
                                     fontWeight = FontWeight.SemiBold,
                                     textAlign = TextAlign.Center,
                                 ),
@@ -283,7 +284,7 @@ fun MaradonaC4Layout(
                                 style = TextStyle(
                                     color = txtColor.copy(alpha = 0.8f),
                                     fontFamily = theme.fontFamily,
-                                    fontSize = 9.5.sp,
+                                    fontSize = theme.scaledSp(9.5f),
                                     fontStyle = FontStyle.Italic,
                                     textAlign = TextAlign.Center,
                                 ),
@@ -395,11 +396,11 @@ private fun DrawScope.drawC4Underlay(
         val r = pb.rect
         val customBg = parseCssColor(b.style?.bgColor)
         val customBorder = parseCssColor(b.style?.borderColor)
-        val borderColor = customBorder ?: if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+        val borderColor = customBorder ?: theme.subgraphBorder
         val fillColor = customBg ?: if (b.kind == C4BoundaryKind.DEPLOYMENT_NODE) {
-            if (isDark) Color(0xFF1E293B).copy(alpha = 0.55f) else Color(0xFFF8FAFC)
+            theme.subgraphFill.copy(alpha = if (isDark) 0.65f else 0.72f)
         } else {
-            if (isDark) Color(0xFF0F172A).copy(alpha = 0.25f) else Color(0xFFF1F5F9).copy(alpha = 0.45f)
+            theme.subgraphFill.copy(alpha = if (isDark) 0.35f else 0.45f)
         }
         val cr = CornerRadius(6f * density, 6f * density)
         drawRoundRect(
@@ -425,7 +426,7 @@ private fun DrawScope.drawC4Underlay(
     for (pe in layout.elements) {
         val el = pe.element
         val r = pe.rect
-        val colors = resolveC4ElementColors(el)
+        val colors = resolveC4ElementColors(el, theme)
         when {
             el.kind.isPerson -> drawPersonElement(r, colors)
             el.kind.isDatabase -> drawDatabaseElement(r, colors)
@@ -451,7 +452,7 @@ private fun DrawScope.drawC4Underlay(
     }
 
     // 3. Relationships
-    val defaultRelLineColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+    val defaultRelLineColor = theme.edge.copy(alpha = 0.75f)
     val relDash = PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
     for (pr in layout.relationships) {
         val pts = pr.points

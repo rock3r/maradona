@@ -38,28 +38,6 @@ private class PieLayoutHolder {
     var layout: PieDiagramLayout? = null
 }
 
-private val PIE_SLICE_FILLS_LIGHT = listOf(
-    Color(0xFF88B3D8) to Color(0xFF205EA6),
-    Color(0xFF7EC4BC) to Color(0xFF24837B),
-    Color(0xFFE5C467) to Color(0xFFAD8301),
-    Color(0xFFE2948B) to Color(0xFFAF3029),
-    Color(0xFFC990B2) to Color(0xFFA02F6F),
-    Color(0xFFA7BE63) to Color(0xFF66800B),
-    Color(0xFFE3A073) to Color(0xFFBC5215),
-    Color(0xFFA39CD6) to Color(0xFF5E409D),
-)
-
-private val PIE_SLICE_FILLS_DARK = listOf(
-    Color(0xFF234B73) to Color(0xFF6CA4D6),
-    Color(0xFF1E524D) to Color(0xFF5ABDAC),
-    Color(0xFF5C4716) to Color(0xFFE0B43B),
-    Color(0xFF612823) to Color(0xFFE6776B),
-    Color(0xFF54253D) to Color(0xFFD678A8),
-    Color(0xFF394711) to Color(0xFF98B83B),
-    Color(0xFF5E3114) to Color(0xFFE08548),
-    Color(0xFF38295C) to Color(0xFF9F8AD6),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `pie` diagrams.
  *
@@ -69,7 +47,7 @@ private val PIE_SLICE_FILLS_DARK = listOf(
 @Composable
 fun MaradonaPieLayout(
     diagram: PieDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (PieDiagramLayout) -> Unit = {},
@@ -102,7 +80,7 @@ fun MaradonaPieLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -117,7 +95,7 @@ fun MaradonaPieLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 12.sp,
+                        fontSize = theme.edgeLabelFontSize,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
@@ -129,7 +107,7 @@ fun MaradonaPieLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.Medium,
                     ),
                 )
@@ -229,15 +207,14 @@ private fun DrawScope.drawPieUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val palette = if (isDark) PIE_SLICE_FILLS_DARK else PIE_SLICE_FILLS_LIGHT
     val outerR = layout.outerRadius
     val innerR = layout.innerRadius
     val strokeW = layout.outerStrokeWidth
 
     for (ps in layout.slices) {
         if (ps.sweepAngleDeg <= 0.01f) continue
-        val (fill, border) = palette[ps.index.mod(palette.size)]
+        val border = theme.seriesColor(ps.index)
+        val fill = androidx.compose.ui.graphics.lerp(theme.seriesFill(ps.index), border, 0.30f)
         val cx = layout.center.x + ps.explodeOffset.x
         val cy = layout.center.y + ps.explodeOffset.y
         val outerRect = Rect(cx - outerR, cy - outerR, cx + outerR, cy + outerR)
@@ -289,7 +266,8 @@ private fun DrawScope.drawPieUnderlay(
     }
 
     for (item in layout.legendItems) {
-        val (fill, border) = palette[item.index.mod(palette.size)]
+        val border = theme.seriesColor(item.index)
+        val fill = androidx.compose.ui.graphics.lerp(theme.seriesFill(item.index), border, 0.30f)
         val r = item.swatchRect
         val cr = CornerRadius(3f * unit, 3f * unit)
         drawRoundRect(

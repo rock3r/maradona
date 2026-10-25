@@ -46,24 +46,6 @@ private data class TimelineColorSet(
     val border: Color,
 )
 
-private val TIMELINE_PALETTE_LIGHT = listOf(
-    TimelineColorSet(Color(0xFFC7DFF2), Color(0xFFD6E6F4), Color(0xFFEDF4FA), Color(0xFF205EA6)),
-    TimelineColorSet(Color(0xFFC3E4DF), Color(0xFFD5EBE6), Color(0xFFECF6F4), Color(0xFF24837B)),
-    TimelineColorSet(Color(0xFFEFDFB4), Color(0xFFF3E7C4), Color(0xFFFAF4E4), Color(0xFFAD8301)),
-    TimelineColorSet(Color(0xFFE5CADB), Color(0xFFEAD7E4), Color(0xFFF7EEF4), Color(0xFFA02F6F)),
-    TimelineColorSet(Color(0xFFD9E6B8), Color(0xFFE2ECC6), Color(0xFFF3F7E6), Color(0xFF66800B)),
-    TimelineColorSet(Color(0xFFF2D2C2), Color(0xFFF6DDD0), Color(0xFFFBF0EA), Color(0xFFBC5215)),
-)
-
-private val TIMELINE_PALETTE_DARK = listOf(
-    TimelineColorSet(Color(0xFF1F3D58), Color(0xFF1B344B), Color(0xFF152636), Color(0xFF4385BE)),
-    TimelineColorSet(Color(0xFF1C423E), Color(0xFF183734), Color(0xFF132927), Color(0xFF3AA99F)),
-    TimelineColorSet(Color(0xFF473715), Color(0xFF3B2E12), Color(0xFF2B220E), Color(0xFFD0A215)),
-    TimelineColorSet(Color(0xFF462237), Color(0xFF3A1D2E), Color(0xFF2B1622), Color(0xFFCE5D97)),
-    TimelineColorSet(Color(0xFF323E14), Color(0xFF2A3411), Color(0xFF1F260D), Color(0xFF879A39)),
-    TimelineColorSet(Color(0xFF4A2817), Color(0xFF3E2214), Color(0xFF2D190F), Color(0xFFDA702C)),
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `timeline` diagrams.
  *
@@ -74,7 +56,7 @@ private val TIMELINE_PALETTE_DARK = listOf(
 @Composable
 fun MaradonaTimelineLayout(
     diagram: TimelineDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
     onLayout: (TimelineDiagramLayout) -> Unit = {},
@@ -106,7 +88,7 @@ fun MaradonaTimelineLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -120,7 +102,7 @@ fun MaradonaTimelineLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
@@ -133,7 +115,7 @@ fun MaradonaTimelineLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 13.sp,
+                        fontSize = theme.scaledSp(13f),
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -154,7 +136,7 @@ fun MaradonaTimelineLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             fontWeight = FontWeight.Normal,
                             textAlign = TextAlign.Center,
                         ),
@@ -275,9 +257,15 @@ private fun DrawScope.drawTimelineUnderlay(
     theme: MaradonaTheme,
 ) {
     val unit = density
-    val isDark = (theme.background.red * 0.299f + theme.background.green * 0.587f + theme.background.blue * 0.114f) < 0.45f
-    val palette = if (isDark) TIMELINE_PALETTE_DARK else TIMELINE_PALETTE_LIGHT
     val dash = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
+
+    fun colorSetFor(index: Int): TimelineColorSet {
+        val border = theme.seriesColor(index)
+        val sectionFill = theme.seriesFill(index)
+        val periodFill = androidx.compose.ui.graphics.lerp(sectionFill, theme.nodeFill, 0.35f)
+        val eventFill = androidx.compose.ui.graphics.lerp(sectionFill, theme.background, 0.58f)
+        return TimelineColorSet(sectionFill, periodFill, eventFill, border)
+    }
 
     // 1. Continuous timeline spine with arrow tip.
     val spineColor = theme.nodeBorder
@@ -311,7 +299,7 @@ private fun DrawScope.drawTimelineUnderlay(
     // 2. Section banners.
     for (sec in layout.sections) {
         val colorIdx = if (layout.disableMulticolor) 0 else sec.sectionIndex
-        val colors = palette[colorIdx.mod(palette.size)]
+        val colors = colorSetFor(colorIdx)
         val r = sec.rect
         val cr = CornerRadius(8f * unit, 8f * unit)
         drawRoundRect(
@@ -331,7 +319,7 @@ private fun DrawScope.drawTimelineUnderlay(
 
     // 3. Period cards, dashed event connectors, and event cards.
     for (pp in layout.periods) {
-        val colors = palette[pp.colorIndex.mod(palette.size)]
+        val colors = colorSetFor(pp.colorIndex)
         val cStart = pp.connectorStart
         val cEnd = pp.connectorEnd
         if (cStart != null && cEnd != null) {

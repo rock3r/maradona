@@ -64,7 +64,7 @@ private class SequenceLayoutHolder {
 @Composable
 fun MaradonaSequenceLayout(
     diagram: SequenceDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     options: SequenceLayoutOptions = SequenceLayoutOptions(),
     onLayout: (SequenceDiagramLayout) -> Unit = {},
@@ -91,7 +91,7 @@ fun MaradonaSequenceLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -143,7 +143,7 @@ fun MaradonaSequenceLayout(
                         style = TextStyle(
                             color = theme.background,
                             fontFamily = theme.fontFamily,
-                            fontSize = 10.sp,
+                            fontSize = theme.scaledSp(10f),
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                         ),
@@ -159,7 +159,7 @@ fun MaradonaSequenceLayout(
                             contentDescription = "Note: ${note.text.replace("*", "")}"
                         },
                     style = TextStyle(
-                        color = Color(0xFF333333),
+                        color = theme.noteText,
                         fontFamily = theme.fontFamily,
                         fontSize = theme.nodeFontSize,
                         textAlign = TextAlign.Center,
@@ -189,7 +189,7 @@ fun MaradonaSequenceLayout(
                         style = TextStyle(
                             color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = 12.sp,
+                            fontSize = theme.edgeLabelFontSize,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center,
                         ),
@@ -201,7 +201,7 @@ fun MaradonaSequenceLayout(
                             style = TextStyle(
                                 color = theme.nodeText,
                                 fontFamily = theme.fontFamily,
-                                fontSize = 12.sp,
+                                fontSize = theme.edgeLabelFontSize,
                                 textAlign = TextAlign.Center,
                             ),
                         )
@@ -214,7 +214,7 @@ fun MaradonaSequenceLayout(
                                 style = TextStyle(
                                     color = theme.nodeText,
                                     fontFamily = theme.fontFamily,
-                                    fontSize = 12.sp,
+                                    fontSize = theme.edgeLabelFontSize,
                                     textAlign = TextAlign.Center,
                                 ),
                             )
@@ -526,9 +526,9 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
         }
     }
 
-    // 5. Notes (`#FFF5AD` sticky note fill and `#E3D296` border matching Mermaid).
-    val noteFill = Color(0xFFFFF5AD)
-    val noteBorder = Color(0xFFE3D296)
+    // 5. Notes (sticky note fill and border from theme).
+    val noteFill = theme.noteFill
+    val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
         drawRect(

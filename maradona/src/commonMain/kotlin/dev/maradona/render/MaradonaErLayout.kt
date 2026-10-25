@@ -61,7 +61,7 @@ private class ErLayoutHolder {
 @Composable
 fun MaradonaErLayout(
     diagram: ErDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 52f, layerGap = 58f, subgraphPaddingX = 28f),
@@ -94,7 +94,7 @@ fun MaradonaErLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -122,7 +122,7 @@ fun MaradonaErLayout(
                         style = TextStyle(
                             color = textColor,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.scaledSp(11.5f),
                         ),
                     )
                     BasicText(
@@ -131,7 +131,7 @@ fun MaradonaErLayout(
                         style = TextStyle(
                             color = textColor,
                             fontFamily = theme.fontFamily,
-                            fontSize = 11.5.sp,
+                            fontSize = theme.scaledSp(11.5f),
                         ),
                     )
                     if (hasKeys) {
@@ -141,7 +141,7 @@ fun MaradonaErLayout(
                             style = TextStyle(
                                 color = textColor,
                                 fontFamily = theme.fontFamily,
-                                fontSize = 11.sp,
+                                fontSize = theme.captionFontSize,
                                 fontWeight = FontWeight.SemiBold,
                             ),
                         )
@@ -154,7 +154,7 @@ fun MaradonaErLayout(
                             style = TextStyle(
                                 color = textColor,
                                 fontFamily = theme.fontFamily,
-                                fontSize = 11.sp,
+                                fontSize = theme.captionFontSize,
                                 fontStyle = FontStyle.Italic,
                             ),
                         )

@@ -45,15 +45,6 @@ private class MindmapLayoutHolder {
     var layout: MindmapDiagramLayout? = null
 }
 
-private val BRANCH_ACCENTS = listOf(
-    Color(0xFF205EA6), // Cobalt blue
-    Color(0xFF24837B), // Teal
-    Color(0xFFAD8301), // Ochre gold
-    Color(0xFFA02F6F), // Berry magenta
-    Color(0xFF66800B), // Olive green
-    Color(0xFFBC5215), // Terracotta orange
-)
-
 /**
  * Custom Compose [Layout] for Mermaid `mindmap` diagrams.
  *
@@ -64,7 +55,7 @@ private val BRANCH_ACCENTS = listOf(
 @Composable
 fun MaradonaMindmapLayout(
     diagram: MindmapDiagram,
-    theme: MaradonaTheme,
+    theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 18f, layerGap = 54f),
     onLayout: (MindmapDiagramLayout) -> Unit = {},
@@ -95,7 +86,7 @@ fun MaradonaMindmapLayout(
                     style = TextStyle(
                         color = theme.nodeText,
                         fontFamily = theme.fontFamily,
-                        fontSize = 16.sp,
+                        fontSize = theme.titleFontSize,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     ),
@@ -106,8 +97,8 @@ fun MaradonaMindmapLayout(
                 val textColor = parseCssColor(n.style?.textColor) ?: theme.nodeText
                 val isLarge = "large" in n.classes
                 val baseFontSize = when {
-                    isRoot -> 15.sp
-                    isLarge -> 14.5.sp
+                    isRoot -> theme.scaledSp(15f)
+                    isLarge -> theme.scaledSp(14.5f)
                     else -> theme.nodeFontSize
                 }
                 val displayAnnotated = if (!n.icon.isNullOrBlank()) {
@@ -241,7 +232,7 @@ private fun DrawScope.drawMindmapUnderlay(
 
     fun branchColor(branchIndex: Int): Color {
         if (branchIndex < 0) return theme.nodeBorder
-        return BRANCH_ACCENTS[branchIndex.mod(BRANCH_ACCENTS.size)]
+        return theme.seriesColor(branchIndex)
     }
 
     // 1. Branch S-curves behind nodes.
@@ -265,10 +256,10 @@ private fun DrawScope.drawMindmapUnderlay(
         val accent = branchColor(pn.branchIndex)
         val isUrgent = "urgent" in n.classes
         val border = parseCssColor(n.style?.stroke)
-            ?: if (isUrgent) Color(0xFFCF222E) else accent
+            ?: if (isUrgent) theme.criticalBorder else accent
         val fill = parseCssColor(n.style?.fill)
             ?: when {
-                isUrgent -> Color(0xFFFFEBE9)
+                isUrgent -> theme.criticalFill
                 pn.depth == 0 -> theme.subgraphFill
                 else -> theme.nodeFill
             }
