@@ -5,6 +5,7 @@ import dev.maradona.layout.FlowchartLayout
 import dev.maradona.parse.FlowchartParser
 import dev.maradona.render.MaradonaTheme
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -34,295 +35,40 @@ class MaradonaSvgExporterTest {
         assertTrue(svg.contains("Login &lt;Form&gt;"))
         assertTrue(svg.contains("fill=\"#DBEAFE\""))
         assertTrue(svg.contains("stroke=\"#2563EB\""))
+        assertTrue(svg.contains("<ellipse "), "Expected cylinder cap ellipse in SVG")
         assertTrue(svg.contains("<a href=\"https://example.com/login\" target=\"_blank\">"))
         assertTrue(svg.contains("<title>Open login page</title>"))
     }
 
     @Test
-    fun exportsWithCustomJewelDarkTheme() {
+    fun exportsWithCustomJewelDarkThemeAndAlphaColors() {
         val mmd = """
-            C4Dynamic
-                title Payment System Context
-                Person(user, "Customer", "Uses checkout")
-                System_Ext(pay, "Payment Gateway", "Processes cards", ${'$'}link="https://pay.example.com")
-                RelIndex(1, user, pay, "Submits payment")
+            flowchart LR
+                A[Ghost] -->|Line 1<br/>Line 2| B[/Parallelogram/]
+                style A fill:transparent,stroke:#3574F0
+                style B fill:#3574F080,stroke:#3574F0
         """.trimIndent()
 
         val jewelDark = MaradonaTheme.jewelDark()
         val svg = MaradonaSvgExporter.exportToSvg(mmd, jewelDark)
         assertTrue(svg.contains("fill=\"#1E1F22\""), "Expected Jewel dark background #1E1F22 in SVG")
-        assertTrue(svg.contains("<a href=\"https://pay.example.com\">"))
-        assertTrue(svg.contains("Payment System Context"))
-        assertTrue(svg.contains("&lt;&lt;Person&gt;&gt;"), "Expected C4 Person type header in SVG")
-        assertTrue(svg.contains("&lt;&lt;External System&gt;&gt;"), "Expected C4 External System type header in SVG")
-        assertTrue(svg.contains("1: Submits payment"), "Expected RelIndex prefix in C4 SVG")
+        assertTrue(svg.contains("fill=\"none\""), "Expected fill:transparent to serialize as fill=\"none\"")
+        assertTrue(svg.contains("fill=\"rgba(53,116,240,"), "Expected 8-digit hex alpha to serialize as rgba(...)")
+        assertTrue(svg.contains(">Line 1</text>") && svg.contains(">Line 2</text>"), "Expected multiline edge label in SVG")
     }
 
     @Test
-    fun exportsMultipleDiagramFamiliesToValidSvg() {
-        val samples = listOf(
-            """
-            sequenceDiagram
-                Alice->>Bob: Hello **Bob**
-                Note right of Bob: Thinking
-                Bob-->>Alice: Ack
-            """.trimIndent(),
-            """
-            classDiagram
-                class Order {
-                    +String id
-                    +submit()
-                }
-                class LineItem
-                Order *-- LineItem : contains
-                link Order "https://example.com/order" "Order docs"
-            """.trimIndent(),
-            """
-            stateDiagram-v2
-                [*] --> Idle
-                Idle --> Processing : start
-                Processing --> [*]
-            """.trimIndent(),
-            """
-            erDiagram
-                CUSTOMER ||--o{ ORDER : places
-            """.trimIndent(),
-            """
-            architecture-beta
-                group cloud(cloud)[Cloud]
-                service api(server)[API] in cloud
-                service db(database)[DB] in cloud
-                api:R --> L:db
-            """.trimIndent(),
-            """
-            zenuml
-                title Checkout
-                Client->OrderService.create() {
-                    BillingService.charge()
-                }
-            """.trimIndent(),
-        )
-
-        for (src in samples) {
-            val svg = MaradonaSvgExporter.exportToSvg(src)
-            assertTrue(svg.startsWith("<svg xmlns=\"http://www.w3.org/2000/svg\""), "Expected valid SVG header for:\n$src")
-            assertTrue(svg.contains("</svg>"))
-        }
-
-        // Verify Class members, relation markers, Sequence blocks, ER attributes, XY chart axes/ticks, Timeline events, Pie slices, Sankey links, transparent/rgba colors, wrapped labels, and XML control char stripping.
-        val seqSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            sequenceDiagram
-                Alice->>Alice: Self check
-                Alice->>Bob: First line<br/>Second line
-                alt Cache hit
-                    Bob-->>Alice: Fast response
-                else Cache miss
-                    Bob-->>Alice: Slow response
-                end
-            """.trimIndent(),
-        )
-        assertTrue(seqSvg.contains("[Cache hit]"), "Expected sequence alt block condition in SVG")
-        assertTrue(seqSvg.contains("[Cache miss]"), "Expected sequence else divider label in SVG")
-        assertTrue(seqSvg.contains(">First line</text>") && seqSvg.contains(">Second line</text>"), "Expected multiline sequence message to emit separate <text> lines")
-
-        val blockSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            block-beta
-                columns 2
-                arr<["Flow"]>(down)
-                dec{"Decision"}
-            """.trimIndent(),
-        )
-        assertTrue(blockSvg.contains("class=\"block-arrow\" data-dir=\"down\""), "Expected directional block arrow polygon in SVG")
-        assertTrue(blockSvg.contains("<polygon "), "Expected diamond polygon in block SVG")
-
-        val stateSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            stateDiagram-v2
-                state Check <<choice>>
-                [*] --> Check
-                Check --> Active
-                state Active {
-                    [*] --> LaneA
-                    --
-                    [*] --> LaneB
-                }
-                Active --> [*]
-            """.trimIndent(),
-        )
-        assertTrue(stateSvg.contains("<circle "), "Expected start/end circle pseudonodes in state SVG")
-        assertTrue(stateSvg.contains("<polygon "), "Expected choice diamond polygon in state SVG")
-        assertTrue(stateSvg.contains("stroke-dasharray=\"5,4\""), "Expected concurrent region dashed divider in state SVG")
-
-        val erSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            erDiagram
-                CUSTOMER ||--o{ ORDER : places
-                CUSTOMER {
-                    string id PK "Primary key"
-                    string email UK
-                }
-            """.trimIndent(),
-        )
-        assertTrue(erSvg.contains("string id PK"), "Expected ER entity attribute in SVG")
-        assertTrue(erSvg.contains("string email UK"), "Expected ER entity second attribute in SVG")
-        assertTrue(erSvg.contains("data-marker=\"er-exactly-one\""), "Expected ER exactly-one cardinality marker in SVG")
-        assertTrue(erSvg.contains("data-marker=\"er-zero-or-more\""), "Expected ER zero-or-more cardinality marker in SVG")
-
-        val donutSingleSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            ---
-            config:
-              pie:
-                donutHole: 0.5
-            ---
-            pie title Single Donut
-                "Only" : 100
-            """.trimIndent(),
-        )
-        assertTrue(donutSingleSvg.contains("fill-rule=\"evenodd\""), "Expected single-slice donut to render annulus with fill-rule=\"evenodd\"")
-
-        val quadrantSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            quadrantChart
-                title Reach vs Engagement
-                x-axis Low --> High
-                y-axis Low --> High
-                Campaign A: [0.3, 0.7]
-            """.trimIndent(),
-        )
-        assertTrue(quadrantSvg.contains("class=\"quadrant-point\""), "Expected quadrant data point circle in SVG")
-
-        val ganttSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            gantt
-                title Release Plan
-                dateFormat YYYY-MM-DD
-                excludes weekends
-                section Phase 1
-                Design :done, a1, 2026-01-01, 5d
-                CriticalBuild :crit, a2, 2026-01-02, 2d
-                Ship :milestone, m1, 2026-01-08, 0d
-            """.trimIndent(),
-        )
-        assertTrue(ganttSvg.contains("Phase 1") && ganttSvg.contains("Design") && ganttSvg.contains("Ship"), "Expected Gantt section and task labels in SVG")
-        assertTrue(ganttSvg.contains("fill=\"#FFEBE9\"") && ganttSvg.contains("stroke=\"#D14D41\""), "Expected Gantt critical task fill and border in SVG")
-        assertTrue(ganttSvg.contains("0.55)"), "Expected Gantt excluded-weekend shading band in SVG")
-
-        val reqSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            requirementDiagram
-                requirement parentReq {
-                    id: 1
-                    text: Parent
-                }
-                requirement childReq {
-                    id: 2
-                    text: Child
-                }
-                parentReq - contains -> childReq
-            """.trimIndent(),
-        )
-        assertTrue(reqSvg.contains("data-marker=\"contains-circle-cross\""), "Expected requirement contains-circle-cross marker in SVG")
-
-        val gitHiddenLabelsSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            ---
-            config:
-              gitGraph:
-                showCommitLabel: false
-            ---
-            gitGraph
-                commit id: "secret-sha" tag: "v1.0"
-            """.trimIndent(),
-        )
-        assertFalse(gitHiddenLabelsSvg.contains("secret-sha"), "Expected showCommitLabel: false to omit commit ID in SVG")
-        assertTrue(gitHiddenLabelsSvg.contains("v1.0"), "Expected commit tag v1.0 in SVG")
-
-        val xySvg = MaradonaSvgExporter.exportToSvg(
-            """
-            xychart-beta
-                title "Quarterly Revenue"
-                x-axis "Quarter" [Q1, Q2, Q3]
-                y-axis "Revenue (M)" 0 --> 100
-                bar [30, 60, 90]
-                line [50, 70, 85]
-            """.trimIndent(),
-        )
-        assertTrue(xySvg.contains("Quarter"), "Expected XY chart X-axis title in SVG")
-        assertTrue(xySvg.contains("Revenue (M)"), "Expected XY chart Y-axis title in SVG")
-        assertTrue(xySvg.contains("transform=\"rotate(-90 "), "Expected rotated Y-axis title in SVG")
-        assertTrue(xySvg.contains("class=\"xy-line-point\""), "Expected XY line point markers in SVG")
-        assertTrue(xySvg.contains("Q1") && xySvg.contains("Q2") && xySvg.contains("Q3"), "Expected XY chart X-axis tick labels in SVG")
-
-        val classSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            classDiagram
-                class Order {
-                    +String id
-                    +submit()
-                }
-                class LineItem
-                class SpecialOrder
-                Order *-- LineItem : contains
-                Order <|-- SpecialOrder
-                link Order "https://example.com/order" "Order docs"
-            """.trimIndent(),
-        )
-        assertTrue(classSvg.contains("+String id"), "Expected class attribute in SVG")
-        assertTrue(classSvg.contains("+submit()"), "Expected class method in SVG")
-        assertTrue(classSvg.contains("data-marker=\"filled-diamond\""), "Expected composition diamond marker in SVG")
-        assertTrue(classSvg.contains("data-marker=\"hollow-triangle\""), "Expected extension hollow-triangle marker in SVG")
-
-        val timelineSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            timeline
-                section Roadmap
-                2026 : Launch : Scale
-            """.trimIndent(),
-        )
-        assertTrue(timelineSvg.contains("Roadmap"), "Expected timeline section in SVG")
-        assertTrue(timelineSvg.contains("2026"), "Expected timeline period in SVG")
-        assertTrue(timelineSvg.contains("Launch"), "Expected timeline event 'Launch' in SVG")
-        assertTrue(timelineSvg.contains("Scale"), "Expected timeline event 'Scale' in SVG")
-
-        val alphaSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            flowchart LR
-                A[ Ghost ] --> B[ Translucent ]
-                style A fill:transparent,stroke:#2563EB
-                style B fill:#2563EB80,stroke:#1D4ED8
-            """.trimIndent(),
-        )
-        assertTrue(alphaSvg.contains("fill=\"none\""), "Expected fill:transparent to serialize as fill=\"none\"")
-        assertTrue(alphaSvg.contains("fill=\"rgba(37,99,235,"), "Expected 8-digit hex alpha to serialize as rgba(...)")
-
-        val pieSvg = MaradonaSvgExporter.exportToSvg(
-            """
-            pie title Cloud Spend
-                "Compute" : 65
-                "Storage" : 35
-            """.trimIndent(),
-        )
-        assertTrue(pieSvg.contains("class=\"pie-slice\""), "Expected pie slice path in SVG")
-        assertTrue(pieSvg.contains("65%"), "Expected pie slice percentage in SVG")
-
-        val sankeySvg = MaradonaSvgExporter.exportToSvg(
-            """
-            sankey-beta
-            Solar,Grid,120
-            Wind,Grid,80
-            """.trimIndent(),
-        )
-        assertTrue(sankeySvg.contains("class=\"sankey-link\""), "Expected sankey link ribbon in SVG")
-
+    fun wrapsLongLabelsStripsIllegalXmlCharsAndRejectsNonFlowchart() {
         val wrappedAndControlSvg = MaradonaSvgExporter.exportToSvg(
             "flowchart TD\n    Long[\"Open https://example.com/a/very/long/unbroken/resource/path/that/exceeds/wrapping/width\u0001 and wraps onto multiple SVG text lines\"]",
         )
         assertFalse(wrappedAndControlSvg.contains("\u0001"), "Expected illegal XML control char U+0001 to be stripped")
         val textTagCount = Regex("<text ").findAll(wrappedAndControlSvg).count()
         assertTrue(textTagCount >= 3, "Expected long flowchart label with oversized second token to wrap into at least 3 <text> lines, got $textTagCount")
+
+        assertFailsWith<UnsupportedOperationException> {
+            MaradonaSvgExporter.exportToSvg("sequenceDiagram\n    Alice->>Bob: Hi")
+        }
     }
 
     @Test
@@ -386,7 +132,7 @@ class MaradonaSvgExporterTest {
             "Sibling subgraphs sgA (${sgA.rect}) and sgB (${sgB.rect}) must not overlap when node edges are interleaved",
         )
 
-        // Nested sibling subgraphs inside a parent subgraph + unclustered node on the same rank must not overlap.
+        // Nested sibling subgraphs inside a parent subgraph + unclustered nodes on the same rank must not overlap.
         val nestedMmd = """
             flowchart TB
                 Root([Root]) --> N1[Inner A1]

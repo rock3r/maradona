@@ -71,7 +71,7 @@ internal object NodeOutline {
     }
 
     /** The outline's points in box space, matching the renderer's shapes. */
-    private fun polygonPoints(shape: NodeShape, rect: DiagramRect): List<Pair<Float, Float>> {
+    internal fun polygonPoints(shape: NodeShape, rect: DiagramRect): List<Pair<Float, Float>> {
         val w = rect.width
         val h = rect.height
         return when (shape) {
