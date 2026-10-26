@@ -21,6 +21,11 @@ private fun Color.orNullIfUnspecified(): Color? =
 private fun TextUnit.orDefault(fallback: TextUnit): TextUnit =
     if (this != TextUnit.Unspecified && value > 0f) this else fallback
 
+private fun contrastingForeground(background: Color): Color {
+    val luminance = 0.2126f * background.red + 0.7152f * background.green + 0.0722f * background.blue
+    return if (luminance < 0.52f) Color.White else Color(0xFF100F0F)
+}
+
 /**
  * Derives a [MaradonaTheme] from a Material 3 [ColorScheme] and [Typography],
  * applying any explicit host token overrides and [override] post-processor.
@@ -36,6 +41,7 @@ fun MaradonaTheme.Companion.fromMaterial3(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -70,11 +76,16 @@ fun MaradonaTheme.Companion.fromMaterial3(
         ?: Color(0xFF1C1B1F)
     val resolvedMutedText = colorScheme.onSurfaceVariant.orNullIfUnspecified()
         ?: lerp(resolvedText, resolvedBackground, 0.35f)
-    val resolvedAccent = accent
+    val explicitAccent = accent?.orNullIfUnspecified()
+    val resolvedAccent = explicitAccent
         ?: colorScheme.primary.orNullIfUnspecified()
         ?: Color(0xFF6750A4)
-    val resolvedOnAccent = colorScheme.onPrimary.orNullIfUnspecified()
-        ?: Color.White
+    val resolvedOnAccent = onAccent?.orNullIfUnspecified()
+        ?: if (explicitAccent != null) {
+            contrastingForeground(resolvedAccent)
+        } else {
+            colorScheme.onPrimary.orNullIfUnspecified() ?: contrastingForeground(resolvedAccent)
+        }
     val resolvedSecondary = secondaryAccent
         ?: colorScheme.secondary.orNullIfUnspecified()
         ?: resolvedAccent
@@ -147,6 +158,7 @@ fun rememberMaterial3MaradonaTheme(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -171,6 +183,7 @@ fun rememberMaterial3MaradonaTheme(
     nodeBorder,
     nodeText,
     accent,
+    onAccent,
     secondaryAccent,
     warning,
     error,
@@ -196,6 +209,7 @@ fun rememberMaterial3MaradonaTheme(
         nodeBorder = nodeBorder,
         nodeText = nodeText,
         accent = accent,
+        onAccent = onAccent,
         secondaryAccent = secondaryAccent,
         warning = warning,
         error = error,
@@ -228,6 +242,7 @@ fun ProvideMaterial3MaradonaTheme(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -254,6 +269,7 @@ fun ProvideMaterial3MaradonaTheme(
         nodeBorder = nodeBorder,
         nodeText = nodeText,
         accent = accent,
+        onAccent = onAccent,
         secondaryAccent = secondaryAccent,
         warning = warning,
         error = error,

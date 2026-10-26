@@ -81,7 +81,15 @@ class Material3MaradonaThemeTest {
         assertEquals(Color(0xFFEEF2F8), theme.background)
         assertEquals(customNodeFill, theme.nodeFill)
         assertEquals(customAccent, theme.accentBorder)
+        assertEquals(Color.White, theme.accentText)
         assertEquals(12.sp, theme.nodeFontSize)
         assertEquals(customEdge, theme.edge)
+
+        // Overriding accent with a light color derives a dark contrasting accentText
+        val lightAccentTheme = MaradonaTheme.fromMaterial3(
+            colorScheme = scheme,
+            accent = Color(0xFFFDE047),
+        )
+        assertEquals(Color(0xFF100F0F), lightAccentTheme.accentText)
     }
 }
