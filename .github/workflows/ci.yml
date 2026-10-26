@@ -18,4 +18,4 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
       - name: Run desktop & unit tests
-        run: ./gradlew :maradona:desktopTest :sample-desktop:desktopTest --console=plain --no-scan
+        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest --console=plain --no-scan

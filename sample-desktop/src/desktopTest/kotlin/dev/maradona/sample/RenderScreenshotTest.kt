@@ -1,32 +1,47 @@
 package dev.maradona.sample
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.maradona.render.LocalMaradonaImageResolver
 import dev.maradona.render.LocalMaradonaTheme
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaImageResolver
 import dev.maradona.render.MaradonaTheme
+import dev.maradona.theme.jewel.ProvideJewelMaradonaTheme
+import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 import java.io.File
 import javax.imageio.ImageIO
-import org.jetbrains.skia.EncodedImageFormat
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
+import org.jetbrains.skia.EncodedImageFormat
 
 /**
  * Renders example diagrams headlessly to PNGs under build/screenshots/.
@@ -1215,6 +1230,256 @@ class RenderScreenshotTest {
             }
         }
         assertTrue(inlinePurplePixels > 400, "Inline <img/> Painter #9333EA not rendered ($inlinePurplePixels px)")
+    }
+
+    @Test
+    fun readmeShowcaseAndThemeConnectorScreenshots() {
+        val docsImagesDir = File("../docs/images").apply { mkdirs() }
+
+        // 1. Hero 2x2 showcase (Flowchart + Sequence + C4 + Architecture)
+        val light = MaradonaTheme.light()
+        val heroScene = ImageComposeScene(width = 1440, height = 860, density = Density(1.5f)) {
+            CompositionLocalProvider(LocalMaradonaTheme provides light) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFFF4F1E6))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(light.background)
+                                .border(1.dp, Color(0xFFD8D3C4), RoundedCornerShape(10.dp))
+                                .padding(8.dp),
+                        ) {
+                            MaradonaDiagram(
+                                source = """
+                                    flowchart LR
+                                      subgraph client[Client App]
+                                        UI[Compose UI] --> VM[ViewModel]
+                                      end
+                                      subgraph engine[Maradona]
+                                        P[Parser] --> L[Layout Engine]
+                                        L --> R([Native Composables])
+                                      end
+                                      VM --> P
+                                      R --> UI
+                                      style R fill:#d3e5f5,stroke:#205ea6
+                                """.trimIndent(),
+                                modifier = Modifier.fillMaxSize(),
+                                zoomEnabled = false,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(light.background)
+                                .border(1.dp, Color(0xFFD8D3C4), RoundedCornerShape(10.dp))
+                                .padding(8.dp),
+                        ) {
+                            MaradonaDiagram(
+                                source = """
+                                    sequenceDiagram
+                                      autonumber
+                                      actor User
+                                      participant UI as Compose UI
+                                      participant API as Backend API
+                                      User->>UI: Tap checkout
+                                      UI->>+API: POST /orders
+                                      alt Authorized
+                                        API-->>-UI: 201 Created
+                                      else Timeout
+                                        API--xUI: 504 Retry
+                                      end
+                                """.trimIndent(),
+                                modifier = Modifier.fillMaxSize(),
+                                zoomEnabled = false,
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(light.background)
+                                .border(1.dp, Color(0xFFD8D3C4), RoundedCornerShape(10.dp))
+                                .padding(8.dp),
+                        ) {
+                            MaradonaDiagram(
+                                source = """
+                                    C4Context
+                                      title System Context
+                                      Person(user, "Developer", "Embeds Mermaid in Compose")
+                                      Enterprise_Boundary(host, "Host App") {
+                                        System(ui, "MaradonaDiagram", "Interactive Compose canvas")
+                                        SystemDb(svg, "MaradonaSvgExporter", "Standalone SVG export")
+                                      }
+                                      Rel(user, ui, "Pans, zooms & clicks")
+                                      Rel(ui, svg, "Exports SVG")
+                                """.trimIndent(),
+                                modifier = Modifier.fillMaxSize(),
+                                zoomEnabled = false,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(light.background)
+                                .border(1.dp, Color(0xFFD8D3C4), RoundedCornerShape(10.dp))
+                                .padding(8.dp),
+                        ) {
+                            MaradonaDiagram(
+                                source = """
+                                    architecture-beta
+                                      group cloud(cloud)[Cloud API]
+                                      service gw(internet)[Gateway] in cloud
+                                      service app(server)[App Server] in cloud
+                                      service db(database)[Primary DB] in cloud
+                                      gw:R --> L:app
+                                      app:R --> L:db
+                                """.trimIndent(),
+                                modifier = Modifier.fillMaxSize(),
+                                zoomEnabled = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val heroOut = File(docsImagesDir, "hero-showcase.png")
+        try {
+            repeat(4) { frame -> heroScene.render((frame + 1) * 16_000_000L) }
+            val data = heroScene.render(100_000_000L).encodeToData(EncodedImageFormat.PNG)
+            requireNotNull(data)
+            heroOut.writeBytes(data.bytes)
+            assertTrue(heroOut.length() > 20_000)
+        } finally {
+            heroScene.close()
+        }
+
+        // 2. Side-by-side Material 3 Connector (Light) vs Jewel Connector (IntUiTheme Dark)
+        val m3LightScheme = lightColorScheme(
+            background = Color(0xFFFDFBFF),
+            surfaceContainerHigh = Color(0xFFECE6F0),
+            surfaceContainerLow = Color(0xFFF3EDF7),
+            outline = Color(0xFF79747E),
+            outlineVariant = Color(0xFFCAC4D0),
+            onSurface = Color(0xFF1D1B20),
+            onSurfaceVariant = Color(0xFF49454F),
+            primary = Color(0xFF6750A4),
+            secondary = Color(0xFF625B71),
+            tertiary = Color(0xFF7D5260),
+            tertiaryContainer = Color(0xFFFFD8E4),
+            onTertiaryContainer = Color(0xFF31111D),
+        )
+        val m3Source = """
+            flowchart TD
+              subgraph host[Material 3 Connector]
+                Tokens["MaterialTheme<br/>colorScheme & typography"] --> Adapter{ProvideMaterial3<br/>MaradonaTheme}
+                Adapter -- Multiplatform --> M3[Material 3 Palette]
+                Adapter -- Overrides --> Custom[Host Token Overrides]
+              end
+              M3 --> Render([MaradonaDiagram])
+              Custom --> Render
+        """.trimIndent()
+        val jewelSource = """
+            flowchart TD
+              subgraph host[Jewel Desktop Connector]
+                Tokens["JewelTheme<br/>globalColors & textStyle"] --> Adapter{ProvideJewel<br/>MaradonaTheme}
+                Adapter -- Desktop JVM --> JWL[Jewel IntUi Palette]
+                Adapter -- Overrides --> Custom[Host Token Overrides]
+              end
+              JWL --> Render([MaradonaDiagram])
+              Custom --> Render
+        """.trimIndent()
+
+        val themeScene = ImageComposeScene(width = 1360, height = 620, density = Density(1.5f)) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                MaterialTheme(colorScheme = m3LightScheme) {
+                    ProvideMaterial3MaradonaTheme {
+                        val active = LocalMaradonaTheme.current
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(active.background)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            BasicText(
+                                text = "Material 3 — ProvideMaterial3MaradonaTheme",
+                                style = TextStyle(
+                                    color = active.nodeText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.SansSerif,
+                                ),
+                            )
+                            MaradonaDiagram(
+                                source = m3Source,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                zoomEnabled = false,
+                            )
+                        }
+                    }
+                }
+                IntUiTheme(isDark = true) {
+                    ProvideJewelMaradonaTheme {
+                        val active = LocalMaradonaTheme.current
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .background(active.background)
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            BasicText(
+                                text = "Jewel Desktop — IntUiTheme(isDark = true) + ProvideJewelMaradonaTheme",
+                                style = TextStyle(
+                                    color = active.nodeText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = FontFamily.SansSerif,
+                                ),
+                            )
+                            MaradonaDiagram(
+                                source = jewelSource,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                zoomEnabled = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val themeOut = File(docsImagesDir, "theme-connectors.png")
+        try {
+            repeat(4) { frame -> themeScene.render((frame + 1) * 16_000_000L) }
+            val data = themeScene.render(100_000_000L).encodeToData(EncodedImageFormat.PNG)
+            requireNotNull(data)
+            themeOut.writeBytes(data.bytes)
+            assertTrue(themeOut.length() > 15_000)
+        } finally {
+            themeScene.close()
+        }
     }
 
     @Test

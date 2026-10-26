@@ -36,6 +36,49 @@ CompositionLocalProvider(LocalMaradonaTheme provides MaradonaTheme.jewelDark()) 
 }
 ```
 
+### Material 3 Theme Connector (`:maradona-material3`)
+
+The `:maradona-material3` module (`dev.maradona.theme.material3`) is available on **all supported Compose Multiplatform targets** (`jvm("desktop")`, `android`, `iosArm64`, `iosSimulatorArm64`). It derives `MaradonaTheme` tokens live from the active `MaterialTheme.colorScheme` and `MaterialTheme.typography` while supporting explicit parameter overrides and a trailing `override: (MaradonaTheme) -> MaradonaTheme` post-processor:
+
+```kotlin
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
+import dev.maradona.render.MaradonaDiagram
+import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
+
+MaterialTheme {
+    ProvideMaterial3MaradonaTheme(
+        useSurfaceAsBackground = true,
+        accent = Color(0xFF0061A4), // Optional host token override
+        override = { it.copy(edge = Color(0xFF334155)) },
+    ) {
+        MaradonaDiagram(source = mermaidSource)
+    }
+}
+```
+
+You can also call `rememberMaterial3MaradonaTheme(...)` in a `@Composable` scope or `MaradonaTheme.fromMaterial3(colorScheme, typography)` outside composition (for example, when exporting SVG via `MaradonaSvgExporter`).
+
+### JetBrains Jewel Theme Connector (`:maradona-jewel`, Desktop JVM Only)
+
+The `:maradona-jewel` module (`dev.maradona.theme.jewel`) targets **Desktop JVM only** (`jvm("desktop")`) so Android and iOS builds never pull in Jewel desktop dependencies. It reads `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, `JewelTheme.contentColor`, and `JewelTheme.isDark` from `org.jetbrains.jewel:jewel-foundation`, working seamlessly inside both standalone Jewel (`IntUiTheme`) and IntelliJ Platform IDE plugins (`SwingBridgeTheme`):
+
+```kotlin
+import androidx.compose.ui.unit.sp
+import dev.maradona.render.MaradonaDiagram
+import dev.maradona.theme.jewel.ProvideJewelMaradonaTheme
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
+
+IntUiTheme(isDark = true) {
+    ProvideJewelMaradonaTheme(
+        useToolwindowBackground = true,
+        baseFontSize = 12.sp,
+    ) {
+        MaradonaDiagram(source = mermaidSource)
+    }
+}
+```
+
 ### Deriving a Theme from Any Host Design System (`MaradonaTheme.fromHost`)
 
 `MaradonaTheme.fromHost(...)` builds a complete `MaradonaTheme` (including derived note callouts, activation bars, semantic warning/error fills, categorical series palettes, and `MaradonaC4Palette`) from a host application's core surface, border, text, and accent tokens:
