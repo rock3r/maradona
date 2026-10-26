@@ -30,7 +30,11 @@ open iosApp/iosApp.xcodeproj           # iOS sample app (Apple Silicon simulator
 
 ```kotlin
 // settings.gradle.kts
-includeBuild("../maradona")
+includeBuild("../maradona") {
+    dependencySubstitution {
+        substitute(module("dev.maradona:maradona")).using(project(":maradona"))
+    }
+}
 ```
 
 ```kotlin
