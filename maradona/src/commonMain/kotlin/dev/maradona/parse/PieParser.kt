@@ -22,7 +22,7 @@ object PieParser {
         var highlightSlice: String? = null
         var outerStrokeWidth = 2f
 
-        val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
+        val initMatch = Regex("""%%\{[\s\S]*?\}%%""").find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
             Regex("""['"]?textPosition['"]?\s*:\s*([0-9.]+)""", RegexOption.IGNORE_CASE)

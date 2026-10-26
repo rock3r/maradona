@@ -1,0 +1,112 @@
+name: Release
+
+# Tag-driven Maven Central publishing pipeline (modeled on Spectre's release.yml).
+#
+# Trigger: pushing a tag matching `v*` (e.g. `v0.1.0`).
+#   1. `release-gate` (ubuntu-latest): validates SemVer tag via
+#      `.github/scripts/derive-release-version.sh`, runs the full desktop & unit test
+#      suite, and outputs the stripped SemVer version.
+#   2. `publish` (macos-latest): builds all Kotlin Multiplatform targets (Desktop JVM,
+#      Android AAR, iosArm64 klib, and iosSimulatorArm64 klib) on a single macOS runner
+#      so all 12 KMP coordinate publications land in a single atomic Sonatype Central
+#      Portal deployment. Runs `verifyMavenLocalPublication` first, then signs and
+#      uploads via `publishToMavenCentral` (`automaticRelease = false` for validation
+#      via `scripts/central_portal_check.py`), and creates a draft GitHub release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    name: Validate release tag & run test suite
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - name: Derive release version from SemVer tag
+        id: version
+        run: |
+          version="$(bash .github/scripts/derive-release-version.sh "$GITHUB_REF_NAME")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run desktop & unit tests
+        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest --console=plain --no-scan
+
+  publish:
+    name: Publish to Maven Central + draft GitHub release
+    runs-on: macos-latest
+    needs:
+      - release-gate
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.release-gate.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - name: Verify publication shape against mavenLocal
+        run: |
+          ./gradlew verifyMavenLocalPublication \
+            -PVERSION_NAME="$RELEASE_VERSION" \
+            --console=plain --no-scan
+
+      - name: Publish signed artifacts to Sonatype Central Portal
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
+        run: |
+          test -n "$ORG_GRADLE_PROJECT_mavenCentralUsername"
+          test -n "$ORG_GRADLE_PROJECT_mavenCentralPassword"
+          test -n "$ORG_GRADLE_PROJECT_signingInMemoryKey"
+          test -n "$ORG_GRADLE_PROJECT_signingInMemoryKeyPassword"
+          ./gradlew \
+            :maradona:publishToMavenCentral \
+            :maradona-material3:publishToMavenCentral \
+            :maradona-jewel:publishToMavenCentral \
+            -PVERSION_NAME="$RELEASE_VERSION" \
+            --console=plain --no-scan
+
+      - name: Create or update draft GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Maven Central coordinates for Maradona \`$RELEASE_VERSION\`:\n\n"
+          notes+="- \`dev.sebastiano.maradona:maradona:$RELEASE_VERSION\` (Desktop JVM, Android, iosArm64, iosSimulatorArm64)\n"
+          notes+="- \`dev.sebastiano.maradona:maradona-material3:$RELEASE_VERSION\` (Desktop JVM, Android, iosArm64, iosSimulatorArm64)\n"
+          notes+="- \`dev.sebastiano.maradona:maradona-jewel:$RELEASE_VERSION\` (Desktop JVM / JDK 25+)\n\n"
+          notes+="See [CHANGELOG.md](https://github.com/rock3r/maradona/blob/$GITHUB_REF_NAME/CHANGELOG.md) for release notes."
+          gh release view "$GITHUB_REF_NAME" \
+            || printf "%b" "$notes" | gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes-file -

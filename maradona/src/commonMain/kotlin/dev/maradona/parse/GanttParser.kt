@@ -91,7 +91,7 @@ object GanttParser {
         var compact = false
         var topAxis = false
 
-        val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
+        val initMatch = Regex("""%%\{[\s\S]*?\}%%""").find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
             if (Regex("""['"]?displayMode['"]?\s*:\s*['"]?compact['"]?""", RegexOption.IGNORE_CASE).containsMatchIn(initBody)) {

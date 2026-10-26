@@ -63,7 +63,7 @@ object GitGraphParser {
         var mainBranchName = "main"
         var mainBranchOrder = 0
 
-        val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
+        val initMatch = Regex("""%%\{[\s\S]*?\}%%""").find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
             Regex("""['"]?title['"]?\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
