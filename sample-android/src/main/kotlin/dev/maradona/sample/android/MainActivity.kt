@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
     private var oraclePanY by mutableStateOf<Float?>(null)
     private var oracleDensity by mutableStateOf<Float?>(null)
     private var oracleSeq by mutableStateOf(0)
+    private var sampleExample by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
                 oraclePanY = oraclePanY,
                 oracleDensity = oracleDensity,
                 oracleSeq = oracleSeq,
+                initialExample = sampleExample,
             )
         }
     }
@@ -74,8 +76,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyIntent(intent: Intent) {
+        sampleExample = intent.getStringExtra("sampleExample")
         val chart = intent.getStringExtra("oracleChart")
-        if (chart == null) return
+        if (chart == null) {
+            oracleChart = null
+            return
+        }
         oracleChart = chart
         oracleZoom = intent.getStringExtra("oracleZoom")
         oraclePanX = intent.getFloatExtra("oraclePanX", -1f).takeIf { it >= 0f }

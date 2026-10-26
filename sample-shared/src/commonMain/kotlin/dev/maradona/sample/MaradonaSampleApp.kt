@@ -42,7 +42,7 @@ import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 
-private val examples = linkedMapOf(
+val sampleExamples: Map<String, String> = linkedMapOf(
     "Basic" to """
         flowchart TD
           A[Mermaid text] --> B{Flowchart?}
@@ -433,6 +433,7 @@ fun MaradonaSampleApp(
     oraclePanY: Float? = null,
     oracleDensity: Float? = null,
     oracleSeq: Int = 0,
+    initialExample: String? = null,
     hostThemeWrapper: (@Composable (SampleThemePreset, @Composable () -> Unit) -> Unit)? = null,
 ) {
     if (oracleChart != null) {
@@ -440,7 +441,8 @@ fun MaradonaSampleApp(
         return
     }
     var themePreset by remember { mutableStateOf(SampleThemePreset.Light) }
-    var source by remember { mutableStateOf(examples.getValue("Basic")) }
+    val requestedSource = initialExample?.let { sampleExamples[it] } ?: sampleExamples.getValue("Basic")
+    var source by remember(initialExample) { mutableStateOf(requestedSource) }
     val state = SampleState(
         themePreset = themePreset,
         source = source,
@@ -572,7 +574,7 @@ private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compa
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            for ((name, text) in examples) {
+            for ((name, text) in sampleExamples) {
                 OutlinedButton(onClick = { state.onSourceChange(text) }) { Text(name) }
             }
         }
@@ -599,7 +601,7 @@ private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compa
                     OutlinedButton(onClick = { state.onThemePresetChange(preset) }) { Text(preset.displayName) }
                 }
             }
-            OutlinedButton(onClick = { state.onSourceChange(examples.getValue("Basic")) }) { Text("Reset") }
+            OutlinedButton(onClick = { state.onSourceChange(sampleExamples.getValue("Basic")) }) { Text("Reset") }
         }
         Text(
             "Pan by dragging. Pinch or ⌘/Ctrl+scroll to zoom. Double-tap to reset.",

@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -194,8 +195,10 @@ fun MaradonaDiagram(
     val model = parsed.getOrNull() ?: lastGood
     val error = parsed.exceptionOrNull()
 
-    // Committed state: rendered crisply via density scaling.
-    var userZoom by remember {
+    // Committed state: rendered crisply via density scaling. Keyed on `model`
+    // so switching diagrams resets zoom/pan cleanly while temporary parse errors
+    // during live editing (where `model` stays `lastGood`) preserve the view.
+    var userZoom by remember(model, initialZoom, initialScale) {
         mutableFloatStateOf(
             when (initialZoom) {
                 DiagramZoom.Min -> MIN_ZOOM
@@ -204,15 +207,24 @@ fun MaradonaDiagram(
             },
         )
     }
-    var pan by remember { mutableStateOf(Offset.Zero) }
+    var pan by remember(model, initialZoom, initialScale, initialPan) { mutableStateOf(Offset.Zero) }
     // Natural needs the measured size to back out the fit scale; apply once known.
-    var initialViewApplied by remember { mutableStateOf(false) }
+    var initialViewApplied by remember(model, initialZoom, initialScale, initialPan) { mutableStateOf(false) }
     // Transient state: applied as a layer transform during a gesture.
-    var gestureZoom by remember { mutableFloatStateOf(1f) }
-    var gesturePan by remember { mutableStateOf(Offset.Zero) }
-    var wheelNonce by remember { mutableIntStateOf(0) }
+    var gestureZoom by remember(model) { mutableFloatStateOf(1f) }
+    var gesturePan by remember(model) { mutableStateOf(Offset.Zero) }
+    var wheelNonce by remember(model) { mutableIntStateOf(0) }
 
-    var naturalSize by remember { mutableStateOf(IntSize.Zero) }
+    val hostDensity = LocalDensity.current
+    var naturalSize by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
+        mutableStateOf(IntSize.Zero)
+    }
+    var drawnSize by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
+        mutableStateOf(IntSize.Zero)
+    }
+    var lastAutoDirViewportWidth by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
+        mutableIntStateOf(-1)
+    }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
 
     fun fitScale(): Float {
@@ -343,13 +355,28 @@ fun MaradonaDiagram(
 
         val availW = constraints.maxWidth.toFloat()
         val availH = constraints.maxHeight.toFloat()
-        val layoutWidthPx = constraints.maxWidth
+        if (autoDirection && constraints.maxWidth != lastAutoDirViewportWidth) {
+            if (lastAutoDirViewportWidth != -1) {
+                naturalSize = IntSize.Zero
+                drawnSize = IntSize.Zero
+            }
+            lastAutoDirViewportWidth = constraints.maxWidth
+        }
         val fit = if (naturalSize.width > 0 && naturalSize.height > 0 && availW > 0 && availH > 0) {
             minOf(availW / naturalSize.width, availH / naturalSize.height).coerceAtMost(1f)
         } else 1f
-        val scale = (initialScale ?: (fit * userZoom)).coerceAtLeast(0.01f)
-        val centerX = (availW - naturalSize.width * scale) / 2f
-        val centerY = (availH - naturalSize.height * scale) / 2f
+        val scale = (initialScale ?: if (naturalSize.width > 0 && naturalSize.height > 0) fit * userZoom else 1f)
+            .coerceAtLeast(0.01f)
+        // Scale availableWidthPx into zoomedDensity units so autoDirection's
+        // width and 640.dp breakpoint comparisons are scale-invariant.
+        val layoutWidthPx = if (constraints.maxWidth == Int.MAX_VALUE) {
+            Int.MAX_VALUE
+        } else {
+            (constraints.maxWidth * scale).roundToInt().coerceAtLeast(1)
+        }
+        val currentScale by rememberUpdatedState(scale)
+        val currentInitialScale by rememberUpdatedState(initialScale)
+        val currentOnNaturalSize by rememberUpdatedState(onNaturalSize)
 
         if (model != null) {
             val density = LocalDensity.current
@@ -383,11 +410,41 @@ fun MaradonaDiagram(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        val curCenterX = (availW - naturalSize.width * scale) / 2f
-                        val curCenterY = (availH - naturalSize.height * scale) / 2f
+                        val effectiveDrawnW = if (drawnSize.width > 0 && currentInitialScale == null) {
+                            drawnSize.width.toFloat()
+                        } else {
+                            naturalSize.width * currentScale
+                        }
+                        val effectiveDrawnH = if (drawnSize.height > 0 && currentInitialScale == null) {
+                            drawnSize.height.toFloat()
+                        } else {
+                            naturalSize.height * currentScale
+                        }
+                        // If sub-pixel font hinting at `zoomedDensity` caused the
+                        // scaled layout to exceed the viewport by a few pixels at
+                        // Fit zoom, absorb that residual delta in the GPU layer
+                        // rather than mutating `naturalSize` / `LocalDensity`
+                        // (which would create a multi-frame feedback oscillation).
+                        val fitCorrection = if (
+                            currentInitialScale == null &&
+                            initialZoom == DiagramZoom.Fit &&
+                            userZoom == 1f &&
+                            availW > 0f &&
+                            availH > 0f &&
+                            effectiveDrawnW > 0f &&
+                            effectiveDrawnH > 0f
+                        ) {
+                            minOf(1f, availW / effectiveDrawnW, availH / effectiveDrawnH)
+                        } else {
+                            1f
+                        }
+                        val finalW = effectiveDrawnW * fitCorrection
+                        val finalH = effectiveDrawnH * fitCorrection
+                        val curCenterX = (availW - finalW) / 2f
+                        val curCenterY = (availH - finalH) / 2f
                         val curPan = if (!initialViewApplied && initialPan != null && naturalSize.width > 0 && naturalSize.height > 0) {
-                            val rangeX = naturalSize.width * scale - availW
-                            val rangeY = naturalSize.height * scale - availH
+                            val rangeX = finalW - availW
+                            val rangeY = finalH - availH
                             Offset(
                                 if (rangeX > 0f) rangeX / 2f - initialPan.x * rangeX else 0f,
                                 if (rangeY > 0f) rangeY / 2f - initialPan.y * rangeY else 0f,
@@ -395,8 +452,8 @@ fun MaradonaDiagram(
                         } else {
                             pan
                         }
-                        scaleX = gestureZoom
-                        scaleY = gestureZoom
+                        scaleX = gestureZoom * fitCorrection
+                        scaleY = gestureZoom * fitCorrection
                         transformOrigin = TransformOrigin(0f, 0f)
                         translationX = curCenterX + curPan.x + gesturePan.x
                         translationY = curCenterY + curPan.y + gesturePan.y
@@ -409,11 +466,26 @@ fun MaradonaDiagram(
                     val contentModifier = Modifier
                         .wrapContentSize(Alignment.TopStart, unbounded = true)
                         .onSizeChanged {
-                            naturalSize = IntSize(
-                                (it.width / scale).roundToInt(),
-                                (it.height / scale).roundToInt(),
-                            )
-                            onNaturalSize(naturalSize)
+                            if (it.width <= 0 || it.height <= 0) return@onSizeChanged
+                            drawnSize = it
+                            val fixedScale = currentInitialScale
+                            if (fixedScale != null) {
+                                val computedNat = IntSize(
+                                    (it.width / fixedScale).roundToInt(),
+                                    (it.height / fixedScale).roundToInt(),
+                                )
+                                if (naturalSize != computedNat) {
+                                    naturalSize = computedNat
+                                }
+                                currentOnNaturalSize(computedNat)
+                            } else if (naturalSize.width <= 0 || naturalSize.height <= 0) {
+                                // Lock `naturalSize` from the initial 1x pass at `hostDensity`.
+                                // Do NOT overwrite `naturalSize` with `it / scale` on subsequent
+                                // zoomed passes, because text metrics are non-linear with density
+                                // and feeding `it / scale` back into `fit` causes 60 Hz oscillation.
+                                naturalSize = it
+                                currentOnNaturalSize(it)
+                            }
                         }
                         .alpha(if (error != null) 0.45f else 1f)
                     when (model) {
