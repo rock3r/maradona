@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
@@ -65,6 +66,7 @@ import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
+import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -218,8 +220,17 @@ fun MaradonaDiagram(
     var wheelNonce by remember { mutableIntStateOf(0) }
 
     val hostDensity = LocalDensity.current
+    val imageResolver = LocalMaradonaImageResolver.current
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = remember(fontFamilyResolver, theme.fontFamily) {
+        runCatching { fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value }.getOrNull()
+    }
+    val monoFontResolutionToken = remember(fontFamilyResolver, theme.monospaceFontFamily) {
+        runCatching { fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value }.getOrNull()
+    }
     var naturalSize by remember { mutableStateOf(IntSize.Zero) }
     var drawnSize by remember { mutableStateOf(IntSize.Zero) }
+    var settledScale by remember { mutableFloatStateOf(-1f) }
     var lastAutoDirViewportWidth by remember { mutableIntStateOf(-1) }
     var measureResetNonce by remember { mutableIntStateOf(0) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
@@ -244,6 +255,9 @@ fun MaradonaDiagram(
         model,
         theme.fontFamily,
         theme.monospaceFontFamily,
+        fontResolutionToken,
+        monoFontResolutionToken,
+        imageResolver,
         theme.nodeFontSize,
         theme.edgeLabelFontSize,
         theme.subgraphFontSize,
@@ -259,6 +273,7 @@ fun MaradonaDiagram(
         lastMeasureResetKey = measureResetKey
         naturalSize = IntSize.Zero
         drawnSize = IntSize.Zero
+        settledScale = -1f
         lastAutoDirViewportWidth = -1
         measureResetNonce++
     }
@@ -395,6 +410,7 @@ fun MaradonaDiagram(
             if (lastAutoDirViewportWidth != -1) {
                 naturalSize = IntSize.Zero
                 drawnSize = IntSize.Zero
+                settledScale = -1f
                 measureResetNonce++
             }
             lastAutoDirViewportWidth = constraints.maxWidth
@@ -503,9 +519,10 @@ fun MaradonaDiagram(
                     val onContentSizeMeasured: (IntSize) -> Unit = remember(measureResetNonce) {
                         { it: IntSize ->
                             if (it.width > 0 && it.height > 0) {
-                                drawnSize = it
                                 val fixedScale = currentInitialScale
                                 if (fixedScale != null) {
+                                    drawnSize = it
+                                    settledScale = fixedScale
                                     val computedNat = IntSize(
                                         (it.width / fixedScale).roundToInt(),
                                         (it.height / fixedScale).roundToInt(),
@@ -515,12 +532,29 @@ fun MaradonaDiagram(
                                     }
                                     currentOnNaturalSize(computedNat)
                                 } else if (naturalSize.width <= 0 || naturalSize.height <= 0) {
-                                    // Lock `naturalSize` from the initial 1x pass at `hostDensity`.
-                                    // Do NOT overwrite `naturalSize` with `it / scale` on subsequent
-                                    // zoomed passes, because text metrics are non-linear with density
-                                    // and feeding `it / scale` back into `fit` causes 60 Hz oscillation.
+                                    // Pass 1: lock `naturalSize` from the initial 1x pass at `hostDensity`.
                                     naturalSize = it
+                                    drawnSize = it
+                                    settledScale = currentScale
                                     currentOnNaturalSize(it)
+                                } else if (abs(settledScale - currentScale) >= 1e-4f) {
+                                    // Pass 2: measurement followed a `scale` change. Record `drawnSize`
+                                    // without overwriting `naturalSize` (preventing 60 Hz feedback oscillation).
+                                    drawnSize = it
+                                    settledScale = currentScale
+                                } else if (it != drawnSize) {
+                                    // Layout size changed while `scale` was constant (e.g. an async image
+                                    // or font resolved inside the child layout). Re-measure at 1x.
+                                    if (abs(currentScale - 1f) < 1e-4f) {
+                                        naturalSize = it
+                                        drawnSize = it
+                                        currentOnNaturalSize(it)
+                                    } else {
+                                        naturalSize = IntSize.Zero
+                                        drawnSize = IntSize.Zero
+                                        settledScale = -1f
+                                        measureResetNonce++
+                                    }
                                 }
                             }
                         }
