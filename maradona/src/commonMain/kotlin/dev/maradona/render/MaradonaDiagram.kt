@@ -221,6 +221,7 @@ fun MaradonaDiagram(
     var naturalSize by remember { mutableStateOf(IntSize.Zero) }
     var drawnSize by remember { mutableStateOf(IntSize.Zero) }
     var lastAutoDirViewportWidth by remember { mutableIntStateOf(-1) }
+    var measureResetNonce by remember { mutableIntStateOf(0) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
 
     val viewResetKey = remember(model, initialZoom, initialScale, initialPan) { Any() }
@@ -239,13 +240,27 @@ fun MaradonaDiagram(
         wheelNonce = 0
     }
 
-    val measureResetKey = remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) { Any() }
+    val measureResetKey = remember(
+        model,
+        theme.fontFamily,
+        theme.monospaceFontFamily,
+        theme.nodeFontSize,
+        theme.edgeLabelFontSize,
+        theme.subgraphFontSize,
+        theme.titleFontSize,
+        theme.captionFontSize,
+        autoDirection,
+        layoutOptions,
+        hostDensity.density,
+        hostDensity.fontScale,
+    ) { Any() }
     var lastMeasureResetKey by remember { mutableStateOf<Any?>(measureResetKey) }
     if (lastMeasureResetKey !== measureResetKey) {
         lastMeasureResetKey = measureResetKey
         naturalSize = IntSize.Zero
         drawnSize = IntSize.Zero
         lastAutoDirViewportWidth = -1
+        measureResetNonce++
     }
 
     fun fitScale(): Float {
@@ -380,6 +395,7 @@ fun MaradonaDiagram(
             if (lastAutoDirViewportWidth != -1) {
                 naturalSize = IntSize.Zero
                 drawnSize = IntSize.Zero
+                measureResetNonce++
             }
             lastAutoDirViewportWidth = constraints.maxWidth
         }
@@ -484,30 +500,34 @@ fun MaradonaDiagram(
                     LocalDensity provides zoomedDensity,
                     LocalMaradonaTheme provides theme,
                 ) {
-                    val contentModifier = Modifier
-                        .wrapContentSize(Alignment.TopStart, unbounded = true)
-                        .onSizeChanged {
-                            if (it.width <= 0 || it.height <= 0) return@onSizeChanged
-                            drawnSize = it
-                            val fixedScale = currentInitialScale
-                            if (fixedScale != null) {
-                                val computedNat = IntSize(
-                                    (it.width / fixedScale).roundToInt(),
-                                    (it.height / fixedScale).roundToInt(),
-                                )
-                                if (naturalSize != computedNat) {
-                                    naturalSize = computedNat
+                    val onContentSizeMeasured: (IntSize) -> Unit = remember(measureResetNonce) {
+                        { it: IntSize ->
+                            if (it.width > 0 && it.height > 0) {
+                                drawnSize = it
+                                val fixedScale = currentInitialScale
+                                if (fixedScale != null) {
+                                    val computedNat = IntSize(
+                                        (it.width / fixedScale).roundToInt(),
+                                        (it.height / fixedScale).roundToInt(),
+                                    )
+                                    if (naturalSize != computedNat) {
+                                        naturalSize = computedNat
+                                    }
+                                    currentOnNaturalSize(computedNat)
+                                } else if (naturalSize.width <= 0 || naturalSize.height <= 0) {
+                                    // Lock `naturalSize` from the initial 1x pass at `hostDensity`.
+                                    // Do NOT overwrite `naturalSize` with `it / scale` on subsequent
+                                    // zoomed passes, because text metrics are non-linear with density
+                                    // and feeding `it / scale` back into `fit` causes 60 Hz oscillation.
+                                    naturalSize = it
+                                    currentOnNaturalSize(it)
                                 }
-                                currentOnNaturalSize(computedNat)
-                            } else if (naturalSize.width <= 0 || naturalSize.height <= 0) {
-                                // Lock `naturalSize` from the initial 1x pass at `hostDensity`.
-                                // Do NOT overwrite `naturalSize` with `it / scale` on subsequent
-                                // zoomed passes, because text metrics are non-linear with density
-                                // and feeding `it / scale` back into `fit` causes 60 Hz oscillation.
-                                naturalSize = it
-                                currentOnNaturalSize(it)
                             }
                         }
+                    }
+                    val contentModifier = Modifier
+                        .wrapContentSize(Alignment.TopStart, unbounded = true)
+                        .onSizeChanged(onContentSizeMeasured)
                         .alpha(if (error != null) 0.45f else 1f)
                     when (model) {
                         is MaradonaDiagramModel.FlowchartModel ->

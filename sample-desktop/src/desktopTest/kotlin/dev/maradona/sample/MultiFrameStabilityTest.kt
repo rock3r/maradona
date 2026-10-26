@@ -173,6 +173,18 @@ class MultiFrameStabilityTest {
             scene.sendPointerEvent(PointerEventType.Release, Offset(620f, 580f), timeMillis = frameClock * 16L)
             val afterDragPng = scene.render(frameClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
             assertTrue(!beforeDragPng.contentEquals(afterDragPng), "Expected pointer drag to pan the active diagram after switching sources")
+
+            // Verify switching between two different models with identical 1x pixel dimensions still re-arms onNaturalSize
+            natHistory.clear()
+            activeSource = "flowchart LR\n  A[One] --> B[Two]"
+            repeat(3) { scene.render(frameClock++ * 16_000_000L) }
+            assertEquals(1, natHistory.size, "Expected naturalSize for first 1x diagram")
+            val firstSize = natHistory.single()
+
+            natHistory.clear()
+            activeSource = "flowchart LR\n  C[One] --> D[Two]"
+            repeat(3) { scene.render(frameClock++ * 16_000_000L) }
+            assertEquals(listOf(firstSize), natHistory, "Expected naturalSize to re-fire even when new model has identical 1x pixel dimensions")
         } finally {
             scene.close()
         }
