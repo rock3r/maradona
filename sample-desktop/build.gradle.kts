@@ -18,6 +18,7 @@ kotlin {
         }
         getByName("desktopTest").dependencies {
             implementation(kotlin("test"))
+            implementation(project(":sample-shared"))
             implementation(project(":maradona"))
             implementation(project(":maradona-material3"))
             implementation(project(":maradona-jewel"))

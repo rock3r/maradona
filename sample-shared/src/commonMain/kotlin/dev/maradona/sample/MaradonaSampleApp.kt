@@ -4,24 +4,31 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -30,7 +37,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Density
@@ -42,7 +56,7 @@ import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
 import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 
-private val examples = linkedMapOf(
+val sampleExamples: Map<String, String> = linkedMapOf(
     "Basic" to """
         flowchart TD
           A[Mermaid text] --> B{Flowchart?}
@@ -407,20 +421,117 @@ private val examples = linkedMapOf(
 enum class SampleThemePreset(
     val displayName: String,
     val theme: MaradonaTheme,
+    val colorScheme: ColorScheme,
     val usesMaterial3Connector: Boolean = false,
 ) {
-    Light("Light", MaradonaTheme.light()),
-    Dark("Dark", MaradonaTheme.dark()),
-    MaterialLight("M3 Light", MaradonaTheme.light(), usesMaterial3Connector = true),
-    MaterialDark("M3 Dark", MaradonaTheme.dark(), usesMaterial3Connector = true),
-    JewelLight("Jewel Light", MaradonaTheme.jewelLight()),
-    JewelDark("Jewel Dark", MaradonaTheme.jewelDark()),
+    Light(
+        displayName = "Light",
+        theme = MaradonaTheme.light(),
+        colorScheme = lightColorScheme(
+            primary = Color(0xFF205EA6),
+            onPrimary = Color(0xFFFFFFFF),
+            secondary = Color(0xFF24837B),
+            onSecondary = Color(0xFFFFFFFF),
+            background = Color(0xFFFFFCF0),
+            onBackground = Color(0xFF100F0F),
+            surface = Color(0xFFF2F0E5),
+            onSurface = Color(0xFF100F0F),
+            surfaceVariant = Color(0xFFEAE6D8),
+            onSurfaceVariant = Color(0xFF403E3C),
+            surfaceContainerHigh = Color(0xFFF2F0E5),
+            surfaceContainerLow = Color(0xFFEAE6D8),
+            surfaceContainerHighest = Color(0xFFEAE6D8),
+            outline = Color(0xFF8A8878),
+            outlineVariant = Color(0xFFCECDC3),
+            error = Color(0xFFB3261E),
+        ),
+    ),
+    Dark(
+        displayName = "Dark",
+        theme = MaradonaTheme.dark(),
+        colorScheme = darkColorScheme(
+            primary = Color(0xFF4385BE),
+            onPrimary = Color(0xFFFFFFFF),
+            secondary = Color(0xFF3AA99F),
+            onSecondary = Color(0xFF100F0F),
+            background = Color(0xFF100F0F),
+            onBackground = Color(0xFFCECDC3),
+            surface = Color(0xFF1C1B1A),
+            onSurface = Color(0xFFCECDC3),
+            surfaceVariant = Color(0xFF282726),
+            onSurfaceVariant = Color(0xFFB8B5A8),
+            surfaceContainerHigh = Color(0xFF282726),
+            surfaceContainerLow = Color(0xFF1C1B1A),
+            surfaceContainerHighest = Color(0xFF343331),
+            outline = Color(0xFF6F6E69),
+            outlineVariant = Color(0xFF403E3C),
+            error = Color(0xFFF2B8B5),
+        ),
+    ),
+    MaterialLight(
+        displayName = "M3 Light",
+        theme = MaradonaTheme.light(),
+        colorScheme = lightColorScheme(),
+        usesMaterial3Connector = true,
+    ),
+    MaterialDark(
+        displayName = "M3 Dark",
+        theme = MaradonaTheme.dark(),
+        colorScheme = darkColorScheme(),
+        usesMaterial3Connector = true,
+    ),
+    JewelLight(
+        displayName = "Jewel Light",
+        theme = MaradonaTheme.jewelLight(),
+        colorScheme = lightColorScheme(
+            primary = Color(0xFF3574F0),
+            onPrimary = Color(0xFFFFFFFF),
+            secondary = Color(0xFF00796B),
+            onSecondary = Color(0xFFFFFFFF),
+            background = Color(0xFFFFFFFF),
+            onBackground = Color(0xFF1E1F22),
+            surface = Color(0xFFF7F8FA),
+            onSurface = Color(0xFF1E1F22),
+            surfaceVariant = Color(0xFFEBECF0),
+            onSurfaceVariant = Color(0xFF6C707E),
+            surfaceContainerHigh = Color(0xFFF7F8FA),
+            surfaceContainerLow = Color(0xFFEBECF0),
+            surfaceContainerHighest = Color(0xFFDFE1E5),
+            outline = Color(0xFFC9CCD6),
+            outlineVariant = Color(0xFFD3D5DB),
+            error = Color(0xFFDB3B4B),
+        ),
+    ),
+    JewelDark(
+        displayName = "Jewel Dark",
+        theme = MaradonaTheme.jewelDark(),
+        colorScheme = darkColorScheme(
+            primary = Color(0xFF3574F0),
+            onPrimary = Color(0xFFFFFFFF),
+            secondary = Color(0xFF389FD6),
+            onSecondary = Color(0xFFFFFFFF),
+            background = Color(0xFF1E1F22),
+            onBackground = Color(0xFFBCBEC4),
+            surface = Color(0xFF2B2D30),
+            onSurface = Color(0xFFBCBEC4),
+            surfaceVariant = Color(0xFF25262A),
+            onSurfaceVariant = Color(0xFF868A91),
+            surfaceContainerHigh = Color(0xFF2B2D30),
+            surfaceContainerLow = Color(0xFF25262A),
+            surfaceContainerHighest = Color(0xFF393B40),
+            outline = Color(0xFF4E5157),
+            outlineVariant = Color(0xFF43454A),
+            error = Color(0xFFF75464),
+        ),
+    ),
 }
 
 private class SampleState(
     val themePreset: SampleThemePreset,
+    val selectedExample: String?,
     val source: String,
     val onThemePresetChange: (SampleThemePreset) -> Unit,
+    val onExampleSelect: (String, String) -> Unit,
     val onSourceChange: (String) -> Unit,
 )
 
@@ -433,19 +544,38 @@ fun MaradonaSampleApp(
     oraclePanY: Float? = null,
     oracleDensity: Float? = null,
     oracleSeq: Int = 0,
+    initialExample: String? = null,
+    initialThemePreset: SampleThemePreset = SampleThemePreset.Light,
+    onThemePresetChanged: ((SampleThemePreset) -> Unit)? = null,
     hostThemeWrapper: (@Composable (SampleThemePreset, @Composable () -> Unit) -> Unit)? = null,
 ) {
     if (oracleChart != null) {
         OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY, oracleDensity, oracleSeq)
         return
     }
-    var themePreset by remember { mutableStateOf(SampleThemePreset.Light) }
-    var source by remember { mutableStateOf(examples.getValue("Basic")) }
+    var themePreset by remember(initialThemePreset) { mutableStateOf(initialThemePreset) }
+    val resolvedInitialExample = initialExample?.takeIf { it in sampleExamples } ?: "Basic"
+    val requestedSource = sampleExamples.getValue(resolvedInitialExample)
+    var selectedExample by remember(initialExample) { mutableStateOf<String?>(resolvedInitialExample) }
+    var source by remember(initialExample) { mutableStateOf(requestedSource) }
+
+    LaunchedEffect(themePreset) {
+        onThemePresetChanged?.invoke(themePreset)
+    }
+
     val state = SampleState(
         themePreset = themePreset,
+        selectedExample = selectedExample,
         source = source,
         onThemePresetChange = { themePreset = it },
-        onSourceChange = { source = it },
+        onExampleSelect = { name, text ->
+            selectedExample = name
+            source = text
+        },
+        onSourceChange = { newText ->
+            source = newText
+            selectedExample = sampleExamples.entries.firstOrNull { it.value == newText }?.key
+        },
     )
 
     val defaultWrapper: @Composable (SampleThemePreset, @Composable () -> Unit) -> Unit = { preset, content ->
@@ -457,18 +587,24 @@ fun MaradonaSampleApp(
     }
     val activeWrapper = hostThemeWrapper ?: defaultWrapper
 
-    MaterialTheme(colorScheme = if (themePreset.theme.isDark) darkColorScheme() else lightColorScheme()) {
+    MaterialTheme(colorScheme = themePreset.colorScheme) {
         activeWrapper(themePreset) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-                if (maxWidth >= 600.dp) {
-                    Row(modifier = Modifier.fillMaxSize()) {
-                        EditorPanel(state, modifier = Modifier.width(380.dp).fillMaxHeight())
-                        Diagram(state, modifier = Modifier.weight(1f).fillMaxSize())
-                    }
-                } else {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Diagram(state, modifier = Modifier.weight(1f).fillMaxWidth())
-                        EditorPanel(state, modifier = Modifier.fillMaxWidth(), compact = true)
+            Surface(
+                modifier = Modifier.fillMaxSize().testTag("sample-root-surface"),
+                color = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            ) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                    if (maxWidth >= 600.dp) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            EditorPanel(state, modifier = Modifier.width(380.dp).fillMaxHeight())
+                            Diagram(state, modifier = Modifier.weight(1f).fillMaxSize())
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Diagram(state, modifier = Modifier.weight(1f).fillMaxWidth())
+                            EditorPanel(state, modifier = Modifier.fillMaxWidth(), compact = true)
+                        }
                     }
                 }
             }
@@ -561,49 +697,107 @@ private fun Diagram(state: SampleState, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compact: Boolean = false) {
-    Column(
-        modifier = modifier.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("Maradona sample", style = MaterialTheme.typography.titleMedium)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            for ((name, text) in examples) {
-                OutlinedButton(onClick = { state.onSourceChange(text) }) { Text(name) }
-            }
+private fun SelectableChipButton(
+    label: String,
+    selected: Boolean,
+    testTag: String,
+    onClick: () -> Unit,
+) {
+    val semanticsModifier = Modifier
+        .heightIn(min = 32.dp)
+        .testTag(testTag)
+        .semantics {
+            role = Role.Tab
+            this.selected = selected
+            stateDescription = if (selected) "Selected" else "Not selected"
         }
-        TextField(
-            value = state.source,
-            onValueChange = state.onSourceChange,
-            modifier = if (compact) {
-                Modifier.fillMaxWidth().height(140.dp)
-            } else {
-                Modifier.weight(1f).fillMaxHeight()
-            },
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-            label = { Text("Mermaid diagram") },
-        )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+    val compactPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = semanticsModifier,
+            contentPadding = compactPadding,
         ) {
-            for (preset in SampleThemePreset.entries) {
-                if (state.themePreset == preset) {
-                    Button(onClick = { state.onThemePresetChange(preset) }) { Text(preset.displayName) }
-                } else {
-                    OutlinedButton(onClick = { state.onThemePresetChange(preset) }) { Text(preset.displayName) }
+            Text(label, fontSize = 12.sp)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = semanticsModifier,
+            contentPadding = compactPadding,
+        ) {
+            Text(label, fontSize = 12.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compact: Boolean = false) {
+    Surface(
+        modifier = modifier.testTag("sample-editor-panel"),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Maradona sample",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                for ((name, text) in sampleExamples) {
+                    SelectableChipButton(
+                        label = name,
+                        selected = state.selectedExample == name,
+                        testTag = "example-btn-$name",
+                        onClick = { state.onExampleSelect(name, text) },
+                    )
                 }
             }
-            OutlinedButton(onClick = { state.onSourceChange(examples.getValue("Basic")) }) { Text("Reset") }
+            TextField(
+                value = state.source,
+                onValueChange = state.onSourceChange,
+                modifier = if (compact) {
+                    Modifier.fillMaxWidth().height(110.dp)
+                } else {
+                    Modifier.weight(1f).fillMaxHeight()
+                },
+                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                label = { Text("Mermaid diagram") },
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                for (preset in SampleThemePreset.entries) {
+                    SelectableChipButton(
+                        label = preset.displayName,
+                        selected = state.themePreset == preset,
+                        testTag = "theme-btn-${preset.name}",
+                        onClick = { state.onThemePresetChange(preset) },
+                    )
+                }
+                OutlinedButton(
+                    onClick = { state.onExampleSelect("Basic", sampleExamples.getValue("Basic")) },
+                    modifier = Modifier.heightIn(min = 32.dp).testTag("reset-btn"),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text("Reset", fontSize = 12.sp)
+                }
+            }
+            Text(
+                text = "Pan by dragging. Pinch or ⌘/Ctrl+scroll to zoom. Double-tap to reset.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Text(
-            "Pan by dragging. Pinch or ⌘/Ctrl+scroll to zoom. Double-tap to reset.",
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }

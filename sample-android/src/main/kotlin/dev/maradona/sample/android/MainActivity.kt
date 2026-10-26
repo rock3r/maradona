@@ -13,6 +13,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.maradona.sample.MaradonaSampleApp
+import dev.maradona.sample.SampleThemePreset
 
 /**
  * Oracle mode: `--es oracleChart <id> --es oracleZoom 100|min|max`
@@ -28,6 +29,8 @@ class MainActivity : ComponentActivity() {
     private var oraclePanY by mutableStateOf<Float?>(null)
     private var oracleDensity by mutableStateOf<Float?>(null)
     private var oracleSeq by mutableStateOf(0)
+    private var sampleExample by mutableStateOf<String?>(null)
+    private var sampleTheme by mutableStateOf(SampleThemePreset.Light)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +51,17 @@ class MainActivity : ComponentActivity() {
                 oraclePanY = oraclePanY,
                 oracleDensity = oracleDensity,
                 oracleSeq = oracleSeq,
+                initialExample = sampleExample,
+                initialThemePreset = sampleTheme,
+                onThemePresetChanged = { preset ->
+                    if (oracleChart == null) {
+                        val lightBars = !preset.theme.isDark
+                        WindowInsetsControllerCompat(window, window.decorView).apply {
+                            isAppearanceLightStatusBars = lightBars
+                            isAppearanceLightNavigationBars = lightBars
+                        }
+                    }
+                },
             )
         }
     }
@@ -74,8 +88,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyIntent(intent: Intent) {
+        sampleExample = intent.getStringExtra("sampleExample")
+        intent.getStringExtra("sampleTheme")?.let { raw ->
+            SampleThemePreset.entries.firstOrNull {
+                it.name.equals(raw, ignoreCase = true) || it.displayName.equals(raw, ignoreCase = true)
+            }?.let { sampleTheme = it }
+        }
         val chart = intent.getStringExtra("oracleChart")
-        if (chart == null) return
+        if (chart == null) {
+            oracleChart = null
+            return
+        }
         oracleChart = chart
         oracleZoom = intent.getStringExtra("oracleZoom")
         oraclePanX = intent.getFloatExtra("oraclePanX", -1f).takeIf { it >= 0f }
