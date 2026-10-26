@@ -9,7 +9,7 @@ Maradona renders [Mermaid](https://mermaid.js.org) diagrams as native **Compose 
 - **All 23 Mermaid diagram families** parsed and laid out in pure Kotlin (`commonMain`), from Flowcharts, Sequence, Class, State, and ER diagrams to C4, Architecture, ZenUML, Gantt, Mindmap, Sankey, XY Chart, Radar, Packet, Kanban, and Treemap.
 - **Interactive Compose UI:** pan, pinch/Ctrl+scroll zoom anchored at the pointer, double-tap to reset, `click` / `link` callbacks via `onNodeClick`, and per-node screen-reader accessibility traversal.
 - **Live-editing resilience:** when the input text is mid-edit and temporarily fails to parse, Maradona keeps the last valid diagram visible (dimmed) and displays a compact error banner at the bottom.
-- **Host-customizable theming:** built-in `light()`, `dark()`, `jewelLight()`, and `jewelDark()` presets plus `MaradonaTheme.fromHost(...)` and `LocalMaradonaTheme` so diagrams match IntelliJ/Jewel toolwindows, Material apps, or custom design systems.
+- **Host-customizable theming & live connectors:** built-in `light()`, `dark()`, `jewelLight()`, and `jewelDark()` presets, `MaradonaTheme.fromHost(...)`, and dedicated theme connectors for **Material 3** (`:maradona-material3` across Desktop, Android, and iOS) and **JetBrains Jewel** (`:maradona-jewel` on Desktop JVM).
 - **Standalone SVG export:** `MaradonaSvgExporter.exportToSvg(source, theme)` produces standalone SVG strings across all 23 families without needing a Compose window.
 
 ---
@@ -33,14 +33,21 @@ open iosApp/iosApp.xcodeproj           # iOS sample app (Apple Silicon simulator
 includeBuild("../maradona") {
     dependencySubstitution {
         substitute(module("dev.maradona:maradona")).using(project(":maradona"))
+        // Optional theme connectors:
+        substitute(module("dev.maradona:maradona-material3")).using(project(":maradona-material3"))
+        substitute(module("dev.maradona:maradona-jewel")).using(project(":maradona-jewel"))
     }
 }
 ```
 
 ```kotlin
-// build.gradle.kts (commonMain or platform source set)
+// build.gradle.kts
 dependencies {
     implementation("dev.maradona:maradona")
+    // Optional: live MaterialTheme connector (Desktop, Android, iOS)
+    implementation("dev.maradona:maradona-material3")
+    // Optional: live JetBrains Jewel connector (Desktop JVM only)
+    implementation("dev.maradona:maradona-jewel")
 }
 ```
 
@@ -78,38 +85,40 @@ fun CheckoutFlowScreen() {
 }
 ```
 
-### 2. Theme & Jewel Integration (`LocalMaradonaTheme` & `MaradonaTheme.fromHost`)
+### 2. Theme Connectors: Material 3 & JetBrains Jewel
 
-Provide `LocalMaradonaTheme` once for a subtree, use the built-in JetBrains Jewel presets (`MaradonaTheme.jewelDark()` / `MaradonaTheme.jewelLight()`), or derive a full palette and typography scale from your host application's design tokens with `MaradonaTheme.fromHost(...)`:
+Maradona ships two optional theme connector modules so diagrams automatically derive their surfaces, borders, text, semantic accents, and typography from your active host theme while keeping desktop-only dependencies out of mobile builds:
 
-![Jewel Dark and Jewel Light themes in Maradona](docs/images/jewel-themes.png)
+- **`dev.maradona:maradona-material3`** (*Desktop, Android, iOS*): `ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, and `MaradonaTheme.fromMaterial3(colorScheme, typography)` read `MaterialTheme.colorScheme` and `MaterialTheme.typography`.
+- **`dev.maradona:maradona-jewel`** (*Desktop JVM only*): `ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, and `MaradonaTheme.fromJewel(...)` read `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, and `JewelTheme.isDark` (supporting both standalone `IntUiTheme` and IntelliJ IDE `SwingBridgeTheme`).
+
+![Material 3 and Jewel Desktop live theme connectors](docs/images/theme-connectors.png)
 
 ```kotlin
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
-import dev.maradona.render.LocalMaradonaTheme
+import androidx.compose.material3.MaterialTheme
 import dev.maradona.render.MaradonaDiagram
-import dev.maradona.render.MaradonaTheme
+import dev.maradona.theme.jewel.ProvideJewelMaradonaTheme
+import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 
-// Option A: Built-in JetBrains Jewel (IntUiDark / IntUiLight) presets
-CompositionLocalProvider(LocalMaradonaTheme provides MaradonaTheme.jewelDark()) {
-    MaradonaDiagram(source = mermaidSource)
+// Material 3 (Desktop, Android, iOS) — derives from active MaterialTheme.colorScheme & typography
+MaterialTheme {
+    ProvideMaterial3MaradonaTheme {
+        MaradonaDiagram(source = mermaidSource)
+    }
 }
 
-// Option B: Derive all diagram tokens from your host theme's surfaces and accents
-val hostTheme = MaradonaTheme.fromHost(
-    background = Color(0xFF1E1F22),
-    surface = Color(0xFF2B2D30),
-    border = Color(0xFF4E5157),
-    text = Color(0xFFBCBEC4),
-    accent = Color(0xFF3574F0),
-    baseFontSize = 13.sp,
-)
-CompositionLocalProvider(LocalMaradonaTheme provides hostTheme) {
-    MaradonaDiagram(source = mermaidSource)
+// JetBrains Jewel (Desktop JVM only) — derives from active JewelTheme.globalColors & text styles
+IntUiTheme(isDark = true) {
+    ProvideJewelMaradonaTheme(useToolwindowBackground = true) {
+        MaradonaDiagram(source = mermaidSource)
+    }
 }
 ```
+
+For custom design systems (or when you don't want a connector dependency), `:maradona` also includes `MaradonaTheme.fromHost(...)` and static `MaradonaTheme.light()`, `dark()`, `jewelLight()`, and `jewelDark()` presets:
+
+![Jewel Dark and Jewel Light themes in Maradona](docs/images/jewel-themes.png)
 
 ### 3. Handle Node Clicks & Links (`onNodeClick`)
 
@@ -176,13 +185,13 @@ See [`docs/diagram-syntax.md`](docs/diagram-syntax.md) for the complete syntax a
 
 ---
 
-## Supported Targets & How It Works
+## Supported Targets & Modules
 
-| Target | Gradle Target | Notes |
+| Module | Targets | Purpose |
 | --- | --- | --- |
-| **Desktop (JVM)** | `jvm("desktop")` | macOS, Linux, Windows via Compose Multiplatform Desktop |
-| **Android** | `android` (`minSdk = 24`, `compileSdk = 37`) | Standard Android Compose UI |
-| **iOS** | `iosArm64()`, `iosSimulatorArm64()` | Apple Silicon devices and simulators |
+| **`:maradona`** | `jvm("desktop")`, `android`, `iosArm64()`, `iosSimulatorArm64()` | Core parser, 23 layout engines, `MaradonaDiagram`, `MaradonaTheme`, `MaradonaSvgExporter` (`compose-runtime`, `compose-foundation`, `compose-ui` only) |
+| **`:maradona-material3`** | `jvm("desktop")`, `android`, `iosArm64()`, `iosSimulatorArm64()` | Live `MaterialTheme` connector (`ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, `MaradonaTheme.fromMaterial3`) |
+| **`:maradona-jewel`** | `jvm("desktop")` (*Desktop JVM / JDK 25+ only*) | Live JetBrains `JewelTheme` connector (`ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, `MaradonaTheme.fromJewel`) |
 
 All library code lives in `commonMain` across three layers:
 

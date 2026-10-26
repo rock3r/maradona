@@ -12,11 +12,16 @@ kotlin {
     sourceSets {
         getByName("desktopMain").dependencies {
             implementation(project(":sample-shared"))
+            implementation(project(":maradona-jewel"))
+            implementation(libs.jewel.int.ui.standalone)
             implementation(compose.desktop.currentOs)
         }
         getByName("desktopTest").dependencies {
             implementation(kotlin("test"))
             implementation(project(":maradona"))
+            implementation(project(":maradona-material3"))
+            implementation(project(":maradona-jewel"))
+            implementation(libs.jewel.int.ui.standalone)
         }
     }
 }

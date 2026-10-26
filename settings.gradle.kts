@@ -13,4 +13,11 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "maradona-root"
-include(":maradona", ":sample-desktop", ":sample-shared", ":sample-android")
+include(
+    ":maradona",
+    ":maradona-material3",
+    ":maradona-jewel",
+    ":sample-desktop",
+    ":sample-shared",
+    ":sample-android",
+)

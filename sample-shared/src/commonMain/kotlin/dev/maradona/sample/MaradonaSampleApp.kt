@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import dev.maradona.render.LocalMaradonaTheme
 import dev.maradona.render.MaradonaDiagram
 import dev.maradona.render.MaradonaTheme
+import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 
 private val examples = linkedMapOf(
     "Basic" to """
@@ -406,9 +407,12 @@ private val examples = linkedMapOf(
 enum class SampleThemePreset(
     val displayName: String,
     val theme: MaradonaTheme,
+    val usesMaterial3Connector: Boolean = false,
 ) {
     Light("Light", MaradonaTheme.light()),
     Dark("Dark", MaradonaTheme.dark()),
+    MaterialLight("M3 Light", MaradonaTheme.light(), usesMaterial3Connector = true),
+    MaterialDark("M3 Dark", MaradonaTheme.dark(), usesMaterial3Connector = true),
     JewelLight("Jewel Light", MaradonaTheme.jewelLight()),
     JewelDark("Jewel Dark", MaradonaTheme.jewelDark()),
 }
@@ -429,6 +433,7 @@ fun MaradonaSampleApp(
     oraclePanY: Float? = null,
     oracleDensity: Float? = null,
     oracleSeq: Int = 0,
+    hostThemeWrapper: (@Composable (SampleThemePreset, @Composable () -> Unit) -> Unit)? = null,
 ) {
     if (oracleChart != null) {
         OracleMode(oracleChart, oracleZoom, oraclePanX, oraclePanY, oracleDensity, oracleSeq)
@@ -443,8 +448,17 @@ fun MaradonaSampleApp(
         onSourceChange = { source = it },
     )
 
+    val defaultWrapper: @Composable (SampleThemePreset, @Composable () -> Unit) -> Unit = { preset, content ->
+        if (preset.usesMaterial3Connector) {
+            ProvideMaterial3MaradonaTheme(content = content)
+        } else {
+            CompositionLocalProvider(LocalMaradonaTheme provides preset.theme, content = content)
+        }
+    }
+    val activeWrapper = hostThemeWrapper ?: defaultWrapper
+
     MaterialTheme(colorScheme = if (themePreset.theme.isDark) darkColorScheme() else lightColorScheme()) {
-        CompositionLocalProvider(LocalMaradonaTheme provides themePreset.theme) {
+        activeWrapper(themePreset) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
                 if (maxWidth >= 600.dp) {
                     Row(modifier = Modifier.fillMaxSize()) {
