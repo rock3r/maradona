@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.maradona.render.MaradonaDiagram
@@ -161,6 +163,16 @@ class MultiFrameStabilityTest {
                 assertEquals(settledLayouts, layoutEvents, "Layout oscillated after switching to $name: $layoutEvents")
                 assertTrue(frame4Png.contentEquals(frame8Png), "Rendered pixels changed between frame 4 and 8 for $name")
             }
+
+            // Verify pointer gestures remain wired to the active state after multiple source switches
+            val beforeDragPng = scene.render(frameClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            scene.sendPointerEvent(PointerEventType.Press, Offset(500f, 500f), timeMillis = frameClock * 16L)
+            scene.render(frameClock++ * 16_000_000L)
+            scene.sendPointerEvent(PointerEventType.Move, Offset(620f, 580f), timeMillis = frameClock * 16L)
+            scene.render(frameClock++ * 16_000_000L)
+            scene.sendPointerEvent(PointerEventType.Release, Offset(620f, 580f), timeMillis = frameClock * 16L)
+            val afterDragPng = scene.render(frameClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            assertTrue(!beforeDragPng.contentEquals(afterDragPng), "Expected pointer drag to pan the active diagram after switching sources")
         } finally {
             scene.close()
         }

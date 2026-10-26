@@ -195,10 +195,12 @@ fun MaradonaDiagram(
     val model = parsed.getOrNull() ?: lastGood
     val error = parsed.exceptionOrNull()
 
-    // Committed state: rendered crisply via density scaling. Keyed on `model`
-    // so switching diagrams resets zoom/pan cleanly while temporary parse errors
-    // during live editing (where `model` stays `lastGood`) preserve the view.
-    var userZoom by remember(model, initialZoom, initialScale) {
+    // Committed state: rendered crisply via density scaling.
+    // We keep a single MutableState instance per property across the lifetime of
+    // MaradonaDiagram (so closures in graphicsLayer, onSizeChanged, and pointerInput
+    // never hold orphaned state references) and reset their values when the
+    // diagram model or layout-affecting parameters change.
+    var userZoom by remember {
         mutableFloatStateOf(
             when (initialZoom) {
                 DiagramZoom.Min -> MIN_ZOOM
@@ -207,25 +209,44 @@ fun MaradonaDiagram(
             },
         )
     }
-    var pan by remember(model, initialZoom, initialScale, initialPan) { mutableStateOf(Offset.Zero) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
     // Natural needs the measured size to back out the fit scale; apply once known.
-    var initialViewApplied by remember(model, initialZoom, initialScale, initialPan) { mutableStateOf(false) }
+    var initialViewApplied by remember { mutableStateOf(false) }
     // Transient state: applied as a layer transform during a gesture.
-    var gestureZoom by remember(model) { mutableFloatStateOf(1f) }
-    var gesturePan by remember(model) { mutableStateOf(Offset.Zero) }
-    var wheelNonce by remember(model) { mutableIntStateOf(0) }
+    var gestureZoom by remember { mutableFloatStateOf(1f) }
+    var gesturePan by remember { mutableStateOf(Offset.Zero) }
+    var wheelNonce by remember { mutableIntStateOf(0) }
 
     val hostDensity = LocalDensity.current
-    var naturalSize by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
-        mutableStateOf(IntSize.Zero)
-    }
-    var drawnSize by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
-        mutableStateOf(IntSize.Zero)
-    }
-    var lastAutoDirViewportWidth by remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) {
-        mutableIntStateOf(-1)
-    }
+    var naturalSize by remember { mutableStateOf(IntSize.Zero) }
+    var drawnSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastAutoDirViewportWidth by remember { mutableIntStateOf(-1) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+
+    val viewResetKey = remember(model, initialZoom, initialScale, initialPan) { Any() }
+    var lastViewResetKey by remember { mutableStateOf<Any?>(viewResetKey) }
+    if (lastViewResetKey !== viewResetKey) {
+        lastViewResetKey = viewResetKey
+        userZoom = when (initialZoom) {
+            DiagramZoom.Min -> MIN_ZOOM
+            DiagramZoom.Max -> MAX_ZOOM
+            else -> 1f
+        }
+        pan = Offset.Zero
+        initialViewApplied = false
+        gestureZoom = 1f
+        gesturePan = Offset.Zero
+        wheelNonce = 0
+    }
+
+    val measureResetKey = remember(model, theme, autoDirection, layoutOptions, hostDensity.density, hostDensity.fontScale) { Any() }
+    var lastMeasureResetKey by remember { mutableStateOf<Any?>(measureResetKey) }
+    if (lastMeasureResetKey !== measureResetKey) {
+        lastMeasureResetKey = measureResetKey
+        naturalSize = IntSize.Zero
+        drawnSize = IntSize.Zero
+        lastAutoDirViewportWidth = -1
+    }
 
     fun fitScale(): Float {
         val availW = viewportSize.width.toFloat()
@@ -281,7 +302,7 @@ fun MaradonaDiagram(
             .background(theme.background)
             .clipToBounds()
             .onSizeChanged { viewportSize = it }
-            .pointerInput(zoomEnabled) {
+            .pointerInput(zoomEnabled, model) {
                 if (!zoomEnabled) return@pointerInput
                 while (true) {
                     detectTransformGestures { centroid, gPan, gZoom, _ ->
@@ -291,7 +312,7 @@ fun MaradonaDiagram(
                     commitGesture()
                 }
             }
-            .pointerInput(zoomEnabled) {
+            .pointerInput(zoomEnabled, model) {
                 if (!zoomEnabled) return@pointerInput
                 // Mouse-wheel zoom (Cmd/Ctrl held): desktop affordance; touch platforms
                 // essentially never emit Scroll events, and unmodified scrolls pass through.
@@ -312,7 +333,7 @@ fun MaradonaDiagram(
                     }
                 }
             }
-            .pointerInput(zoomEnabled) {
+            .pointerInput(zoomEnabled, model) {
                 if (!zoomEnabled) return@pointerInput
                 detectTapGestures(onDoubleTap = {
                     userZoom = 1f
@@ -324,14 +345,14 @@ fun MaradonaDiagram(
     ) {
         // Wheel events are discrete; commit once the wheel goes quiet. Keep the
         // window short: until commit, the transient layer transform looks soft.
-        LaunchedEffect(wheelNonce) {
+        LaunchedEffect(wheelNonce, model) {
             if (wheelNonce > 0) {
                 delay(90)
                 commitGesture()
             }
         }
 
-        LaunchedEffect(naturalSize) {
+        LaunchedEffect(naturalSize, model) {
             if (initialViewApplied || naturalSize.width <= 0 || naturalSize.height <= 0) return@LaunchedEffect
             if (initialScale != null) {
                 // Absolute scale: the oracle needs exactly 0.1x/1x/5x, and the
