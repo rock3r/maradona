@@ -1,0 +1,15 @@
+classDiagram
+  namespace Core {
+    class Parser {
+      +parse(String) Model
+    }
+    class LayoutEngine {
+      +layout(Model) Geometry
+    }
+  }
+  class Renderer {
+    +draw(Geometry)
+  }
+  Parser --> LayoutEngine : feeds
+  LayoutEngine o-- Renderer : configures
+  note for Parser "Pure Kotlin parser"

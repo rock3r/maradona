@@ -1,0 +1,19 @@
+requirementDiagram
+  requirement parent_req {
+    id: 1
+    text: Support multiplatform rendering.
+    risk: high
+    verifymethod: inspection
+  }
+  interfaceRequirement child_req {
+    id: 1.1
+    text: Expose Compose theme tokens.
+    risk: low
+    verifymethod: test
+  }
+  element theme_api {
+    type: api
+    docRef: maradona/theme
+  }
+  parent_req - contains -> child_req
+  theme_api - satisfies -> child_req

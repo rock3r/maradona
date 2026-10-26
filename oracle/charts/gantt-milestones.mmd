@@ -1,0 +1,10 @@
+gantt
+  title Milestone Schedule
+  dateFormat YYYY-MM-DD
+  excludes weekends
+  section Design
+    Spec Review   :done, d1, 2026-10-01, 2d
+    API Freeze    :milestone, m1, after d1, 0d
+  section Build
+    Implementation :active, b1, after d1, 3d
+    GA Ship        :crit, milestone, m2, after b1, 0d

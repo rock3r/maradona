@@ -1,0 +1,19 @@
+erDiagram
+  PROJECT ||--o{ MODULE : contains
+  MODULE ||--|{ SOURCE_FILE : compiles
+  DEVELOPER |o--o{ MODULE : maintains
+  PROJECT {
+    string key PK
+    string title
+  }
+  MODULE {
+    string name PK
+    string target
+  }
+  SOURCE_FILE {
+    string path PK
+    int lines
+  }
+  DEVELOPER {
+    string username PK
+  }

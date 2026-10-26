@@ -1,0 +1,102 @@
+{
+ "scale": 2,
+ "origin": [
+  90.0,
+  -310.0
+ ],
+ "size": [
+  1260,
+  192
+ ],
+ "content": [
+  19,
+  19,
+  1206,
+  152
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-t1",
+   "shape": "rect",
+   "label": "Expand oracle goldens",
+   "box": [
+    35.0,
+    70.0,
+    370,
+    82
+   ],
+   "label_box": [
+    38,
+    73,
+    362,
+    76
+   ],
+   "centre": [
+    220.0,
+    111.0
+   ],
+   "svg_box": [
+    35.0,
+    70.0,
+    370.0,
+    82.0
+   ]
+  },
+  {
+   "id": "my-svg-t2",
+   "shape": "rect",
+   "label": "Verify mobile captures",
+   "box": [
+    445.0,
+    70.0,
+    370,
+    82
+   ],
+   "label_box": [
+    460,
+    73,
+    345,
+    76
+   ],
+   "centre": [
+    630.0,
+    111.0
+   ],
+   "svg_box": [
+    445.0,
+    70.0,
+    370.0,
+    82.0
+   ]
+  },
+  {
+   "id": "my-svg-t3",
+   "shape": "rect",
+   "label": "Ship 23 diagram families",
+   "box": [
+    855.0,
+    70.0,
+    370,
+    82
+   ],
+   "label_box": [
+    865,
+    73,
+    345,
+    76
+   ],
+   "centre": [
+    1040.0,
+    111.0
+   ],
+   "svg_box": [
+    855.0,
+    70.0,
+    370.0,
+    82.0
+   ]
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

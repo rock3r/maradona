@@ -1,0 +1,287 @@
+{
+ "scale": 2,
+ "origin": [
+  5.0,
+  5.0
+ ],
+ "size": [
+  1568,
+  976
+ ],
+ "content": [
+  18,
+  18,
+  1516,
+  931
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-node_0",
+   "shape": "circle",
+   "label": "Platform",
+   "box": [
+    764.3,
+    524.7,
+    152.4,
+    152.4
+   ],
+   "label_box": [
+    767,
+    537,
+    45,
+    20
+   ],
+   "centre": [
+    840.5,
+    600.9000000000001
+   ],
+   "svg_box": [
+    764.3,
+    524.7,
+    152.4,
+    152.4
+   ]
+  },
+  {
+   "id": "my-svg-node_1",
+   "shape": "path",
+   "label": "Desktop",
+   "box": [
+    1021.5,
+    636.1,
+    182.7,
+    62
+   ],
+   "label_box": null,
+   "centre": [
+    1112.85,
+    667.1
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_2",
+   "shape": "path",
+   "label": "JVM",
+   "box": [
+    1296.2,
+    730.6,
+    136,
+    62
+   ],
+   "label_box": null,
+   "centre": [
+    1364.2,
+    761.6
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_3",
+   "shape": "path",
+   "label": "Skiko",
+   "box": [
+    1534.8,
+    650.9,
+    148.5,
+    62
+   ],
+   "label_box": [
+    1568,
+    654,
+    112,
+    56
+   ],
+   "centre": [
+    1609.05,
+    681.9
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_4",
+   "shape": "path",
+   "label": "Compose",
+   "box": [
+    1279.6,
+    899.9,
+    199.8,
+    62
+   ],
+   "label_box": null,
+   "centre": [
+    1379.5,
+    930.9
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_5",
+   "shape": "path",
+   "label": "Mobile",
+   "box": [
+    497.2,
+    644.4,
+    162.5,
+    62
+   ],
+   "label_box": null,
+   "centre": [
+    578.45,
+    675.4
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_6",
+   "shape": "path",
+   "label": "Android",
+   "box": [
+    445.6,
+    810.9,
+    176.5,
+    62
+   ],
+   "label_box": null,
+   "centre": [
+    533.85,
+    841.9
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_7",
+   "shape": "path",
+   "label": "Canvas",
+   "box": [
+    405.1,
+    976.5,
+    174.9,
+    62
+   ],
+   "label_box": [
+    408,
+    979,
+    169,
+    56
+   ],
+   "centre": [
+    492.55,
+    1007.5
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_8",
+   "shape": "path",
+   "label": "iOS",
+   "box": [
+    267.7,
+    562.0,
+    126.7,
+    62
+   ],
+   "label_box": [
+    271,
+    566,
+    88,
+    5
+   ],
+   "centre": [
+    331.05,
+    593.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_9",
+   "shape": "path",
+   "label": "UIKit",
+   "box": [
+    20.0,
+    548.0,
+    140.7,
+    62
+   ],
+   "label_box": [
+    23,
+    553,
+    123,
+    5
+   ],
+   "centre": [
+    90.35,
+    579.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_10",
+   "shape": "path",
+   "label": "Export",
+   "box": [
+    789.8,
+    356.7,
+    160.9,
+    62
+   ],
+   "label_box": [
+    793,
+    360,
+    73,
+    24
+   ],
+   "centre": [
+    870.25,
+    387.7
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_11",
+   "shape": "path",
+   "label": "SVG",
+   "box": [
+    821.3,
+    188.6,
+    139.2,
+    62
+   ],
+   "label_box": [
+    824,
+    192,
+    51,
+    39
+   ],
+   "centre": [
+    890.9,
+    219.6
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_12",
+   "shape": "path",
+   "label": "Vector",
+   "box": [
+    796.2,
+    20.0,
+    159.4,
+    62
+   ],
+   "label_box": [
+    799,
+    37,
+    72,
+    41
+   ],
+   "centre": [
+    875.9000000000001,
+    51.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

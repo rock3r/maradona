@@ -1,0 +1,12 @@
+requirementDiagram
+  requirement render_req {
+    id: 1
+    text: Render all 23 Mermaid families.
+    risk: medium
+    verifymethod: test
+  }
+  element compose_engine {
+    type: module
+    docRef: maradona/render
+  }
+  compose_engine - satisfies -> render_req

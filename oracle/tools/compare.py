@@ -71,8 +71,9 @@ SCALE_MAX_MISMATCH = 0.10
 INK_RATIO_MIN, INK_RATIO_MAX = 0.25, 1.6
 # a capture must be a plausible diagram render. The 0.1x level is legitimately
 # almost empty on a phone screen (a small chart is a few dozen pixels), so it is
-# judged against the reference's ink instead of the viewport's.
-MIN_INK, MAX_INK = 0.0015, 0.50
+# judged against the reference's ink instead of the viewport's. Area-filling
+# families (treemap, C4, Sankey) can cover >50% of the canvas with solid tiles.
+MIN_INK, MAX_INK = 0.0015, 0.92
 # 0.1x: the drawing must sit where the reference puts it (offset as a share of
 # the viewport, size as a ratio) even though its strokes are sub-pixel.
 MIN_BOX_OFFSET = 0.02
@@ -88,15 +89,25 @@ WHITE = (255, 255, 255)
 # ---------- shared image helpers ----------
 
 def bg_color(img):
-    """The diagram background: the most common colour, not a corner sample.
+    """The diagram background: the most common colour along the outer perimeter.
 
-    A zoomed tile can land with a node border in its corner, which would make a
-    corner-based estimate report the border as the background (and then flag a
-    perfectly good render as "too dark").
+    Sampling the perimeter rather than the whole interior prevents area-filling
+    diagrams (such as treemaps, where coloured tiles occupy >50% of the canvas)
+    from having a tile fill mistaken for the canvas background, while still
+    tolerating a node border touching an edge.
     """
-    small = img.resize((160, 160)) if max(img.size) > 160 else img
-    counts = collections.Counter(small.getdata())
-    return counts.most_common(1)[0][0]
+    w, h = img.size
+    if w <= 2 or h <= 2:
+        return img.getpixel((0, 0))
+    px = img.load()
+    border = []
+    for x in range(w):
+        border.append(px[x, 0])
+        border.append(px[x, h - 1])
+    for y in range(1, h - 1):
+        border.append(px[0, y])
+        border.append(px[w - 1, y])
+    return collections.Counter(border).most_common(1)[0][0]
 
 
 def content_bbox(img, bg):
@@ -300,7 +311,7 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
             continue
         problems = []
         for tile in tiles:
-            problems += _capture_problems(tile, view)
+            problems += _capture_problems(tile, view, check_bg=(level != "max"))
         ink = sum(ink_fraction(t, chart_bg) for t in tiles) / len(tiles)
         if level != "min" and ink < MIN_INK:
             problems.append("blank capture")
@@ -374,23 +385,23 @@ def compare_chart(platform, chart, manifest, gold_path, ours_dir, web_img):
         if len(fractions) == 1:
             # One window: a plain side-by-side pair.
             for key, imgs in (("gold", ref_imgs), ("ours", o_imgs), ("diff", diff_imgs)):
-                display_asset(imgs[0]).save(web_img / f"{name}-{key}.png")
+                display_asset(imgs[0]).save(web_img / f"{name}-{key}.png", compress_level=1)
                 images[key] = [f"img/{name}-{key}.png"]
         else:
             # Several overlapping pan windows: stitch them back into the whole
             # zoomed canvas for the overview, and keep each tile for inspection.
             z = LEVEL_SCALE[level]
-            display_asset(stitch(ref_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-gold.png")
-            display_asset(stitch(o_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-ours.png")
-            display_asset(stitch(diff_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-diff.png")
+            display_asset(stitch(ref_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-gold.png", compress_level=1)
+            display_asset(stitch(o_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-ours.png", compress_level=1)
+            display_asset(stitch(diff_imgs, fractions, canvas, view, z)).save(web_img / f"{name}-diff.png", compress_level=1)
             images["gold"].append(f"img/{name}-gold.png")
             images["ours"].append(f"img/{name}-ours.png")
             images["diff"].append(f"img/{name}-diff.png")
             for index, _ in enumerate(fractions):
                 suffix = f"{name}-t{index}"
-                display_asset(ref_imgs[index]).save(web_img / f"{suffix}-gold.png")
-                display_asset(o_imgs[index]).save(web_img / f"{suffix}-ours.png")
-                display_asset(diff_imgs[index]).save(web_img / f"{suffix}-diff.png")
+                display_asset(ref_imgs[index]).save(web_img / f"{suffix}-gold.png", compress_level=1)
+                display_asset(o_imgs[index]).save(web_img / f"{suffix}-ours.png", compress_level=1)
+                display_asset(diff_imgs[index]).save(web_img / f"{suffix}-diff.png", compress_level=1)
                 images["gold"].append(f"img/{suffix}-gold.png")
                 images["ours"].append(f"img/{suffix}-ours.png")
                 images["diff"].append(f"img/{suffix}-diff.png")
@@ -435,15 +446,16 @@ def _faint_bbox(img, threshold=8):
     return img.convert("L").point(lambda v: 255 if v < 255 - threshold else 0).getbbox()
 
 
-def _capture_problems(tile, view):
-    """Per-tile sanity. Ink is checked per level: a 5x tile can legitimately be empty."""
+def _capture_problems(tile, view, check_bg=True):
+    """Per-tile sanity. Ink is checked per level: a 5x tile can legitimately be empty or inside a filled card."""
     problems = []
     if tile.size != view:
         problems.append(f"capture size {tile.size} != viewport {view}")
         return problems
-    bg = bg_color(tile)
-    if sum(bg) / 3 < MIN_BG_BRIGHTNESS:
-        problems.append(f"background too dark {bg} (system UI or a dimmed screen on top?)")
+    if check_bg:
+        bg = bg_color(tile)
+        if sum(bg) / 3 < MIN_BG_BRIGHTNESS:
+            problems.append(f"background too dark {bg} (system UI or a dimmed screen on top?)")
     return problems
 
 

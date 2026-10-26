@@ -1,0 +1,95 @@
+<svg id="my-svg" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="max-width: 396px; background-color: rgb(255, 252, 240);" viewBox="0 0 396 267" role="graphics-document document" aria-roledescription="zenuml"><defs>
+  <style>
+  .frame-border-outer { fill: #666; }
+  .frame-border-inner { fill: #ffffff; }
+  .frame-header-bg { fill: #ffffff; }
+  .frame-header-line { stroke: #666; stroke-width: 1; shape-rendering: crispEdges; }
+  .frame-title { font-family: Helvetica, Verdana, serif; font-size: 16px; font-weight: 600; fill: #222; }
+  .participant-box { fill: #ffffff; stroke: #666; stroke-width: 2; }
+  .participant-label { font-family: Helvetica, Verdana, serif; font-size: 16px; fill: #222; }
+  .participant-icon { color: #222; }
+  .participant-icon [fill="currentColor"]:not([stroke]) { stroke: #666; stroke-width: 1; }
+  .lifeline { stroke: #666; stroke-width: 1; }
+  .message-line { stroke: #000; stroke-width: 2; shape-rendering: crispEdges; }
+  .message-label { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #222; }
+  .arrow-head { fill: #000; stroke: #000; stroke-width: 2; }
+  .arrow-open { fill: none; }
+  .occurrence { fill: #dedede; stroke: #666; stroke-width: 2; shape-rendering: crispEdges; }
+  .fragment-border { fill: none; stroke: #666; stroke-width: 1; shape-rendering: crispEdges; }
+  .fragment-header { fill: #dedede; fill-opacity: 0.498; stroke: none; shape-rendering: crispEdges; }
+  .fragment-label { font-family: Helvetica, Verdana, serif; font-size: 14px; font-weight: 600; fill: #000; }
+  .fragment-condition { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #000; }
+  .fragment-separator { stroke: #e5e7eb; stroke-width: 1; shape-rendering: crispEdges; }
+  .fragment-section-label { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #000; }
+  .return-line { stroke: #000; stroke-width: 2; stroke-dasharray: 6,4; shape-rendering: crispEdges; }
+  .return-arrow { stroke: #000; stroke-width: 2; fill: none; }
+  .return-label { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #222; }
+  .return-icon { fill: #222; }
+  .divider-line { stroke: #aaaa33; stroke-width: 1; }
+  .divider-bg { fill: #fff5ad; stroke: #aaaa33; stroke-width: 1; }
+  .divider-label { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #333; }
+  .comment-text { font-family: Helvetica, Verdana, serif; font-size: 14px; fill: #333; opacity: 0.5; }
+  .seq-number { font-family: Helvetica, Verdana, serif; font-size: 12px; font-weight: 100; fill: #6b7280; }
+  .group-outline { fill: none; stroke: #666; }
+  .group-title-bg { fill: #ffffff; stroke: none; }
+  .group-title-text { font-family: Helvetica, Verdana, serif; font-size: 13px; font-weight: 400; fill: #222; }
+</style>
+</defs>
+<rect class="frame-border-outer" x="0" y="0" width="396" height="267" rx="4" fill="#666"/>
+<rect class="frame-border-inner" x="1" y="1" width="394" height="265" rx="3" fill="#fff"/>
+<line class="frame-header-line" x1="1" y1="33.5" x2="395" y2="33.5"/>
+<text x="5" y="16.75" dominant-baseline="central" class="frame-title">Checkout Sequence</text>
+<g transform="translate(11, 34)">
+<line x1="50.5" y1="68" x2="50.5" y2="232" class="lifeline" stroke-dasharray="5,5" stroke-dashoffset="5" shape-rendering="crispEdges"/>
+<line x1="171.5" y1="68" x2="171.5" y2="232" class="lifeline" stroke-dasharray="5,5" stroke-dashoffset="5" shape-rendering="crispEdges"/>
+<line x1="301.5" y1="68" x2="301.5" y2="232" class="lifeline" stroke-dasharray="5,5" stroke-dashoffset="5" shape-rendering="crispEdges"/>
+<g class="participant" data-participant="Client">
+  <rect x="11" y="29" width="78" height="38" rx="3" class="participant-box"/>
+  
+  
+  
+  <text x="50" y="47.75" text-anchor="middle" dominant-baseline="central" class="participant-label">Client</text>
+</g>
+<g class="participant" data-participant="OrderService">
+  <rect x="116.875" y="29" width="108.25" height="38" rx="3" class="participant-box"/>
+  
+  
+  
+  <text x="171" y="47.75" text-anchor="middle" dominant-baseline="central" class="participant-label">OrderService</text>
+</g>
+<g class="participant" data-participant="PaymentGateway">
+  <rect x="230.859375" y="29" width="140.28125" height="38" rx="3" class="participant-box"/>
+  
+  
+  
+  <text x="301" y="47.75" text-anchor="middle" dominant-baseline="central" class="participant-label">PaymentGateway</text>
+</g>
+<rect x="165" y="87" width="13" height="88" rx="1" class="occurrence" data-participant="OrderService"/>
+<rect x="295" y="119" width="13" height="22" rx="1" class="occurrence" data-participant="PaymentGateway"/>
+<g class="message">
+  <line x1="51" y1="87" x2="164" y2="87" class="message-line"/>
+  <svg x="157" y="82" width="7" height="10" viewBox="0 0 7 9" overflow="visible" class="arrow-head">
+    <g>
+      <path d="M1 1.25 L6.15 4.5 L1 7.75 Z" stroke="#000" stroke-linecap="round" stroke-width="2" fill="#000"/>
+    </g>
+  </svg>
+  <text x="104" y="84" text-anchor="middle" class="message-label">createOrder()</text>
+  <text x="47" y="84" text-anchor="end" class="seq-number">1</text>
+</g>
+<g class="message">
+  <line x1="179" y1="119" x2="294" y2="119" class="message-line"/>
+  <svg x="287" y="114" width="7" height="10" viewBox="0 0 7 9" overflow="visible" class="arrow-head">
+    <g>
+      <path d="M1 1.25 L6.15 4.5 L1 7.75 Z" stroke="#000" stroke-linecap="round" stroke-width="2" fill="#000"/>
+    </g>
+  </svg>
+  <text x="233" y="116" text-anchor="middle" class="message-label">charge()</text>
+  <text x="175" y="116" text-anchor="end" class="seq-number">1.1</text>
+</g>
+<g class="return">
+  <line x1="164" y1="174" x2="51" y2="174" class="return-line"/>
+  <polyline points="56.15,170.75 51,174 56.15,177.25" fill="none" stroke-linecap="round" class="return-arrow"/>
+  <text x="111" y="171" text-anchor="middle" class="return-label">orderId</text>
+  <text x="47" y="171" text-anchor="end" class="seq-number">1.2</text>
+</g>
+</g></svg>

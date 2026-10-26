@@ -1,0 +1,15 @@
+erDiagram
+  ACCOUNT ||--|{ SESSION : owns
+  SESSION }|..|{ AUDIT_LOG : records
+  ACCOUNT {
+    string account_id PK
+    string handle UK
+  }
+  SESSION {
+    string session_id PK
+    string account_id FK
+  }
+  AUDIT_LOG {
+    string log_id PK
+    string action
+  }

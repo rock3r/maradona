@@ -1,0 +1,87 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  1234,
+  812
+ ],
+ "content": [
+  14,
+  14,
+  1190,
+  773
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-parse_req",
+   "shape": "path",
+   "label": "<<Functional Requirement>>",
+   "box": [
+    16.0,
+    464.0,
+    598.1,
+    332
+   ],
+   "label_box": [
+    19,
+    467,
+    588,
+    320
+   ],
+   "centre": [
+    315.05,
+    630.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-perf_req",
+   "shape": "path",
+   "label": "<<Performance Requirement>>",
+   "box": [
+    694.1,
+    464.0,
+    523.5,
+    332
+   ],
+   "label_box": [
+    697,
+    467,
+    506,
+    320
+   ],
+   "centre": [
+    955.85,
+    630.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-layout_mod",
+   "shape": "path",
+   "label": "<<Element>>",
+   "box": [
+    452.8,
+    16.0,
+    365.3,
+    248
+   ],
+   "label_box": [
+    456,
+    19,
+    353,
+    242
+   ],
+   "centre": [
+    635.45,
+    140.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

@@ -414,6 +414,32 @@ The sample tests render diagrams offscreen to
   simultaneously visible inside the viewport, layout and frame times vary with
   graph density and may still be slow.
 
+- **Oracle visual & layout verification (`oracle/`):**
+  - **71 fixtures across all 23 Mermaid families** (`5` for Flowchart + `3`
+    varied fixtures for each of the other 22 families: Sequence, Class, State,
+    ER, Mindmap, Gantt, Pie, GitGraph, Timeline, User Journey, Quadrant, XY
+    Chart, Kanban, Sankey, Requirement, Packet, Radar, Block, Architecture,
+    Treemap, C4, and ZenUML).
+  - **Visual comparisons (`639` total):** every fixture is captured and compared
+    at `100` (`1x`), `min` (`0.1x`), and `max` (`5x` pan-tile grid) on **Desktop
+    (JVM/Skiko)** (`213/213`), **Android (`Pixel_7a`)** (`213/213`), and **iOS
+    (`iPhone SE (3rd generation)`)** (`213/213`). At `1x`, binding-axis scale is
+    gated against the `mermaid.js` (`mmdc`) golden (`±3%`) while pixel mismatch
+    is reported as a visual aid because font shaping and non-flowchart layout
+    engines differ from Chromium/D3; at `5x`, pixel self-consistency (`<= 10%`
+    mismatch) and ink ratios (`[0.25, 1.6]`) are gated against the `1x` render.
+  - **Layout/geometry comparisons (`71/71`):** the `5` Flowchart fixtures verify
+    1:1 `mermaid.js` SVG-vs-Dagre IL node size (`<= 5%`), node centre (`<= 2%`
+    of diagonal), edge label (`<= 3%`), edge endpoint (`<= 2%`), and rendered
+    fill-vs-IL (`<= 6px`) tolerances; the `66` fixtures across the other 22
+    families verify family-specific structural invariants (canvas bounds,
+    sibling non-overlap, ordering, containment, compartment sums, angle sums,
+    normalized coordinates, and proportional areas) plus IL-to-PNG rendered ink
+    presence for every positioned item.
+  - **Scope & remaining blind spots:** 3–5 representative fixtures per family
+    validate core constructs, directions, and nesting per family, not exhaustive
+    combinatorial syntax/theme/interaction permutations.
+
 ## License
 
 Apache License 2.0 - see [LICENSE](LICENSE).

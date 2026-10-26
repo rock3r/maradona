@@ -60,7 +60,7 @@ launch() { # chart zoom fx fy density
 }
 
 render_log() { # the app's oracle log lines
-  xcrun simctl </dev/null spawn "$SIM" log show --style compact --last 30s \
+  xcrun simctl </dev/null spawn "$SIM" log show --style compact --last 5s \
     --predicate 'eventMessage CONTAINS "MARADONA_ORACLE"' 2>/dev/null | grep MARADONA_ORACLE || true
 }
 
@@ -73,7 +73,7 @@ get_field() { # field zoom panx pany [density] - retries while the app settles
   for i in $(seq 1 90); do
     v=$(render_log | grep -E "$filter" | grep -o "$1=[0-9.x]*" | tail -1 | cut -d= -f2 || true)
     if [ -n "$v" ]; then echo "$v"; return 0; fi
-    sleep 1
+    sleep 0.2
   done
   return 1
 }
@@ -81,7 +81,7 @@ get_field() { # field zoom panx pany [density] - retries while the app settles
 shot() { # chart level fx fy index density
   launch "$1" "$2" "$3" "$4" "$6"
   get_field canvas "$2" "$3" "$4" >/dev/null || true
-  sleep 0.5
+  sleep 0.25
   if [ -n "${5:-}" ]; then
     xcrun simctl </dev/null io "$SIM" screenshot "$OUT/$1-$2-$5.png" >/dev/null 2>&1
   else
@@ -91,7 +91,7 @@ shot() { # chart level fx fy index density
 
 # Viewport size, from one throwaway capture.
 launch "${CHARTS[0]}" 100 0.5 0.5
-sleep 3
+sleep 2
 xcrun simctl </dev/null io "$SIM" screenshot "$OUT/.probe.png" >/dev/null 2>&1
 VIEW=$("$PY" -c "
 from PIL import Image; print('%dx%d' % Image.open('$OUT/.probe.png').size)")
@@ -111,13 +111,14 @@ for chart in "${CHARTS[@]}"; do
   fi
   DENSITY=""
   for attempt in 1 2 3 4 5; do
-    sleep 1.5
+    sleep 0.5
     xcrun simctl </dev/null io "$SIM" screenshot "$OUT/.probe.png" >/dev/null 2>&1
     if DENSITY=$("$PY" "$ROOT/oracle/tools/calibrate.py" --capture "$OUT/.probe.png" \
       --scale 0.1 --density "$RAW_DENSITY" --gold "$ROOT/oracle/goldens/$chart.png" 2>/dev/null); then
       break
     fi
     log "  calibration attempt $attempt was not a clean render; retrying"
+    sleep 1.0
     DENSITY=""
   done
   if [ -z "$DENSITY" ]; then
@@ -128,7 +129,7 @@ for chart in "${CHARTS[@]}"; do
   # Canvas = the diagram's own size at the calibrated density.
   # Pan 0.25 is used only here, so the log line is unambiguously this render.
   launch "$chart" 100 0.25 0.25 "$DENSITY"
-  sleep 2
+  sleep 0.2
   if ! CANVAS=$(get_field canvas 100 0.25 0.25); then
     echo "ERROR: no canvas size logged for $chart" >&2
     exit 1
@@ -158,7 +159,7 @@ for chart in "${CHARTS[@]}"; do
   # The canvas scales with the density, so re-read it for the final framing.
   # Pan 0.25 is used only here, so the log line is unambiguously this render.
   launch "$chart" 100 0.75 0.75 "$DENSITY"
-  sleep 2
+  sleep 0.2
   if ! CANVAS=$(get_field canvas 100 0.75 0.75); then
     echo "ERROR: no canvas size logged for $chart" >&2
     exit 1

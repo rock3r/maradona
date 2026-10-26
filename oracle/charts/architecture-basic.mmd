@@ -1,0 +1,7 @@
+architecture-beta
+  group cloud(cloud)[Service Tier]
+  service gw(internet)[Gateway] in cloud
+  service app(server)[Worker] in cloud
+  service db(database)[Storage] in cloud
+  gw:R --> L:app
+  app:R --> L:db

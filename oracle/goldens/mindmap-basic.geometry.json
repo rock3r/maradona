@@ -1,0 +1,246 @@
+{
+ "scale": 2,
+ "origin": [
+  5.0,
+  5.0
+ ],
+ "size": [
+  1126,
+  834
+ ],
+ "content": [
+  19,
+  20,
+  1072,
+  786
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-node_0",
+   "shape": "circle",
+   "label": "Maradona",
+   "box": [
+    426.3,
+    333.4,
+    172.9,
+    172.9
+   ],
+   "label_box": [
+    445,
+    403,
+    123,
+    21
+   ],
+   "centre": [
+    512.75,
+    419.84999999999997
+   ],
+   "svg_box": [
+    426.3,
+    333.4,
+    172.9,
+    172.9
+   ]
+  },
+  {
+   "id": "my-svg-node_1",
+   "shape": "path",
+   "label": "Parser",
+   "box": [
+    706.3,
+    421.8,
+    162.5,
+    62
+   ],
+   "label_box": [
+    709,
+    435,
+    148,
+    45
+   ],
+   "centre": [
+    787.55,
+    452.8
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_2",
+   "shape": "path",
+   "label": "Flowchart",
+   "box": [
+    904.0,
+    311.0,
+    201.4,
+    62
+   ],
+   "label_box": [
+    907,
+    325,
+    183,
+    45
+   ],
+   "centre": [
+    1004.7,
+    342.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_3",
+   "shape": "path",
+   "label": "Sequence",
+   "box": [
+    792.9,
+    570.7,
+    206.1,
+    62
+   ],
+   "label_box": [
+    796,
+    581,
+    189,
+    46
+   ],
+   "centre": [
+    895.9499999999999,
+    601.7
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_4",
+   "shape": "path",
+   "label": "Layout",
+   "box": [
+    341.5,
+    605.5,
+    164.1,
+    62
+   ],
+   "label_box": [
+    345,
+    617,
+    153,
+    44
+   ],
+   "centre": [
+    423.55,
+    636.5
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_5",
+   "shape": "path",
+   "label": "Dagre",
+   "box": [
+    460.7,
+    751.6,
+    156.3,
+    62
+   ],
+   "label_box": [
+    464,
+    761,
+    144,
+    44
+   ],
+   "centre": [
+    538.85,
+    782.6
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_6",
+   "shape": "path",
+   "label": "Trees",
+   "box": [
+    110.8,
+    711.0,
+    150.6,
+    62
+   ],
+   "label_box": [
+    114,
+    721,
+    144,
+    44
+   ],
+   "centre": [
+    186.1,
+    742.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_7",
+   "shape": "path",
+   "label": "Render",
+   "box": [
+    325.8,
+    174.7,
+    171.8,
+    62
+   ],
+   "label_box": [
+    329,
+    192,
+    162,
+    42
+   ],
+   "centre": [
+    411.70000000000005,
+    205.7
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_8",
+   "shape": "path",
+   "label": "Compose",
+   "box": [
+    20.0,
+    134.6,
+    199.8,
+    62
+   ],
+   "label_box": [
+    23,
+    151,
+    194,
+    43
+   ],
+   "centre": [
+    119.9,
+    165.6
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-node_9",
+   "shape": "path",
+   "label": "Export",
+   "box": [
+    420.5,
+    20.0,
+    160.9,
+    62
+   ],
+   "label_box": [
+    423,
+    39,
+    150,
+    40
+   ],
+   "centre": [
+    500.95,
+    51.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

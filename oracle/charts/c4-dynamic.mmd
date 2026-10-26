@@ -1,0 +1,7 @@
+C4Dynamic
+  title Diagram Render Sequence
+  Container(editor, "Source Editor", "Compose", "Mermaid text input")
+  Container(parser, "MaradonaParser", "Kotlin", "AST builder")
+  Container(layout, "Layout Engine", "Kotlin", "Coordinates")
+  RelIndex(1, editor, parser, "Passes source")
+  RelIndex(2, parser, layout, "Produces model")

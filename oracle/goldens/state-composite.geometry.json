@@ -1,0 +1,178 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  400,
+  1222
+ ],
+ "content": [
+  14,
+  14,
+  356,
+  1145
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-state-root_start-0",
+   "shape": "circle",
+   "label": "",
+   "box": [
+    186.0,
+    16.0,
+    28.0,
+    28.0
+   ],
+   "label_box": [
+    189,
+    19,
+    17,
+    22
+   ],
+   "centre": [
+    200.0,
+    30.0
+   ],
+   "svg_box": [
+    186.0,
+    16.0,
+    28.0,
+    28.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Connecting_start-1",
+   "shape": "circle",
+   "label": "",
+   "box": [
+    186.0,
+    220.0,
+    28.0,
+    28.0
+   ],
+   "label_box": [
+    189,
+    223,
+    17,
+    22
+   ],
+   "centre": [
+    200.0,
+    234.0
+   ],
+   "svg_box": [
+    186.0,
+    220.0,
+    28.0,
+    28.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Handshake-2",
+   "shape": "rect",
+   "label": "Handshake",
+   "box": [
+    64.0,
+    296.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    67,
+    299,
+    256,
+    68
+   ],
+   "centre": [
+    200.0,
+    333.0
+   ],
+   "svg_box": [
+    64.0,
+    296.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Authenticated-3",
+   "shape": "rect",
+   "label": "Authenticated",
+   "box": [
+    64.0,
+    506.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    67,
+    509,
+    256,
+    68
+   ],
+   "centre": [
+    200.0,
+    543.0
+   ],
+   "svg_box": [
+    64.0,
+    506.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Connecting_end-3",
+   "shape": "path",
+   "label": "",
+   "box": [
+    180,
+    604,
+    24,
+    24
+   ],
+   "label_box": [
+    187,
+    611,
+    10,
+    11
+   ],
+   "centre": [
+    192.0,
+    616.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-state-Ready-5",
+   "shape": "rect",
+   "label": "Ready",
+   "box": [
+    64.0,
+    904.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    67,
+    907,
+    256,
+    68
+   ],
+   "centre": [
+    200.0,
+    941.0
+   ],
+   "svg_box": [
+    64.0,
+    904.0,
+    272.0,
+    74.0
+   ]
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

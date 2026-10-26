@@ -1,0 +1,8 @@
+gitGraph
+  commit id: "c1"
+  branch hotfix
+  commit id: "fix-bug" type: REVERSE
+  checkout main
+  commit id: "c2"
+  cherry-pick id: "fix-bug"
+  commit id: "c3" tag: "v1.1"

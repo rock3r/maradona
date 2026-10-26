@@ -1,0 +1,9 @@
+C4Container
+  title Maradona Container View
+  Person(user, "App User", "Views interactive diagrams")
+  System_Boundary(app, "Host Application") {
+    Container(ui, "MaradonaDiagram", "Compose", "Zoom, pan, and semantics")
+    ContainerDb(cache, "Layout Cache", "Memory", "Cached positioned geometry")
+  }
+  Rel(user, ui, "Interacts with")
+  Rel(ui, cache, "Reads layout from")

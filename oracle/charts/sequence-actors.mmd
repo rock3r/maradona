@@ -1,0 +1,12 @@
+sequenceDiagram
+  autonumber
+  box Client Tier
+    actor User
+    participant App
+  end
+  participant Auth
+  User->>App: Tap Sign In
+  App->>App: Validate form
+  App->>Auth: Verify credentials
+  Auth-->>App: Issued token
+  App-->>User: Welcome screen

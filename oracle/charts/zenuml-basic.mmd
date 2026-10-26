@@ -1,0 +1,6 @@
+zenuml
+  title Checkout Sequence
+  Client->OrderService.createOrder() {
+    PaymentGateway.charge()
+    return orderId
+  }

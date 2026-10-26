@@ -1,0 +1,65 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  534,
+  812
+ ],
+ "content": [
+  14,
+  14,
+  490,
+  761
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-render_req",
+   "shape": "path",
+   "label": "<<Requirement>>",
+   "box": [
+    16.0,
+    464.0,
+    500.6,
+    332
+   ],
+   "label_box": [
+    19,
+    467,
+    484,
+    308
+   ],
+   "centre": [
+    266.3,
+    630.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-compose_engine",
+   "shape": "path",
+   "label": "<<Element>>",
+   "box": [
+    80.6,
+    16.0,
+    371.5,
+    248
+   ],
+   "label_box": [
+    84,
+    19,
+    356,
+    242
+   ],
+   "centre": [
+    266.35,
+    140.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

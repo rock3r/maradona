@@ -1,0 +1,200 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  880,
+  1046
+ ],
+ "content": [
+  14,
+  14,
+  836,
+  1000
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-state-check-3",
+   "shape": "path",
+   "label": "",
+   "box": [
+    438,
+    276,
+    50,
+    50
+   ],
+   "label_box": [
+    441,
+    279,
+    44,
+    44
+   ],
+   "centre": [
+    463.0,
+    301.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-state-root_start-0",
+   "shape": "circle",
+   "label": "",
+   "box": [
+    457.0,
+    16.0,
+    28.0,
+    28.0
+   ],
+   "label_box": [
+    460,
+    19,
+    17,
+    22
+   ],
+   "centre": [
+    471.0,
+    30.0
+   ],
+   "svg_box": [
+    457.0,
+    16.0,
+    28.0,
+    28.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Validate-1",
+   "shape": "rect",
+   "label": "Validate",
+   "box": [
+    335.0,
+    124.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    338,
+    127,
+    259,
+    68
+   ],
+   "centre": [
+    471.0,
+    161.0
+   ],
+   "svg_box": [
+    335.0,
+    124.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Rejected-9",
+   "shape": "rect",
+   "label": "Rejected",
+   "box": [
+    590.7,
+    808.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    594,
+    811,
+    255,
+    68
+   ],
+   "centre": [
+    726.7,
+    845.0
+   ],
+   "svg_box": [
+    590.7,
+    808.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Audit-6",
+   "shape": "rect",
+   "label": "Audit",
+   "box": [
+    16.0,
+    654.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    19,
+    657,
+    265,
+    68
+   ],
+   "centre": [
+    152.0,
+    691.0
+   ],
+   "svg_box": [
+    16.0,
+    654.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-Persist-7",
+   "shape": "rect",
+   "label": "Persist",
+   "box": [
+    368.0,
+    654.0,
+    272.0,
+    74.0
+   ],
+   "label_box": [
+    371,
+    657,
+    259,
+    68
+   ],
+   "centre": [
+    504.0,
+    691.0
+   ],
+   "svg_box": [
+    368.0,
+    654.0,
+    272.0,
+    74.0
+   ]
+  },
+  {
+   "id": "my-svg-state-root_end-9",
+   "shape": "path",
+   "label": "",
+   "box": [
+    453,
+    987,
+    24,
+    24
+   ],
+   "label_box": [
+    460,
+    994,
+    11,
+    11
+   ],
+   "centre": [
+    465.0,
+    999.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

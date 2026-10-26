@@ -1,0 +1,9 @@
+stateDiagram-v2
+  [*] --> Connecting
+  state Connecting {
+    [*] --> Handshake
+    Handshake --> Authenticated : tls_ok
+    Authenticated --> [*]
+  }
+  Connecting --> Ready : session_open
+  Ready --> [*] : close

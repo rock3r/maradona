@@ -1,0 +1,14 @@
+stateDiagram-v2
+  state check <<choice>>
+  state fork_work <<fork>>
+  state join_work <<join>>
+  [*] --> Validate
+  Validate --> check
+  check --> fork_work : valid
+  check --> Rejected : invalid
+  fork_work --> Audit
+  fork_work --> Persist
+  Audit --> join_work
+  Persist --> join_work
+  join_work --> [*]
+  Rejected --> [*]
