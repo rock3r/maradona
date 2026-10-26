@@ -26,28 +26,29 @@ open iosApp/iosApp.xcodeproj           # iOS sample app (Apple Silicon simulator
 
 ### Adding Maradona to Your Build
 
-> **Release status:** Maradona is pre-release (`0.23`) and is **not yet published to Maven Central**. Consume it from source via a Gradle composite build (`includeBuild`):
+> **Release status:** Maradona is prepared for its initial `0.1.0` Maven Central release under `dev.sebastiano.maradona` (see [`docs/publishing.md`](docs/publishing.md)). Once `v0.1.0` is published to Maven Central:
+
+```kotlin
+// build.gradle.kts (commonMain or platform source set)
+dependencies {
+    implementation("dev.sebastiano.maradona:maradona:0.1.0")
+    // Optional: live MaterialTheme connector (Desktop, Android, iOS)
+    implementation("dev.sebastiano.maradona:maradona-material3:0.1.0")
+    // Optional: live JetBrains Jewel connector (Desktop JVM / JDK 25+ only)
+    implementation("dev.sebastiano.maradona:maradona-jewel:0.1.0")
+}
+```
+
+Until `v0.1.0` is promoted on Maven Central (or when developing against a local checkout), consume Maradona via a Gradle composite build (`includeBuild`):
 
 ```kotlin
 // settings.gradle.kts
 includeBuild("../maradona") {
     dependencySubstitution {
-        substitute(module("dev.maradona:maradona")).using(project(":maradona"))
-        // Optional theme connectors:
-        substitute(module("dev.maradona:maradona-material3")).using(project(":maradona-material3"))
-        substitute(module("dev.maradona:maradona-jewel")).using(project(":maradona-jewel"))
+        substitute(module("dev.sebastiano.maradona:maradona")).using(project(":maradona"))
+        substitute(module("dev.sebastiano.maradona:maradona-material3")).using(project(":maradona-material3"))
+        substitute(module("dev.sebastiano.maradona:maradona-jewel")).using(project(":maradona-jewel"))
     }
-}
-```
-
-```kotlin
-// build.gradle.kts
-dependencies {
-    implementation("dev.maradona:maradona")
-    // Optional: live MaterialTheme connector (Desktop, Android, iOS)
-    implementation("dev.maradona:maradona-material3")
-    // Optional: live JetBrains Jewel connector (Desktop JVM only)
-    implementation("dev.maradona:maradona-jewel")
 }
 ```
 
@@ -89,8 +90,8 @@ fun CheckoutFlowScreen() {
 
 Maradona ships two optional theme connector modules so diagrams automatically derive their surfaces, borders, text, semantic accents, and typography from your active host theme while keeping desktop-only dependencies out of mobile builds:
 
-- **`dev.maradona:maradona-material3`** (*Desktop, Android, iOS*): `ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, and `MaradonaTheme.fromMaterial3(colorScheme, typography)` read `MaterialTheme.colorScheme` and `MaterialTheme.typography`.
-- **`dev.maradona:maradona-jewel`** (*Desktop JVM only*): `ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, and `MaradonaTheme.fromJewel(...)` read `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, and `JewelTheme.isDark` (supporting both standalone `IntUiTheme` and IntelliJ IDE `SwingBridgeTheme`).
+- **`dev.sebastiano.maradona:maradona-material3`** (*Desktop, Android, iOS*): `ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, and `MaradonaTheme.fromMaterial3(colorScheme, typography)` read `MaterialTheme.colorScheme` and `MaterialTheme.typography`.
+- **`dev.sebastiano.maradona:maradona-jewel`** (*Desktop JVM only*): `ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, and `MaradonaTheme.fromJewel(...)` read `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, and `JewelTheme.isDark` (supporting both standalone `IntUiTheme` and IntelliJ IDE `SwingBridgeTheme`).
 
 ![Material 3 and Jewel Desktop live theme connectors](docs/images/theme-connectors.png)
 
@@ -212,8 +213,10 @@ All library code lives in `commonMain` across three layers:
 ## Documentation
 
 - [**Supported Mermaid Syntax Reference (`docs/diagram-syntax.md`)**](docs/diagram-syntax.md) — Per-family syntax, directives, and styling options across all 23 families.
-- [**Theming, Interaction & SVG Export (`docs/theming-and-integration.md`)**](docs/theming-and-integration.md) — `MaradonaTheme`, `LocalMaradonaTheme`, `fromHost`, `onNodeClick`, `LocalMaradonaImageResolver`, and `MaradonaSvgExporter`.
+- [**Theming, Interaction & SVG Export (`docs/theming-and-integration.md`)**](docs/theming-and-integration.md) — `ProvideMaterial3MaradonaTheme`, `ProvideJewelMaradonaTheme`, `MaradonaTheme`, `LocalMaradonaTheme`, `fromHost`, `onNodeClick`, `LocalMaradonaImageResolver`, and `MaradonaSvgExporter`.
 - [**Oracle Verification & Testing (`docs/oracle-and-testing.md`)**](docs/oracle-and-testing.md) — Running unit tests, screenshot smoke tests, and the 71-fixture × 3-platform visual & layout oracle.
+- [**Publishing & Release Guide (`docs/publishing.md`)**](docs/publishing.md) — Maven Central coordinates, tag-driven release pipeline, `:verifyMavenLocalPublication`, and `scripts/central_portal_check.py`.
+- [**Changelog (`CHANGELOG.md`)**](CHANGELOG.md) — Release history and `0.1.0` summary.
 
 ## License
 

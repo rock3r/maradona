@@ -17,5 +17,5 @@ jobs:
           cache: gradle
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-      - name: Run desktop & unit tests
-        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest --console=plain --no-scan
+      - name: Run desktop & unit tests and verify Maven Local publication shape
+        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest verifyMavenLocalPublication --console=plain --no-scan

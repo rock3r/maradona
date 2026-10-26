@@ -63,7 +63,7 @@ object KanbanParser {
         var sectionWidth = 210f
         var ticketBaseUrl: String? = null
 
-        val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
+        val initMatch = Regex("""%%\{[\s\S]*?\}%%""").find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
             val titleMatch = Regex(
@@ -742,7 +742,7 @@ object KanbanParser {
 
     private fun normalizeText(s: String): String {
         val u = unquote(s)
-        val mdStripped = Regex("""^`(.*)`$""", RegexOption.DOT_MATCHES_ALL)
+        val mdStripped = Regex("""^`([\s\S]*)`$""")
             .find(u)?.groupValues?.get(1) ?: u
         val brReplaced = Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE).replace(mdStripped, " ")
         return brReplaced.trim()

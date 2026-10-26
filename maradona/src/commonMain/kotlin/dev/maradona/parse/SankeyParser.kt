@@ -34,7 +34,7 @@ object SankeyParser {
         var labelStyle = SankeyLabelStyle.Legacy
         val nodeColors = LinkedHashMap<String, String>()
 
-        val initMatch = Regex("""%%\{.*?\}%%""", setOf(RegexOption.DOT_MATCHES_ALL)).find(source)
+        val initMatch = Regex("""%%\{[\s\S]*?\}%%""").find(source)
         if (initMatch != null) {
             val initBody = initMatch.value
             val titleMatch = Regex(
@@ -86,7 +86,7 @@ object SankeyParser {
                 .find(initBody)?.let { m ->
                     suffix = m.groupValues[1].ifEmpty { m.groupValues[2] }
                 }
-            Regex("""['"]?nodeColors['"]?\s*:\s*\{([^}]*)\}""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            Regex("""['"]?nodeColors['"]?\s*:\s*\{([^}]*)\}""", RegexOption.IGNORE_CASE)
                 .find(initBody)?.groupValues?.get(1)?.let { ncBody ->
                     val entryRegex = Regex("""(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_ -]+))\s*:\s*(?:"([^"]*)"|'([^']*)')""")
                     for (m in entryRegex.findAll(ncBody)) {

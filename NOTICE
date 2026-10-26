@@ -1,0 +1,32 @@
+Maradona
+Copyright 2026 Sebastiano Poggi
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Third-Party Notices and Attributions
+--------------------------------------------------------------------------------
+
+1. Dagre (Sugiyama layered graph layout algorithm port in dev.maradona.layout.dagre)
+   Ported to pure Kotlin from dagre (https://github.com/dagrejs/dagre)
+   Copyright (c) 2012-2014 Chris Pettitt
+   Licensed under the MIT License (https://opensource.org/licenses/MIT).
+
+2. Pele (design inspiration and Flexoki light/dark palette defaults)
+   https://pele.run / https://github.com/steveyegge/pele
+   Flexoki color palette by Steph Ango (https://stephango.com/flexoki), MIT License.
+
+3. Mermaid (diagram syntax specification)
+   https://mermaid.js.org / https://github.com/mermaid-js/mermaid
+   Copyright (c) 2014-2026 Knut Sveidqvist
+   Licensed under the MIT License.
+
+4. Runtime Dependencies (declared via Maven POM / Gradle Module Metadata; not bundled):
+   - JetBrains Compose Multiplatform (org.jetbrains.compose.*) - Apache License 2.0
+   - JetBrains Kotlin Standard Library (org.jetbrains.kotlin.*) - Apache License 2.0
+   - AndroidX Tracing (androidx.tracing:tracing, Android & Desktop targets) - Apache License 2.0
+   - JetBrains Jewel Foundation (org.jetbrains.jewel:jewel-foundation, :maradona-jewel only) - Apache License 2.0
