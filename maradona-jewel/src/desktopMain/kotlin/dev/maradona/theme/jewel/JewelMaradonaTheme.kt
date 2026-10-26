@@ -21,6 +21,11 @@ private fun Color.orNullIfUnspecified(): Color? =
 private fun TextUnit.orDefault(fallback: TextUnit): TextUnit =
     if (this != TextUnit.Unspecified && value > 0f) this else fallback
 
+private fun contrastingForeground(background: Color): Color {
+    val luminance = 0.2126f * background.red + 0.7152f * background.green + 0.0722f * background.blue
+    return if (luminance < 0.52f) Color.White else Color(0xFF100F0F)
+}
+
 private fun deriveJewelNodeSurface(
     background: Color,
     toolwindowBackground: Color?,
@@ -57,6 +62,7 @@ fun MaradonaTheme.Companion.fromJewel(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -95,10 +101,12 @@ fun MaradonaTheme.Companion.fromJewel(
         ?: if (isDark) Color(0xFFBCBEC4) else Color(0xFF1E1F22)
     val resolvedMutedText = globalColors.text.info.orNullIfUnspecified()
         ?: lerp(resolvedText, resolvedBackground, 0.35f)
-    val resolvedAccent = accent
+    val resolvedAccent = accent?.orNullIfUnspecified()
         ?: globalColors.outlines.focused.orNullIfUnspecified()
         ?: globalColors.borders.focused.orNullIfUnspecified()
         ?: Color(0xFF3574F0)
+    val resolvedOnAccent = onAccent?.orNullIfUnspecified()
+        ?: contrastingForeground(resolvedAccent)
     val resolvedSecondary = secondaryAccent
         ?: if (isDark) Color(0xFF389FD6) else Color(0xFF00796B)
     val resolvedWarning = warning
@@ -155,6 +163,7 @@ fun MaradonaTheme.Companion.fromJewel(
         text = resolvedText,
         mutedText = resolvedMutedText,
         accent = resolvedAccent,
+        onAccent = resolvedOnAccent,
         secondaryAccent = resolvedSecondary,
         warning = resolvedWarning,
         error = resolvedError,
@@ -186,6 +195,7 @@ fun rememberJewelMaradonaTheme(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -219,6 +229,7 @@ fun rememberJewelMaradonaTheme(
         nodeBorder,
         nodeText,
         accent,
+        onAccent,
         secondaryAccent,
         warning,
         error,
@@ -247,6 +258,7 @@ fun rememberJewelMaradonaTheme(
             nodeBorder = nodeBorder,
             nodeText = nodeText,
             accent = accent,
+            onAccent = onAccent,
             secondaryAccent = secondaryAccent,
             warning = warning,
             error = error,
@@ -279,6 +291,7 @@ fun ProvideJewelMaradonaTheme(
     nodeBorder: Color? = null,
     nodeText: Color? = null,
     accent: Color? = null,
+    onAccent: Color? = null,
     secondaryAccent: Color? = null,
     warning: Color? = null,
     error: Color? = null,
@@ -303,6 +316,7 @@ fun ProvideJewelMaradonaTheme(
         nodeBorder = nodeBorder,
         nodeText = nodeText,
         accent = accent,
+        onAccent = onAccent,
         secondaryAccent = secondaryAccent,
         warning = warning,
         error = error,

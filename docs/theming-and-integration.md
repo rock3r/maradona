@@ -61,7 +61,7 @@ You can also call `rememberMaterial3MaradonaTheme(...)` in a `@Composable` scope
 
 ### JetBrains Jewel Theme Connector (`:maradona-jewel`, Desktop JVM Only)
 
-The `:maradona-jewel` module (`dev.maradona.theme.jewel`) targets **Desktop JVM only** (`jvm("desktop")`) so Android and iOS builds never pull in Jewel desktop dependencies. It reads `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, `JewelTheme.contentColor`, and `JewelTheme.isDark` from `org.jetbrains.jewel:jewel-foundation`, working seamlessly inside both standalone Jewel (`IntUiTheme`) and IntelliJ Platform IDE plugins (`SwingBridgeTheme`):
+The `:maradona-jewel` module (`dev.maradona.theme.jewel`) targets **Desktop JVM only** (`jvm("desktop")`, JDK 25+ matching Jewel 0.41 / IntelliJ Platform 262) so Android and iOS builds never pull in Jewel desktop dependencies. It reads `JewelTheme.globalColors`, `JewelTheme.defaultTextStyle`, `JewelTheme.editorTextStyle`, `JewelTheme.contentColor`, and `JewelTheme.isDark` from `org.jetbrains.jewel:jewel-foundation`, working seamlessly inside both standalone Jewel (`IntUiTheme`) and IntelliJ Platform IDE plugins (`SwingBridgeTheme`):
 
 ```kotlin
 import androidx.compose.ui.unit.sp
