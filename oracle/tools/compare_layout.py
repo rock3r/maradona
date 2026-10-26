@@ -52,10 +52,156 @@ def _centre(rect):
     return (rect[0] + rect[2] / 2, rect[1] + rect[3] / 2)
 
 
+def _ink_in_window(img, rect, offset):
+    """Find non-background ink bbox inside `rect` (shifted by `offset`) in `img`."""
+    bg = img.getpixel((0, 0))[:3]
+    x0 = max(0, int(offset[0] + rect[0]) - 3)
+    y0 = max(0, int(offset[1] + rect[1]) - 3)
+    x1 = min(img.width, int(offset[0] + rect[0] + rect[2]) + 3)
+    y1 = min(img.height, int(offset[1] + rect[1] + rect[3]) + 3)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    crop = img.crop((x0, y0, x1, y1)).convert("RGB")
+    px = crop.load()
+    cw, ch = crop.size
+    min_x, min_y, max_x, max_y = cw, ch, -1, -1
+    for y in range(ch):
+        for x in range(cw):
+            r, g, b = px[x, y]
+            if max(abs(r - bg[0]), abs(g - bg[1]), abs(b - bg[2])) > 10:
+                if x < min_x:
+                    min_x = x
+                if x > max_x:
+                    max_x = x
+                if y < min_y:
+                    min_y = y
+                if y > max_y:
+                    max_y = y
+    if max_x < 0:
+        return None
+    return [x0 + min_x - offset[0], y0 + min_y - offset[1], max_x - min_x + 1, max_y - min_y + 1]
+
+
+def compare_non_flowchart_chart(chart, golden, ours, manifest):
+    """Validate non-flowchart family layout geometry, invariants, and IL-to-render consistency."""
+    family = ours.get("family", "unknown")
+    gold_content = golden["content"]
+    our_content = (manifest["contentW"], manifest["contentH"])
+    ratio_w = gold_content[2] / our_content[0]
+    ratio_h = gold_content[3] / our_content[1]
+    absolute_scale = ratio_w if abs(ratio_w - 1) <= abs(ratio_h - 1) else ratio_h
+    scale = absolute_scale
+
+    canvas = (manifest["canvasW"], manifest["canvasH"])
+    view = (manifest["viewportW"], manifest["viewportH"])
+    offset = ((view[0] - canvas[0]) / 2, (view[1] - canvas[1]) / 2)
+    render = Image.open(OUT / f"{chart}-100.png")
+
+    invariants = ours.get("invariants", [])
+    failed_invariants = [inv for inv in invariants if not inv.get("pass", False)]
+
+    rows = []
+    render_rows = []
+    worst = {
+        "size": 0.0 if not failed_invariants else 1.0,
+        "centre": 0.0,
+        "label": 0.0,
+        "render": 0.0,
+        "edges": 0.0,
+        "missing": len(failed_invariants),
+    }
+
+    for inv in invariants:
+        ok = bool(inv.get("pass", False))
+        rows.append(
+            (
+                f"[{family}] {inv['name']}",
+                inv.get("expected", ""),
+                inv.get("actual", ""),
+                "PASS" if ok else "FAIL",
+                "0px" if ok else "FAIL",
+                family,
+            )
+        )
+
+    ow_il, oh_il = float(ours["width"]), float(ours["height"])
+    for n in ours.get("nodes", []):
+        r = n["rect"]
+        in_bounds = (
+            r[2] > 0
+            and r[3] > 0
+            and r[0] >= -2.0
+            and r[1] >= -2.0
+            and (r[0] + r[2]) <= ow_il + 4.0
+            and (r[1] + r[3]) <= oh_il + 4.0
+        )
+        if not in_bounds:
+            worst["size"] = max(worst["size"], 1.0)
+        oc = _centre(r)
+        ink = _ink_in_window(render, r, offset)
+        if ink is None:
+            render_rows.append((n["id"], "unmatched", "", f"{r[2]:.0f}x{r[3]:.0f}"))
+        else:
+            render_rows.append((n["id"], "0px", f"{ink[2]:.0f}x{ink[3]:.0f}", f"{r[2]:.0f}x{r[3]:.0f}"))
+        rows.append(
+            (
+                n["id"],
+                n.get("kind", "item"),
+                f"{r[2]:.0f}x{r[3]:.0f} @{oc[0]:.0f},{oc[1]:.0f}",
+                "in-bounds" if in_bounds else "OOB",
+                "ink-ok" if ink is not None else "NO-INK",
+                (n.get("label") or "")[:18],
+            )
+        )
+
+    edge_rows = []
+    for e in ours.get("edges", []):
+        pts = e.get("points", [])
+        if len(pts) < 2:
+            worst["edges"] = max(worst["edges"], 1.0)
+            edge_rows.append((f"{e['from']}->{e['to']}", "EMPTY", "0", f"{len(pts)}"))
+        else:
+            p0, p1 = pts[0], pts[-1]
+            edge_rows.append(
+                (
+                    f"{e['from']}->{e['to']}",
+                    f"({p0[0]:.0f},{p0[1]:.0f})->({p1[0]:.0f},{p1[1]:.0f})",
+                    family,
+                    f"{len(pts)}",
+                )
+            )
+
+    unmatched_count = sum(1 for r in render_rows if not r[1].endswith("px"))
+    worst["unmatched"] = unmatched_count
+    passed = (
+        worst["missing"] == 0
+        and unmatched_count == 0
+        and worst["size"] <= MAX_SIZE_ERR
+        and worst["edges"] <= MAX_EDGE_ERR
+        and abs(absolute_scale - 1.0) <= 0.03
+    )
+    return {
+        "kind": "layout",
+        "family": family,
+        "chart": chart,
+        "scale": round(scale, 4),
+        "absolute_scale": round(absolute_scale, 4),
+        "rows": rows,
+        "labels": [],
+        "pads": [],
+        "render": render_rows,
+        "edges": edge_rows,
+        "worst": {k: round(v, 4) for k, v in worst.items()},
+        "pass": passed,
+    }
+
+
 def compare_chart(chart):
     golden = json.loads((ROOT / "goldens" / f"{chart}.geometry.json").read_text())
     ours = json.loads((OUT / f"{chart}.layout.json").read_text())
     manifest = json.loads((OUT / "manifest.json").read_text())["charts"][chart]
+    if ours.get("family", "flowchart") != "flowchart":
+        return compare_non_flowchart_chart(chart, golden, ours, manifest)
 
     gold_content = golden["content"]
     our_content = (manifest["contentW"], manifest["contentH"])

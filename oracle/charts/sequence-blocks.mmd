@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant Web
+  participant API
+  participant DB
+  Web->>+API: POST /login
+  alt Valid token
+    API->>+DB: Load session
+    DB-->>-API: Session row
+    API-->>Web: 200 OK
+  else Expired token
+    API-->>-Web: 401 Unauthorized
+  end
+  Note over Web,API: Audited login flow

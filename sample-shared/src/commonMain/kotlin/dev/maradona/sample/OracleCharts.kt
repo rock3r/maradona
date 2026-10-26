@@ -4,6 +4,38 @@ package dev.maradona.sample
 /** Oracle chart sources, keyed by chart id (= oracle/charts file name). */
 object OracleCharts {
     val all: Map<String, String> = mapOf(
+        "architecture-basic" to """
+        architecture-beta
+          group cloud(cloud)[Service Tier]
+          service gw(internet)[Gateway] in cloud
+          service app(server)[Worker] in cloud
+          service db(database)[Storage] in cloud
+          gw:R --> L:app
+          app:R --> L:db
+        """.trimIndent(),
+        "architecture-junction" to """
+        architecture-beta
+          group core(server)[Core Mesh]
+          service ingress(internet)[Ingress] in core
+          service worker_a(server)[Worker A] in core
+          service worker_b(server)[Worker B] in core
+          junction router in core
+          ingress:R --> L:router
+          router:T --> B:worker_a
+          router:B --> T:worker_b
+        """.trimIndent(),
+        "architecture-multi-group" to """
+        architecture-beta
+          group edge_tier(cloud)[Edge Tier]
+          group data_tier(database)[Data Tier]
+          service cdn(internet)[CDN] in edge_tier
+          service api(server)[API] in edge_tier
+          service primary_db(database)[Primary DB] in data_tier
+          service replica_db(disk)[Replica] in data_tier
+          cdn:R --> L:api
+          api:R --> L:primary_db
+          primary_db:B --> T:replica_db
+        """.trimIndent(),
         "basic-td" to """
         flowchart TD
           A[Mermaid text] --> B{Flowchart?}
@@ -11,6 +43,56 @@ object OracleCharts {
           B -- No --> D[Pele]
           C --> E([Composables])
           D --> E
+        """.trimIndent(),
+        "block-basic" to """
+        block-beta
+          columns 3
+          Source["Mermaid Source"] arrow1<["parse"]>(right) AST["Typed AST"]
+          space:2 arrow2<["layout"]>(down)
+          Canvas["Compose UI"] arrow3<["render"]>(left) Geometry["Positioned Layout"]
+        """.trimIndent(),
+        "block-composite" to """
+        block-beta
+          columns 2
+          block:frontend:1
+            UI["Compose UI"]
+            State["View State"]
+          end
+          Backend["Layout Engine"]
+          frontend --> Backend
+        """.trimIndent(),
+        "block-shapes" to """
+        block-beta
+          columns 3
+          A("Rounded") arr1<["next"]>(right) B(["Stadium"])
+          C[("Database")] arr2<["check"]>(right) D{"Decision"}
+        """.trimIndent(),
+        "c4-basic" to """
+        C4Context
+          title Maradona Embedding Context
+          Person(dev, "Developer", "Embeds Mermaid diagrams in Compose")
+          System(maradona, "Maradona", "Compose Multiplatform diagram renderer")
+          Rel(dev, maradona, "Passes Mermaid source")
+        """.trimIndent(),
+        "c4-container" to """
+        C4Container
+          title Maradona Container View
+          Person(user, "App User", "Views interactive diagrams")
+          System_Boundary(app, "Host Application") {
+            Container(ui, "MaradonaDiagram", "Compose", "Zoom, pan, and semantics")
+            ContainerDb(cache, "Layout Cache", "Memory", "Cached positioned geometry")
+          }
+          Rel(user, ui, "Interacts with")
+          Rel(ui, cache, "Reads layout from")
+        """.trimIndent(),
+        "c4-dynamic" to """
+        C4Dynamic
+          title Diagram Render Sequence
+          Container(editor, "Source Editor", "Compose", "Mermaid text input")
+          Container(parser, "MaradonaParser", "Kotlin", "AST builder")
+          Container(layout, "Layout Engine", "Kotlin", "Coordinates")
+          RelIndex(1, editor, parser, "Passes source")
+          RelIndex(2, parser, layout, "Produces model")
         """.trimIndent(),
         "class-basic" to """
         classDiagram
@@ -22,6 +104,40 @@ object OracleCharts {
             +int qty
           }
           Order "1" *-- "*" LineItem : contains
+        """.trimIndent(),
+        "class-hierarchy" to """
+        classDiagram
+          class DiagramNode {
+            <<interface>>
+            +String id
+            +bounds() Rect
+          }
+          class ShapeNode {
+            +String label
+            +render()
+          }
+          class SubNode {
+            +int depth
+          }
+          DiagramNode <|.. ShapeNode : implements
+          ShapeNode <|-- SubNode : extends
+        """.trimIndent(),
+        "class-namespaces" to """
+        classDiagram
+          namespace Core {
+            class Parser {
+              +parse(String) Model
+            }
+            class LayoutEngine {
+              +layout(Model) Geometry
+            }
+          }
+          class Renderer {
+            +draw(Geometry)
+          }
+          Parser --> LayoutEngine : feeds
+          LayoutEngine o-- Renderer : configures
+          note for Parser "Pure Kotlin parser"
         """.trimIndent(),
         "edges-heads" to """
         flowchart TD
@@ -47,11 +163,418 @@ object OracleCharts {
             string id PK
           }
         """.trimIndent(),
+        "er-identifying" to """
+        erDiagram
+          ACCOUNT ||--|{ SESSION : owns
+          SESSION }|..|{ AUDIT_LOG : records
+          ACCOUNT {
+            string account_id PK
+            string handle UK
+          }
+          SESSION {
+            string session_id PK
+            string account_id FK
+          }
+          AUDIT_LOG {
+            string log_id PK
+            string action
+          }
+        """.trimIndent(),
+        "er-multi-entity" to """
+        erDiagram
+          PROJECT ||--o{ MODULE : contains
+          MODULE ||--|{ SOURCE_FILE : compiles
+          DEVELOPER |o--o{ MODULE : maintains
+          PROJECT {
+            string key PK
+            string title
+          }
+          MODULE {
+            string name PK
+            string target
+          }
+          SOURCE_FILE {
+            string path PK
+            int lines
+          }
+          DEVELOPER {
+            string username PK
+          }
+        """.trimIndent(),
+        "gantt-basic" to """
+        gantt
+          title Release Plan
+          dateFormat YYYY-MM-DD
+          section Core
+            Parser       :done, p1, 2026-10-01, 3d
+            Layout       :active, p2, after p1, 4d
+          section Verify
+            Oracle Suite :crit, p3, after p2, 3d
+        """.trimIndent(),
+        "gantt-milestones" to """
+        gantt
+          title Milestone Schedule
+          dateFormat YYYY-MM-DD
+          excludes weekends
+          section Design
+            Spec Review   :done, d1, 2026-10-01, 2d
+            API Freeze    :milestone, m1, after d1, 0d
+          section Build
+            Implementation :active, b1, after d1, 3d
+            GA Ship        :crit, milestone, m2, after b1, 0d
+        """.trimIndent(),
+        "gantt-parallel" to """
+        gantt
+          title Parallel Tracks
+          dateFormat YYYY-MM-DD
+          section Track A
+            Frontend UI   :a1, 2026-10-05, 4d
+            Theme Polish  :a2, after a1, 2d
+          section Track B
+            Backend API   :crit, b1, 2026-10-05, 3d
+            Load Tests    :b2, after b1, 3d
+        """.trimIndent(),
+        "gitgraph-basic" to """
+        gitGraph
+          commit id: "init"
+          branch feature
+          commit id: "parse"
+          commit id: "layout" type: HIGHLIGHT
+          checkout main
+          merge feature id: "release" tag: "v1.0"
+        """.trimIndent(),
+        "gitgraph-cherrypick" to """
+        gitGraph
+          commit id: "c1"
+          branch hotfix
+          commit id: "fix-bug" type: REVERSE
+          checkout main
+          commit id: "c2"
+          cherry-pick id: "fix-bug"
+          commit id: "c3" tag: "v1.1"
+        """.trimIndent(),
+        "gitgraph-tb" to """
+        gitGraph TB:
+          commit id: "start"
+          branch dev
+          commit id: "work-1"
+          commit id: "work-2"
+          checkout main
+          merge dev id: "merged"
+          commit id: "done"
+        """.trimIndent(),
+        "journey-basic" to """
+        journey
+          title Diagram Authoring Flow
+          section Write
+            Edit Mermaid source: 5: Author
+            Preview live layout: 5: Author, Reviewer
+          section Share
+            Export standalone SVG: 4: Author
+        """.trimIndent(),
+        "journey-mixed-scores" to """
+        journey
+          title Incident Response
+          section Detect
+            Pager alert fires: 1: OnCall
+            Open dashboard: 3: OnCall
+          section Mitigate
+            Roll back bad deploy: 4: OnCall, SRE
+            Verify green metrics: 5: OnCall, SRE
+        """.trimIndent(),
+        "journey-multi-section" to """
+        journey
+          title Developer Onboarding
+          section Setup
+            Clone repository: 5: Dev
+            Run Gradle check: 4: Dev
+          section First PR
+            Add diagram test: 5: Dev
+            Pass code review: 5: Dev, Lead
+          section Release
+            Merge to master: 5: Lead
+        """.trimIndent(),
+        "kanban-basic" to """
+        kanban
+          todo[Todo]
+            t1[Expand oracle goldens]
+          inprog[In Progress]
+            t2[Verify mobile captures]
+          done[Done]
+            t3[Ship 23 diagram families]
+        """.trimIndent(),
+        "kanban-metadata" to """
+        kanban
+          backlog[Backlog]
+            b1[Audit diagram gaps]@{ assigned: 'alice', priority: 'High' }
+          active[Active]
+            a1[Implement viewport culling]@{ ticket: MRD-31, assigned: 'bob', priority: 'Very High' }
+          verified[Verified]
+            v1[Run oracle comparison]@{ ticket: MRD-30, priority: 'Low' }
+        """.trimIndent(),
+        "kanban-multi-card" to """
+        kanban
+          col1[Design]
+            d1[Draft grammar]
+            d2[Define model]
+          col2[Build]
+            b1[Write parser]
+            b2[Write layout]
+          col3[Test]
+            t1[Unit tests]
+            t2[Golden check]
+        """.trimIndent(),
+        "mindmap-basic" to """
+        mindmap
+          root((Maradona))
+            Parser
+              Flowchart
+              Sequence
+            Layout
+              Dagre
+              Trees
+            Render
+              Compose
+              Export
+        """.trimIndent(),
+        "mindmap-deep" to """
+        mindmap
+          root((Platform))
+            Desktop
+              JVM
+                Skiko
+                Compose
+            Mobile
+              Android
+                Canvas
+              iOS
+                UIKit
+            Export
+              SVG
+                Vector
+        """.trimIndent(),
+        "mindmap-shapes" to """
+        mindmap
+          root((Shapes))
+            [Square Box]
+              (Rounded Box)
+            {{Hexagon Node}}
+              ))Bang Node((
+            )Cloud Node(
+              ((Circle Leaf))
+        """.trimIndent(),
+        "packet-basic" to """
+        packet-beta
+          0-15: "Source Port"
+          16-31: "Destination Port"
+          32-47: "Length"
+          48-63: "Checksum"
+        """.trimIndent(),
+        "packet-flags" to """
+        packet-beta
+          0-3: "Version"
+          4-7: "IHL"
+          8-15: "TOS"
+          16-31: "Total Length"
+          32-47: "Identification"
+          48: "R"
+          49: "DF"
+          50: "MF"
+          51-63: "Fragment Offset"
+        """.trimIndent(),
+        "packet-multirow" to """
+        packet-beta
+          0-31: "Sequence Number"
+          32-63: "Acknowledgment Number"
+          64-79: "Window Size"
+          80-95: "Urgent Pointer"
+        """.trimIndent(),
         "pie-basic" to """
         pie title Runtime Split
           "Parse" : 20
           "Layout" : 45
           "Render" : 35
+        """.trimIndent(),
+        "pie-showdata" to """
+        pie showData
+          title Test Suite Breakdown
+          "Parser Tests" : 40
+          "Layout Tests" : 35
+          "Render Tests" : 15
+          "Export Tests" : 10
+        """.trimIndent(),
+        "pie-skewed" to """
+        pie
+          title Traffic Sources
+          "Direct" : 62
+          "Search" : 23
+          "Referral" : 10
+          "Campaign" : 5
+        """.trimIndent(),
+        "quadrant-basic" to """
+        quadrantChart
+          title Feature Priority Matrix
+          x-axis Low Effort --> High Effort
+          y-axis Low Impact --> High Impact
+          quadrant-1 Strategic Wins
+          quadrant-2 Quick Wins
+          quadrant-3 Fill Ins
+          quadrant-4 Hard Slogs
+          Parser Core: [0.25, 0.85]
+          Dagre Layout: [0.75, 0.90]
+          SVG Export: [0.35, 0.72]
+          Legacy Cleanup: [0.20, 0.30]
+        """.trimIndent(),
+        "quadrant-dense" to """
+        quadrantChart
+          title Module Maturity
+          x-axis Early --> Mature
+          y-axis Niche --> Core
+          quadrant-1 Flagship
+          quadrant-2 Growing
+          quadrant-3 Emerging
+          quadrant-4 Stable Utility
+          Flowchart: [0.90, 0.92]
+          Sequence: [0.84, 0.85]
+          Class: [0.78, 0.74]
+          State: [0.72, 0.68]
+          Sankey: [0.40, 0.42]
+          Packet: [0.65, 0.30]
+        """.trimIndent(),
+        "quadrant-styled" to """
+        quadrantChart
+          title Risk vs Value
+          x-axis Low Risk --> High Risk
+          y-axis Low Value --> High Value
+          quadrant-1 Monitor Closely
+          quadrant-2 Invest Now
+          quadrant-3 Deprioritize
+          quadrant-4 Avoid
+          Core Engine: [0.20, 0.90]
+          Theme API: [0.30, 0.78]
+          Experimental Mode: [0.80, 0.65]
+          Old Wrapper: [0.75, 0.20]
+        """.trimIndent(),
+        "radar-basic" to """
+        radar-beta
+          title "Engine Metrics"
+          axis speed["Speed"], fidelity["Fidelity"], a11y["Accessibility"], theming["Theming"], export["Export"]
+          curve maradona["Maradona"]{92, 88, 95, 94, 90}
+          curve baseline["Baseline"]{70, 75, 60, 65, 72}
+          max 100
+          min 0
+        """.trimIndent(),
+        "radar-polygon" to """
+        radar-beta
+          title "Platform Readiness"
+          axis d["Desktop"], a["Android"], i["iOS"], s["SVG"], t["Theme"], c["Click"]
+          curve v1["v1.0"]{95, 90, 90, 92, 94, 96}
+          graticule polygon
+          max 100
+          min 0
+        """.trimIndent(),
+        "radar-three-curves" to """
+        radar-beta
+          title "Renderer Comparison"
+          axis parse["Parse"], layout["Layout"], draw["Draw"], memory["Memory"]
+          curve alpha["Alpha"]{60, 65, 70, 60}
+          curve beta["Beta"]{80, 78, 82, 75}
+          curve prod["Release"]{94, 92, 95, 90}
+          max 100
+          min 0
+        """.trimIndent(),
+        "requirement-basic" to """
+        requirementDiagram
+          requirement render_req {
+            id: 1
+            text: Render all 23 Mermaid families.
+            risk: medium
+            verifymethod: test
+          }
+          element compose_engine {
+            type: module
+            docRef: maradona/render
+          }
+          compose_engine - satisfies -> render_req
+        """.trimIndent(),
+        "requirement-hierarchy" to """
+        requirementDiagram
+          requirement parent_req {
+            id: 1
+            text: Support multiplatform rendering.
+            risk: high
+            verifymethod: inspection
+          }
+          interfaceRequirement child_req {
+            id: 1.1
+            text: Expose Compose theme tokens.
+            risk: low
+            verifymethod: test
+          }
+          element theme_api {
+            type: api
+            docRef: maradona/theme
+          }
+          parent_req - contains -> child_req
+          theme_api - satisfies -> child_req
+        """.trimIndent(),
+        "requirement-kinds" to """
+        requirementDiagram
+          functionalRequirement parse_req {
+            id: 10
+            text: Parse Mermaid syntax deterministically.
+            risk: low
+            verifymethod: test
+          }
+          performanceRequirement perf_req {
+            id: 20
+            text: Pan zoomed flowcharts smoothly.
+            risk: medium
+            verifymethod: demonstration
+          }
+          element layout_mod {
+            type: component
+            docRef: maradona/layout
+          }
+          layout_mod - satisfies -> parse_req
+          layout_mod - verifies -> perf_req
+        """.trimIndent(),
+        "sankey-basic" to """
+        sankey-beta
+          Solar,Grid,120
+          Wind,Grid,180
+          Grid,Homes,190
+          Grid,Industry,110
+        """.trimIndent(),
+        "sankey-branching" to """
+        sankey-beta
+          RegionA,Hub,150
+          RegionB,Hub,100
+          Hub,Service1,120
+          Hub,Service2,80
+          Hub,Archive,50
+        """.trimIndent(),
+        "sankey-multistage" to """
+        sankey-beta
+          Input,Parser,100
+          Parser,AST,100
+          AST,Layout,70
+          AST,Exporter,30
+          Layout,Canvas,70
+        """.trimIndent(),
+        "sequence-actors" to """
+        sequenceDiagram
+          autonumber
+          box Client Tier
+            actor User
+            participant App
+          end
+          participant Auth
+          User->>App: Tap Sign In
+          App->>App: Validate form
+          App->>Auth: Verify credentials
+          Auth-->>App: Issued token
+          App-->>User: Welcome screen
         """.trimIndent(),
         "sequence-basic" to """
         sequenceDiagram
@@ -59,6 +582,21 @@ object OracleCharts {
           participant Server
           Client->>Server: Request
           Server-->>Client: Response
+        """.trimIndent(),
+        "sequence-blocks" to """
+        sequenceDiagram
+          participant Web
+          participant API
+          participant DB
+          Web->>+API: POST /login
+          alt Valid token
+            API->>+DB: Load session
+            DB-->>-API: Session row
+            API-->>Web: 200 OK
+          else Expired token
+            API-->>-Web: 401 Unauthorized
+          end
+          Note over Web,API: Audited login flow
         """.trimIndent(),
         "shapes-lr" to """
         flowchart LR
@@ -80,6 +618,33 @@ object OracleCharts {
           [*] --> Idle
           Idle --> Active : start
           Active --> [*] : stop
+        """.trimIndent(),
+        "state-choice-fork" to """
+        stateDiagram-v2
+          state check <<choice>>
+          state fork_work <<fork>>
+          state join_work <<join>>
+          [*] --> Validate
+          Validate --> check
+          check --> fork_work : valid
+          check --> Rejected : invalid
+          fork_work --> Audit
+          fork_work --> Persist
+          Audit --> join_work
+          Persist --> join_work
+          join_work --> [*]
+          Rejected --> [*]
+        """.trimIndent(),
+        "state-composite" to """
+        stateDiagram-v2
+          [*] --> Connecting
+          state Connecting {
+            [*] --> Handshake
+            Handshake --> Authenticated : tls_ok
+            Authenticated --> [*]
+          }
+          Connecting --> Ready : session_open
+          Ready --> [*] : close
         """.trimIndent(),
         "styling" to """
         flowchart TD
@@ -104,6 +669,117 @@ object OracleCharts {
           VM --> P
           R --> UI
           style R fill:#d3e5f5,stroke:#205ea6
+        """.trimIndent(),
+        "timeline-basic" to """
+        timeline
+          title Maradona Milestones
+          section Core
+            v0.1 : Flowchart Parser : Dagre Layout
+            v0.5 : UML Diagrams
+          section Full Suite
+            v1.0 : All 23 Families : SVG Export
+        """.trimIndent(),
+        "timeline-multi-era" to """
+        timeline
+          title Architecture Evolution
+          section Phase 1
+            2024 : Prototype : JVM Only
+          section Phase 2
+            2025 : Multiplatform : Android Target : iOS Target
+          section Phase 3
+            2026 : Oracle Verification : Standalone SVG
+        """.trimIndent(),
+        "timeline-single-section" to """
+        timeline
+          title Quarterly Releases
+          Q1 : Alpha Parser : Basic Nodes
+          Q2 : Dagre Layout : Spline Edges
+          Q3 : Theme Engine : Jewel Presets
+          Q4 : Full 23 Families
+        """.trimIndent(),
+        "treemap-basic" to """
+        treemap-beta
+        "Maradona Modules"
+          "Layout": 45
+          "Render": 35
+          "Parser": 20
+        """.trimIndent(),
+        "treemap-nested" to """
+        treemap-beta
+        "Engineering"
+          "Frontend"
+            "Compose UI": 40
+            "Theme Tokens": 25
+          "Backend"
+            "Dagre Layout": 35
+            "Parsers": 30
+        "Operations"
+          "Oracle CI": 20
+          "SVG Export": 15
+        """.trimIndent(),
+        "treemap-skewed" to """
+        treemap-beta
+        "Storage Footprint"
+          "Golden PNGs": 55
+          "Golden SVGs": 25
+          "Kotlin Sources": 14
+          "Scripts": 6
+        """.trimIndent(),
+        "xychart-basic" to """
+        xychart-beta
+          title "Throughput by Quarter"
+          x-axis [Q1, Q2, Q3, Q4]
+          y-axis "Requests (k)" 0 --> 100
+          bar [35, 52, 68, 88]
+          line [30, 50, 70, 90]
+        """.trimIndent(),
+        "xychart-horizontal" to """
+        xychart-beta horizontal
+          title "Latency by Stage (ms)"
+          x-axis [Parse, Rank, Order, Route, Draw]
+          y-axis "Time (ms)" 0 --> 50
+          bar [6, 18, 24, 15, 9]
+        """.trimIndent(),
+        "xychart-multi-line" to """
+        xychart-beta
+          title "Cache Hit Rate vs Misses"
+          x-axis [M1, M2, M3, M4, M5]
+          y-axis "Percent" 0 --> 100
+          bar [60, 72, 81, 88, 94]
+          line [40, 28, 19, 12, 6]
+          line [50, 65, 78, 85, 91]
+        """.trimIndent(),
+        "zenuml-basic" to """
+        zenuml
+          title Checkout Sequence
+          Client->OrderService.createOrder() {
+            PaymentGateway.charge()
+            return orderId
+          }
+        """.trimIndent(),
+        "zenuml-control" to """
+        zenuml
+          title Retry Control Flow
+          Client->Gateway.send() {
+            while (attempts < 3) {
+              res = Backend.call()
+              if (res.ok) {
+                return res
+              }
+            }
+          }
+        """.trimIndent(),
+        "zenuml-stereotypes" to """
+        zenuml
+          title Stereotyped Lifelines
+          @Actor User
+          @Boundary WebApp
+          @Database Store
+          User->WebApp.loadProfile() {
+            WebApp->WebApp.validateSession()
+            profile = Store.fetchProfile()
+            return profile
+          }
         """.trimIndent(),
     )
 }

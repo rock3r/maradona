@@ -1,0 +1,15 @@
+classDiagram
+  class DiagramNode {
+    <<interface>>
+    +String id
+    +bounds() Rect
+  }
+  class ShapeNode {
+    +String label
+    +render()
+  }
+  class SubNode {
+    +int depth
+  }
+  DiagramNode <|.. ShapeNode : implements
+  ShapeNode <|-- SubNode : extends

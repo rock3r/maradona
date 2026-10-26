@@ -1,0 +1,10 @@
+zenuml
+  title Stereotyped Lifelines
+  @Actor User
+  @Boundary WebApp
+  @Database Store
+  User->WebApp.loadProfile() {
+    WebApp->WebApp.validateSession()
+    profile = Store.fetchProfile()
+    return profile
+  }

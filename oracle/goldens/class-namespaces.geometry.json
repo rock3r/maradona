@@ -1,0 +1,109 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  602,
+  1420
+ ],
+ "content": [
+  14,
+  15,
+  558,
+  1354
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-classId-Parser-0",
+   "shape": "path",
+   "label": "Parser",
+   "box": [
+    114,
+    272,
+    358,
+    232
+   ],
+   "label_box": [
+    117,
+    307,
+    352,
+    172
+   ],
+   "centre": [
+    293.0,
+    388.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-classId-LayoutEngine-1",
+   "shape": "path",
+   "label": "LayoutEngine",
+   "box": [
+    64,
+    639,
+    458,
+    232
+   ],
+   "label_box": [
+    67,
+    673,
+    452,
+    173
+   ],
+   "centre": [
+    293.0,
+    755.0
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-classId-Renderer-2",
+   "shape": "path",
+   "label": "Renderer",
+   "box": [
+    134,
+    1135,
+    318,
+    231
+   ],
+   "label_box": [
+    137,
+    1169,
+    312,
+    172
+   ],
+   "centre": [
+    293.0,
+    1250.5
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-note0",
+   "shape": "path",
+   "label": "Pure Kotlin parser",
+   "box": [
+    176.3,
+    16.0,
+    248.1,
+    66
+   ],
+   "label_box": [
+    186,
+    37,
+    216,
+    26
+   ],
+   "centre": [
+    300.35,
+    49.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

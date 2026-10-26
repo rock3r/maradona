@@ -1,0 +1,10 @@
+zenuml
+  title Retry Control Flow
+  Client->Gateway.send() {
+    while (attempts < 3) {
+      res = Backend.call()
+      if (res.ok) {
+        return res
+      }
+    }
+  }

@@ -147,7 +147,7 @@ shot() { # chart level fx level fx fy index density
     # Wait for this launch's own log line: proves the new render has been laid
     # out, so the screenshot cannot show the previous one.
     get_field canvas "$2" "$3" "$4" >/dev/null || true
-    sleep 0.5
+    sleep 0.25
     focus=$(adb -s "$SERIAL" </dev/null shell dumpsys window 2>/dev/null | grep -m1 mCurrentFocus || true)
     case "$focus" in
       *"$PKG"*)
@@ -183,13 +183,14 @@ for chart in "${CHARTS[@]}"; do
   # loop: calibrate.py rejects anything that is not a clean diagram render.
   DENSITY=""
   for attempt in 1 2 3 4 5; do
-    sleep 1.5
+    sleep 0.5
     adb -s "$SERIAL" exec-out screencap -p </dev/null > "$OUT/.probe.png"
     if DENSITY=$("$PY" "$ROOT/oracle/tools/calibrate.py" --capture "$OUT/.probe.png" \
       --scale 0.1 --density "$RAW_DENSITY" --gold "$ROOT/oracle/goldens/$chart.png" 2>/dev/null); then
       break
     fi
     log "  calibration attempt $attempt was not a clean render; retrying"
+    sleep 1.0
     DENSITY=""
   done
   if [ -z "$DENSITY" ]; then
@@ -201,7 +202,7 @@ for chart in "${CHARTS[@]}"; do
   # Pan 0.25 is used only here, so the log line is unambiguously this render.
   adb -s "$SERIAL" logcat -c </dev/null >/dev/null 2>&1 || true
   launch "$chart" 100 0.25 0.25 "$DENSITY"
-  sleep 1
+  sleep 0.2
   if ! CANVAS=$(get_field canvas 100 0.25 0.25); then
     echo "ERROR: no canvas size logged for $chart" >&2
     exit 1
@@ -245,7 +246,7 @@ for chart in "${CHARTS[@]}"; do
   # (pan 0.75 is used only here).
   adb -s "$SERIAL" logcat -c </dev/null >/dev/null 2>&1 || true
   launch "$chart" 100 0.75 0.75 "$DENSITY"
-  sleep 1
+  sleep 0.2
   if ! CANVAS=$(get_field canvas 100 0.75 0.75); then
     echo "ERROR: no canvas size logged for $chart" >&2
     exit 1

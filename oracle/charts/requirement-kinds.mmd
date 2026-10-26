@@ -1,0 +1,19 @@
+requirementDiagram
+  functionalRequirement parse_req {
+    id: 10
+    text: Parse Mermaid syntax deterministically.
+    risk: low
+    verifymethod: test
+  }
+  performanceRequirement perf_req {
+    id: 20
+    text: Pan zoomed flowcharts smoothly.
+    risk: medium
+    verifymethod: demonstration
+  }
+  element layout_mod {
+    type: component
+    docRef: maradona/layout
+  }
+  layout_mod - satisfies -> parse_req
+  layout_mod - verifies -> perf_req

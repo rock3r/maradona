@@ -1,0 +1,65 @@
+{
+ "scale": 2,
+ "origin": [
+  4.0,
+  4.0
+ ],
+ "size": [
+  380,
+  1242
+ ],
+ "content": [
+  14,
+  14,
+  336,
+  1165
+ ],
+ "nodes": [
+  {
+   "id": "my-svg-classId-DiagramNode-0",
+   "shape": "path",
+   "label": "\u00abinterface\u00bb",
+   "box": [
+    17,
+    17,
+    330,
+    297
+   ],
+   "label_box": [
+    20,
+    50,
+    324,
+    239
+   ],
+   "centre": [
+    182.0,
+    165.5
+   ],
+   "svg_box": null
+  },
+  {
+   "id": "my-svg-classId-ShapeNode-1",
+   "shape": "path",
+   "label": "ShapeNode",
+   "box": [
+    48,
+    509,
+    268,
+    256
+   ],
+   "label_box": [
+    51,
+    542,
+    262,
+    199
+   ],
+   "centre": [
+    182.0,
+    637.0
+   ],
+   "svg_box": null
+  }
+ ],
+ "edges": [],
+ "clusters": []
+}

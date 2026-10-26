@@ -1,0 +1,10 @@
+architecture-beta
+  group edge_tier(cloud)[Edge Tier]
+  group data_tier(database)[Data Tier]
+  service cdn(internet)[CDN] in edge_tier
+  service api(server)[API] in edge_tier
+  service primary_db(database)[Primary DB] in data_tier
+  service replica_db(disk)[Replica] in data_tier
+  cdn:R --> L:api
+  api:R --> L:primary_db
+  primary_db:B --> T:replica_db

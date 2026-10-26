@@ -1,0 +1,9 @@
+architecture-beta
+  group core(server)[Core Mesh]
+  service ingress(internet)[Ingress] in core
+  service worker_a(server)[Worker A] in core
+  service worker_b(server)[Worker B] in core
+  junction router in core
+  ingress:R --> L:router
+  router:T --> B:worker_a
+  router:B --> T:worker_b
