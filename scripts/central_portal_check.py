@@ -131,7 +131,9 @@ COMPONENT_SUFFIXES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-CHECKSUM_ALGORITHMS = ("md5", "sha1", "sha256", "sha512")
+REQUIRED_CHECKSUM_ALGORITHMS = ("md5", "sha1")
+OPTIONAL_CHECKSUM_ALGORITHMS = ("sha256", "sha512")
+ALL_CHECKSUM_ALGORITHMS = REQUIRED_CHECKSUM_ALGORITHMS + OPTIONAL_CHECKSUM_ALGORITHMS
 
 REQUIRED_MAIN_JAR_ENTRIES: dict[str, tuple[str, ...]] = {
     "maradona-desktop": (
@@ -174,15 +176,30 @@ def expected_payload_files_for_version(version: str) -> list[str]:
     return files
 
 
-def expected_files_for_version(version: str) -> list[str]:
+def expected_required_files_for_version(version: str) -> list[str]:
+    """Files always uploaded by com.vanniktech.maven.publish 0.37+ (payload, .asc, and payload .md5/.sha1)."""
     files: list[str] = []
     for relative_path in expected_payload_files_for_version(version):
         files.append(relative_path)
         files.append(f"{relative_path}.asc")
-        for algorithm in CHECKSUM_ALGORITHMS:
+        for algorithm in REQUIRED_CHECKSUM_ALGORITHMS:
             files.append(f"{relative_path}.{algorithm}")
+    return files
+
+
+def expected_optional_files_for_version(version: str) -> list[str]:
+    """Additional checksums (.sha256/.sha512 and .asc.* checksums) that Central Portal may add server-side."""
+    files: list[str] = []
+    for relative_path in expected_payload_files_for_version(version):
+        for algorithm in OPTIONAL_CHECKSUM_ALGORITHMS:
+            files.append(f"{relative_path}.{algorithm}")
+        for algorithm in ALL_CHECKSUM_ALGORITHMS:
             files.append(f"{relative_path}.asc.{algorithm}")
     return files
+
+
+def expected_files_for_version(version: str) -> list[str]:
+    return expected_required_files_for_version(version)
 
 
 def field_map(item: dict) -> dict[str, str]:
@@ -399,21 +416,27 @@ def validate_deployment(base_url: str, token: str, deployment_id: str, version: 
     print()
 
     remote_files = browse_deployment_files(base_url, token, deployment_id)
-    expected_file_set = set(expected_files_for_version(version))
+    required_file_set = set(expected_required_files_for_version(version))
+    optional_file_set = set(expected_optional_files_for_version(version))
+    allowed_file_set = required_file_set | optional_file_set
     remote_file_set = set(remote_files)
-    missing_files = sorted(expected_file_set - remote_file_set)
-    unexpected_files = sorted(remote_file_set - expected_file_set)
+    missing_files = sorted(required_file_set - remote_file_set)
+    unexpected_files = sorted(remote_file_set - allowed_file_set)
     if missing_files:
         errors.append("missing expected files: " + ", ".join(missing_files))
     if unexpected_files:
         errors.append("unexpected files in deployment: " + ", ".join(unexpected_files))
 
     checked: list[FileCheck] = []
-    expected_files = expected_files_for_version(version)
-    total_files = len(expected_files)
+    files_to_download = [
+        f
+        for f in (expected_required_files_for_version(version) + expected_optional_files_for_version(version))
+        if f in remote_file_set or f in required_file_set
+    ]
+    total_files = len(files_to_download)
     with tempfile.TemporaryDirectory(prefix="maradona-central-") as tmp:
         tmp_path = Path(tmp)
-        for index, relative_path in enumerate(expected_files, start=1):
+        for index, relative_path in enumerate(files_to_download, start=1):
             print(f"[{index:03d}/{total_files}] {relative_path}", flush=True)
             file_check = download_to_path(base_url, token, deployment_id, relative_path, tmp_path)
             listed_size = remote_files.get(relative_path)
@@ -427,14 +450,26 @@ def validate_deployment(base_url: str, token: str, deployment_id: str, version: 
         for relative_path in expected_payload_files_for_version(version):
             payload = tmp_path / relative_path
             signature = tmp_path / f"{relative_path}.asc"
+            for algorithm in REQUIRED_CHECKSUM_ALGORITHMS:
+                checksum_path = tmp_path / f"{relative_path}.{algorithm}"
+                actual = digest_file(payload, algorithm)
+                expected = read_checksum(checksum_path)
+                if actual != expected:
+                    errors.append(
+                        f"{checksum_path.relative_to(tmp_path)} is {expected}, "
+                        f"but {payload.relative_to(tmp_path)} hashes to {actual}"
+                    )
             for signed_path in (payload, signature):
-                for algorithm in CHECKSUM_ALGORITHMS:
-                    checksum_path = tmp_path / f"{signed_path.relative_to(tmp_path)}.{algorithm}"
+                for algorithm in ALL_CHECKSUM_ALGORITHMS:
+                    rel_chk = f"{signed_path.relative_to(tmp_path)}.{algorithm}"
+                    checksum_path = tmp_path / rel_chk
+                    if not checksum_path.is_file():
+                        continue
                     actual = digest_file(signed_path, algorithm)
                     expected = read_checksum(checksum_path)
                     if actual != expected:
                         errors.append(
-                            f"{checksum_path.relative_to(tmp_path)} is {expected}, "
+                            f"{rel_chk} is {expected}, "
                             f"but {signed_path.relative_to(tmp_path)} hashes to {actual}"
                         )
 
@@ -473,10 +508,11 @@ def print_files(base_url: str, token: str, deployment_id: str, version: str) -> 
     for relative_path, size in sorted(remote_files.items()):
         print(f"{size:>10}  {relative_path}")
 
-    expected_file_set = set(expected_files_for_version(version))
+    required_file_set = set(expected_required_files_for_version(version))
+    optional_file_set = set(expected_optional_files_for_version(version))
     remote_file_set = set(remote_files)
-    missing_files = sorted(expected_file_set - remote_file_set)
-    unexpected_files = sorted(remote_file_set - expected_file_set)
+    missing_files = sorted(required_file_set - remote_file_set)
+    unexpected_files = sorted(remote_file_set - (required_file_set | optional_file_set))
     if missing_files or unexpected_files:
         print("\nFile listing differs from expected Maradona release shape:", file=sys.stderr)
         for relative_path in missing_files:
