@@ -58,14 +58,13 @@ private class PacketLayoutHolder {
     var visibleViewport: DiagramRect? = null
 }
 
-private fun PositionedPacketBlock.blockAndBitsBounds(showBits: Boolean, density: Float): DiagramRect {
-    if (!showBits) return rect
-    val bitH = 16f * density
+private fun PositionedPacketBlock.blockAndBitsBounds(showBits: Boolean, bitAllowancePx: Float): DiagramRect {
+    if (!showBits || bitAllowancePx <= 0f) return rect
     return DiagramRect(
         x = rect.x,
-        y = rect.y - bitH,
+        y = rect.y - bitAllowancePx,
         width = rect.width,
-        height = rect.height + bitH,
+        height = rect.height + bitAllowancePx,
     )
 }
 
@@ -133,6 +132,22 @@ fun MaradonaPacketLayout(
         ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
     val activeCullViewport = effectiveViewport
     holder.visibleViewport = activeCullViewport
+    val bitAllowancePx = if (diagram.config.showBits) {
+        val maxBitFontSize = minOf(theme.scaledSp(10f).value, 11f).sp
+        val measuredBit = measurePlainTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = "00",
+            style = TextStyle(
+                fontFamily = theme.monospaceFontFamily,
+                fontSize = maxBitFontSize,
+            ),
+            maxLines = 1,
+        )
+        measuredBit.height + 4f * renderDensity
+    } else {
+        0f
+    }
 
     Layout(
         modifier = modifier
@@ -152,7 +167,7 @@ fun MaradonaPacketLayout(
                     val offscreenEvents = buildList {
                         for (pb in precomputedLayout.blocks) {
                             if (rectIntersectsViewport(
-                                    pb.blockAndBitsBounds(diagram.config.showBits, renderDensity),
+                                    pb.blockAndBitsBounds(diagram.config.showBits, bitAllowancePx),
                                     vp,
                                     8f * renderDensity,
                                 )
@@ -194,7 +209,7 @@ fun MaradonaPacketLayout(
                 if (activeCullViewport != null) {
                     val pb = precomputedLayout.blocks.getOrNull(idx)
                     if (pb != null && !rectIntersectsViewport(
-                            pb.blockAndBitsBounds(diagram.config.showBits, renderDensity),
+                            pb.blockAndBitsBounds(diagram.config.showBits, bitAllowancePx),
                             activeCullViewport,
                             8f * renderDensity,
                         )

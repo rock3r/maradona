@@ -93,10 +93,12 @@ internal fun measureAnnotatedTextSize(
     text: AnnotatedString,
     style: TextStyle,
     maxWidthPx: Int = Constraints.Infinity,
+    maxLines: Int = Int.MAX_VALUE,
 ): DiagramSize {
     val res = textMeasurer.measure(
         text = text,
         style = style,
+        maxLines = maxLines,
         constraints = Constraints(maxWidth = maxWidthPx),
         density = densityObj,
     )
@@ -109,12 +111,14 @@ internal fun measurePlainTextSize(
     text: String,
     style: TextStyle,
     maxWidthPx: Int = Constraints.Infinity,
+    maxLines: Int = Int.MAX_VALUE,
 ): DiagramSize = measureAnnotatedTextSize(
     textMeasurer = textMeasurer,
     densityObj = densityObj,
     text = AnnotatedString(text),
     style = style,
     maxWidthPx = maxWidthPx,
+    maxLines = maxLines,
 )
 
 internal fun buildOffscreenCustomActions(

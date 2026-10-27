@@ -502,6 +502,7 @@ private fun computePremeasuredRadarLayout(
             densityObj = densityObj,
             text = annotatedLabel(axis.label),
             style = axisStyle,
+            maxLines = 1,
         )
         val prev = axisSizesByText[axis.label]
         axisSizesByText[axis.label] = DiagramSize(
@@ -524,6 +525,7 @@ private fun computePremeasuredRadarLayout(
                 densityObj = densityObj,
                 text = annotatedLabel(curve.label),
                 style = legendStyle,
+                maxLines = 1,
             )
             val prev = legendSizesByText[curve.label]
             legendSizesByText[curve.label] = DiagramSize(
