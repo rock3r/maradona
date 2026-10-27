@@ -511,11 +511,13 @@ object MaradonaSvgExporter {
                 }
                 val relLabelSizes = d.relationships.mapIndexedNotNull { idx, rel ->
                     val indexedLabel = if (!rel.index.isNullOrBlank()) "${rel.index}: ${rel.label}" else rel.label
-                    val lines = buildList {
-                        if (indexedLabel.isNotBlank()) addAll(rawSvgLines(indexedLabel))
-                        if (!rel.technology.isNullOrBlank()) add("[${rel.technology}]")
+                    val relFont = theme.edgeLabelFontSize.value
+                    val relWrapW = 188f * dens
+                    val spanLines = buildList {
+                        if (indexedLabel.isNotBlank()) addAll(wrapFormattedLabelLines(indexedLabel, relFont, relWrapW))
+                        if (!rel.technology.isNullOrBlank()) addAll(wrapFormattedLabelLines("[${rel.technology}]", relFont, relWrapW))
                     }
-                    if (lines.isEmpty()) null else idx to defaultTextSize(lines.joinToString("\n"), theme.edgeLabelFontSize.value)
+                    if (spanLines.isEmpty()) null else idx to measureSpanLinesSize(spanLines, relFont)
                 }.toMap()
                 val layout = C4Layout.layout(
                     diagram = d,
@@ -1667,6 +1669,7 @@ object MaradonaSvgExporter {
             }
             val relFontSize = theme.edgeLabelFontSize.value
             val relWrapW = 188f * dens
+            val relStyle = exportTextStyle(theme, relFontSize, densityObj, textMeasurer)
             val relSpanLines = buildList {
                 if (indexedLabel.isNotBlank()) {
                     addAll(
@@ -1675,14 +1678,22 @@ object MaradonaSvgExporter {
                             fontSp = relFontSize,
                             maxWidth = relWrapW,
                             textMeasurer = textMeasurer,
-                            textStyle = exportTextStyle(theme, relFontSize, densityObj, textMeasurer),
+                            textStyle = relStyle,
                             density = densityObj,
                         ),
                     )
                 }
                 if (!pr.relationship.technology.isNullOrBlank()) {
-                    val techSpans = parseFormattedLabelLines(pr.relationship.technology).flatten()
-                    add(listOf(FormattedTextSpan("[")) + techSpans + listOf(FormattedTextSpan("]")))
+                    addAll(
+                        wrapFormattedLabelLines(
+                            label = "[${pr.relationship.technology}]",
+                            fontSp = relFontSize,
+                            maxWidth = relWrapW,
+                            textMeasurer = textMeasurer,
+                            textStyle = relStyle,
+                            density = densityObj,
+                        ),
+                    )
                 }
             }
             if (lr != null && relSpanLines.isNotEmpty()) {

@@ -853,18 +853,39 @@ fun wrapFormattedLabelLines(
         if (textMeasurer != null && textStyle != null) {
             val imgScale = (density.density * density.fontScale).coerceAtLeast(0.01f)
             var widthPx = 0f
-            val textOnly = buildString {
+            val styledText = buildAnnotatedString {
                 for (sp in spans) {
                     if (sp.inlineImage != null) {
                         widthPx += sp.inlineImage.widthPx * imgScale + 4f * density.density
-                    } else {
-                        append(sp.text)
+                    } else if (sp.text.isNotEmpty()) {
+                        val spanStyle = if (sp.bold || sp.italic || sp.code || sp.subscript || sp.superscript) {
+                            SpanStyle(
+                                fontWeight = if (sp.bold) FontWeight.Bold else null,
+                                fontStyle = if (sp.italic) FontStyle.Italic else null,
+                                fontFamily = if (sp.code) FontFamily.Monospace else null,
+                                baselineShift = when {
+                                    sp.subscript -> BaselineShift.Subscript
+                                    sp.superscript -> BaselineShift.Superscript
+                                    else -> null
+                                },
+                                fontSize = if (sp.subscript || sp.superscript) 0.8.em else TextUnit.Unspecified,
+                            )
+                        } else {
+                            null
+                        }
+                        if (spanStyle != null) {
+                            pushStyle(spanStyle)
+                            append(sp.text)
+                            pop()
+                        } else {
+                            append(sp.text)
+                        }
                     }
                 }
             }
-            if (textOnly.isNotEmpty()) {
+            if (styledText.isNotEmpty()) {
                 val res = textMeasurer.measure(
-                    text = AnnotatedString(textOnly),
+                    text = styledText,
                     style = textStyle,
                     constraints = Constraints(),
                     density = density,
