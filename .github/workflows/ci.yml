@@ -4,10 +4,17 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
+    name: Desktop, Android Host & Maven Local Verification
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,5 +24,86 @@ jobs:
           cache: gradle
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-      - name: Run desktop & unit tests, build Android sample APK, and verify Maven Local publication shape
-        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest :sample-android:assembleDebug verifyMavenLocalPublication --console=plain --no-scan
+      - name: Run desktop & Android host tests, build Android APK, and verify Maven Local publication
+        run: |
+          ./gradlew \
+            :maradona:desktopTest \
+            :maradona-material3:desktopTest \
+            :maradona-jewel:desktopTest \
+            :sample-desktop:desktopTest \
+            :maradona:testAndroidHostTest \
+            :maradona-material3:testAndroidHostTest \
+            :sample-android:assembleDebug \
+            verifyMavenLocalPublication \
+            --console=plain --no-scan
+      - name: Upload debug APK for Android runtime verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-android-debug-apk
+          path: sample-android/build/outputs/apk/debug/sample-android-debug.apk
+          if-no-files-found: error
+          retention-days: 5
+
+  android-runtime:
+    name: Android Emulator Runtime & Screenshot Verification
+    runs-on: ubuntu-latest
+    needs: [check]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: sample-android-debug-apk
+          path: sample-android/build/outputs/apk/debug
+      - name: Enable KVM for hardware-accelerated Android Emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Android runtime, accessibility, screenshot & stability checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -nosnapshot -noaudio -no-boot-anim
+          script: |
+            python3 scripts/ci_android_runtime_verify.py \
+              --apk sample-android/build/outputs/apk/debug/sample-android-debug.apk \
+              --out-dir build/android-ci-screenshots
+      - name: Upload verified Android runtime screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-runtime-screenshots
+          path: build/android-ci-screenshots
+          if-no-files-found: warn
+          retention-days: 7
+
+  ios-simulator:
+    name: iOS Simulator Runtime & Screenshot Verification
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: gradle
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+      - name: Run iOS Simulator unit, runtime & screenshot tests and verify 12-target KMP publication
+        run: |
+          ./gradlew \
+            :maradona:iosSimulatorArm64Test \
+            :maradona-material3:iosSimulatorArm64Test \
+            :sample-shared:iosSimulatorArm64Test \
+            verifyMavenLocalPublication \
+            --console=plain --no-scan

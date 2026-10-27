@@ -14,6 +14,7 @@ kotlin {
         namespace = "dev.maradona.theme.material3"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
         minSdk = libs.versions.android.min.sdk.get().toInt()
+        withHostTest {}
     }
     iosArm64()
     iosSimulatorArm64()
