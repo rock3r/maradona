@@ -407,7 +407,7 @@ fun MaradonaRadarLayout(
                 )
             }
             val visibleCurves = layout.curves.count { pc ->
-                polylineIntersectsViewport(pc.points, activeCullViewport, edgeMargin)
+                radarCurveIntersectsViewport(pc, activeCullViewport, edgeMargin)
             }
             visibleSpokes + visibleCurves
         }
@@ -620,7 +620,7 @@ private fun DrawScope.drawRadarUnderlay(
     for (pc in layout.curves) {
         val pts = pc.points
         if (pts.isEmpty()) continue
-        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
+        if (!radarCurveIntersectsViewport(pc, viewport, edgeMargin)) continue
         val curveColor = resolveRadarCurveColor(pc.curveIndex, diagram.config.customPalette, theme)
         if (pts.size >= 2) {
             val path = buildRadarCurvePath(pts, pc.useSmoothClosedCurve, pc.tension)
@@ -653,6 +653,26 @@ private fun DrawScope.drawRadarUnderlay(
         drawRect(color = curveColor.copy(alpha = swatchAlpha), topLeft = topLeft, size = sz, style = Fill)
         drawRect(color = curveColor, topLeft = topLeft, size = sz, style = swatchStroke)
     }
+}
+
+private fun radarCurveIntersectsViewport(
+    pc: PositionedRadarCurve,
+    viewport: DiagramRect?,
+    margin: Float,
+): Boolean {
+    if (viewport == null) return true
+    val pts = pc.points
+    if (pts.isEmpty()) return false
+    if (pts.size < 2 || !pc.useSmoothClosedCurve) {
+        return polylineIntersectsViewport(pts, viewport, margin)
+    }
+    val bounds = buildRadarCurvePath(pts, pc.useSmoothClosedCurve, pc.tension).getBounds()
+    return DiagramRect(
+        x = bounds.left - margin,
+        y = bounds.top - margin,
+        width = bounds.width + margin * 2f,
+        height = bounds.height + margin * 2f,
+    ).intersects(viewport)
 }
 
 private fun buildRadarCurvePath(
