@@ -73,10 +73,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            python3 scripts/ci_android_runtime_verify.py \
-              --apk sample-android/build/outputs/apk/debug/sample-android-debug.apk \
-              --out-dir build/android-ci-screenshots
+          script: python3 scripts/ci_android_runtime_verify.py --apk sample-android/build/outputs/apk/debug/sample-android-debug.apk --out-dir build/android-ci-screenshots
       - name: Upload verified Android runtime screenshots
         if: always()
         uses: actions/upload-artifact@v4
