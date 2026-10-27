@@ -956,6 +956,9 @@ object MaradonaSvgExporter {
                 colorHex = textColor,
                 fontSize = fontSize,
                 imageScale = imgScale,
+                textMeasurer = textMeasurer,
+                textStyle = nodeTextStyle,
+                density = density,
             )
             sb.append("""  </g>""").append('\n')
             if (url != null) {
@@ -3431,6 +3434,9 @@ object MaradonaSvgExporter {
         fontSize: Float,
         extraTextAttrs: String = "",
         imageScale: Float = 1f,
+        textMeasurer: TextMeasurer? = null,
+        textStyle: TextStyle? = null,
+        density: Density = Density(1f),
     ) {
         if (spanLine.none { it.inlineImage != null }) {
             val innerXml = renderSpansToSvgContent(spanLine)
@@ -3444,6 +3450,33 @@ object MaradonaSvgExporter {
         fun spanAdvance(span: FormattedTextSpan): Float {
             val img = span.inlineImage
             if (img != null) return img.widthPx * imageScale
+            if (span.text.isEmpty()) return 0f
+            if (textMeasurer != null && textStyle != null) {
+                val styled = androidx.compose.ui.text.buildAnnotatedString {
+                    val st = if (span.bold || span.italic || span.code) {
+                        androidx.compose.ui.text.SpanStyle(
+                            fontWeight = if (span.bold) FontWeight.Bold else null,
+                            fontStyle = if (span.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+                            fontFamily = if (span.code) FontFamily.Monospace else null,
+                        )
+                    } else {
+                        null
+                    }
+                    if (st != null) {
+                        pushStyle(st)
+                        append(span.text)
+                        pop()
+                    } else {
+                        append(span.text)
+                    }
+                }
+                return textMeasurer.measure(
+                    text = styled,
+                    style = textStyle,
+                    constraints = androidx.compose.ui.unit.Constraints(),
+                    density = density,
+                ).size.width.toFloat()
+            }
             val mult = when {
                 span.code -> 0.65f
                 span.bold -> 0.66f
@@ -3452,24 +3485,28 @@ object MaradonaSvgExporter {
             return span.text.length * fontSize * mult
         }
 
-        val totalWidth = spanLine.sumOf { spanAdvance(it).toDouble() }.toFloat()
+        val advances = spanLine.map { spanAdvance(it) }
+        val totalWidth = advances.sum()
         var curX = centerX - totalWidth / 2f
         val pendingTextSpans = ArrayList<FormattedTextSpan>()
         var textRunStartX = curX
+        var pendingRunWidth = 0f
 
         fun flushPendingText() {
             if (pendingTextSpans.isEmpty()) return
             val innerXml = renderSpansToSvgContent(pendingTextSpans)
             if (innerXml.isNotEmpty()) {
+                val lenAttr = if (pendingRunWidth > 0f) """ textLength="${fmt(pendingRunWidth)}"""" else ""
                 sb.append(
-                    """$indent<text x="${fmt(textRunStartX)}" y="${fmt(baselineY)}" text-anchor="start" fill="$colorHex" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
+                    """$indent<text x="${fmt(textRunStartX)}" y="${fmt(baselineY)}" text-anchor="start" fill="$colorHex" font-size="${fmt(fontSize)}"$lenAttr$extraTextAttrs>$innerXml</text>""",
                 ).append('\n')
             }
             pendingTextSpans.clear()
+            pendingRunWidth = 0f
         }
 
-        for (span in spanLine) {
-            val adv = spanAdvance(span)
+        for ((idx, span) in spanLine.withIndex()) {
+            val adv = advances[idx]
             val img = span.inlineImage
             if (img != null) {
                 flushPendingText()
@@ -3487,6 +3524,7 @@ object MaradonaSvgExporter {
                     textRunStartX = curX
                 }
                 pendingTextSpans += span
+                pendingRunWidth += adv
                 curX += adv
             }
         }
@@ -3503,6 +3541,9 @@ object MaradonaSvgExporter {
         fontSize: Float,
         rotationDeg: Float = 0f,
         imageScale: Float = 1f,
+        textMeasurer: TextMeasurer? = null,
+        textStyle: TextStyle? = null,
+        density: Density = Density(1f),
     ) {
         if (spanLines.isEmpty()) return
         val lineHeights = spanLines.map { line ->
@@ -3535,6 +3576,9 @@ object MaradonaSvgExporter {
                 fontSize = fontSize,
                 extraTextAttrs = rotateAttr,
                 imageScale = imageScale,
+                textMeasurer = textMeasurer,
+                textStyle = textStyle,
+                density = density,
             )
             curTopY += lh
         }
