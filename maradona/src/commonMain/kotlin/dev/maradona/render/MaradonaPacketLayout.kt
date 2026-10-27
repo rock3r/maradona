@@ -16,29 +16,56 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.PacketDiagramLayout
 import dev.maradona.layout.PacketLayout
+import dev.maradona.layout.PositionedPacketBlock
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.PacketBitOrder
 import dev.maradona.model.PacketBlock
 import dev.maradona.model.PacketDiagram
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 private class PacketLayoutHolder {
     var layout: PacketDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun PositionedPacketBlock.blockAndBitsBounds(showBits: Boolean, bitAllowancePx: Float): DiagramRect {
+    if (!showBits || bitAllowancePx <= 0f) return rect
+    return DiagramRect(
+        x = rect.x,
+        y = rect.y - bitAllowancePx,
+        width = rect.width,
+        height = rect.height + bitAllowancePx,
+    )
 }
 
 /**
@@ -53,12 +80,74 @@ fun MaradonaPacketLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (PacketDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { PacketLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { PacketLayoutHolder() }
     val uriHandler = LocalUriHandler.current
     val allBlocks = remember(diagram) { diagram.words.flatten() }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredPacketLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val activeCullViewport = effectiveViewport
+    holder.visibleViewport = activeCullViewport
+    val bitAllowancePx = if (diagram.config.showBits) {
+        val maxBitFontSize = minOf(theme.scaledSp(10f).value, 11f).sp
+        val measuredBit = measurePlainTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = "00",
+            style = TextStyle(
+                fontFamily = theme.monospaceFontFamily,
+                fontSize = maxBitFontSize,
+            ),
+            maxLines = 1,
+        )
+        measuredBit.height + 4f * renderDensity
+    } else {
+        0f
+    }
 
     Layout(
         modifier = modifier
@@ -73,26 +162,61 @@ fun MaradonaPacketLayout(
                 } else {
                     "Packet diagram. ${diagram.fields.size} fields, ${diagram.words.size} rows."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null && onNodeClick != null) {
+                    val offscreenEvents = buildList {
+                        for (pb in precomputedLayout.blocks) {
+                            if (rectIntersectsViewport(
+                                    pb.blockAndBitsBounds(diagram.config.showBits, bitAllowancePx),
+                                    vp,
+                                    8f * renderDensity,
+                                )
+                            ) {
+                                continue
+                            }
+                            val block = pb.block
+                            add(MaradonaNodeClickEvent(nodeId = "${block.start}-${block.end}", label = block.label))
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawPacketUnderlay(it, theme) }
+                holder.layout?.let { drawPacketUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, 8f * renderDensity)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for ((idx, block) in allBlocks.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pb = precomputedLayout.blocks.getOrNull(idx)
+                    if (pb != null && !rectIntersectsViewport(
+                            pb.blockAndBitsBounds(diagram.config.showBits, bitAllowancePx),
+                            activeCullViewport,
+                            8f * renderDensity,
+                        )
+                    ) {
+                        continue
+                    }
+                }
                 val isSingleBit = block.bits == 1
                 if (diagram.config.showBits) {
                     val leadingBit = when (diagram.config.bitOrder) {
@@ -218,11 +342,20 @@ fun MaradonaPacketLayout(
             )
         }
 
+        val resolvedTitleSize = if (!diagram.title.isNullOrBlank()) {
+            titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) } ?: holder.titleSize
+        } else {
+            null
+        }
+
         val layout = PacketLayout.layout(
             diagram = diagram,
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+        }
         holder.layout = layout
         onLayout(layout)
 
@@ -248,6 +381,24 @@ fun MaradonaPacketLayout(
                 )
             }
         }
+
+        val drawnBlocks = if (activeCullViewport == null) {
+            layout.blocks.size
+        } else {
+            layout.blocks.count { rectIntersectsViewport(it.rect, activeCullViewport, 8f * renderDensity) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = layout.blocks.size,
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnBlocks,
+                totalEdges = layout.blocks.size,
+                drawnSubgraphs = 0,
+                totalSubgraphs = 0,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -297,12 +448,60 @@ fun MaradonaPacketLayout(
     }
 }
 
+private data class PremeasuredPacketResult(
+    val layout: PacketDiagramLayout,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredPacketLayout(
+    diagram: PacketDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredPacketResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = PacketLayout.layout(
+        diagram = diagram,
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredPacketResult(
+        layout = layout,
+        titleSize = titleSize,
+    )
+}
+
 private fun DrawScope.drawPacketUnderlay(
     layout: PacketDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
-    val strokeW = max(1f, 1.35f * density)
+    val unit = density
+    val strokeW = max(1f, 1.35f * unit)
     for (pb in layout.blocks) {
+        if (!rectIntersectsViewport(pb.rect, viewport, 8f * unit)) continue
         val topLeft = Offset(pb.rect.x, pb.rect.y)
         val rectSize = Size(pb.rect.width, pb.rect.height)
         drawRect(

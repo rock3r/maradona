@@ -18,31 +18,46 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.PositionedTreemapLeaf
 import dev.maradona.layout.TreemapDiagramLayout
 import dev.maradona.layout.TreemapLayout
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.TreemapDiagram
 import dev.maradona.model.TreemapNode
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 private class TreemapLayoutHolder {
     var layout: TreemapDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -58,11 +73,27 @@ fun MaradonaTreemapLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (TreemapDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { TreemapLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { TreemapLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
     val isDark = theme.isDark
 
     // Precompute layout so we know exact section and leaf counts and adaptive font sizes.
@@ -72,6 +103,39 @@ fun MaradonaTreemapLayout(
     }
     val previewSections = baseSectionsAndLeaves.first
     val previewLeaves = baseSectionsAndLeaves.second
+
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredTreemapLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
 
     Layout(
         modifier = modifier
@@ -86,26 +150,48 @@ fun MaradonaTreemapLayout(
                 } else {
                     "Treemap diagram. ${previewSections.size} sections, ${previewLeaves.size} leaves."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (leaf in precomputedLayout.leaves) {
+                            if (rectIntersectsViewport(leaf.rect, vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = leaf.node.name, label = leaf.node.name))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawTreemapUnderlay(it, diagram, theme, isDark) }
+                holder.layout?.let { drawTreemapUnderlay(it, diagram, theme, isDark, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for ((idx, sec) in previewSections.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pSec = precomputedLayout.sections.getOrNull(idx)
+                    if (pSec != null && !rectIntersectsViewport(pSec.rect, activeCullViewport, cullMargin)) continue
+                }
                 val customText = parseCssColor(sec.node.style?.textColor) ?: theme.nodeText
                 BasicText(
                     text = annotatedLabel(sec.node.name),
@@ -135,6 +221,10 @@ fun MaradonaTreemapLayout(
             }
 
             for ((idx, leaf) in previewLeaves.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pLeaf = precomputedLayout.leaves.getOrNull(idx)
+                    if (pLeaf != null && !rectIntersectsViewport(pLeaf.rect, activeCullViewport, cullMargin)) continue
+                }
                 val customText = parseCssColor(leaf.node.style?.textColor) ?: theme.nodeText
                 val fontWeight = when (leaf.node.style?.fontWeightBold) {
                     true -> FontWeight.Bold
@@ -223,6 +313,13 @@ fun MaradonaTreemapLayout(
             }
         }
 
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+        }
+
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -233,7 +330,7 @@ fun MaradonaTreemapLayout(
 
         val layout = TreemapLayout.layout(
             diagram = diagram,
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
@@ -273,6 +370,29 @@ fun MaradonaTreemapLayout(
                 )
             }
         }
+
+        val drawnLeaves = if (activeCullViewport == null) {
+            layout.leaves.size
+        } else {
+            layout.leaves.count { rectIntersectsViewport(it.rect, activeCullViewport) }
+        }
+        val drawnSections = if (activeCullViewport == null) {
+            layout.sections.size
+        } else {
+            layout.sections.count { rectIntersectsViewport(it.rect, activeCullViewport) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = leafBoxPlaceables.size,
+                totalNodes = layout.leaves.size,
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnLeaves,
+                totalEdges = layout.leaves.size,
+                drawnSubgraphs = drawnSections,
+                totalSubgraphs = layout.sections.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceIn(constraints.minWidth, constraints.maxWidth)
         val hPx = layout.height.roundToInt().coerceIn(constraints.minHeight, constraints.maxHeight)
@@ -329,6 +449,51 @@ fun MaradonaTreemapLayout(
     }
 }
 
+private data class PremeasuredTreemapResult(
+    val layout: TreemapDiagramLayout,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredTreemapLayout(
+    diagram: TreemapDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredTreemapResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = TreemapLayout.layout(
+        diagram = diagram,
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredTreemapResult(
+        layout = layout,
+        titleSize = titleSize,
+    )
+}
+
 private fun computeLeafFontSizes(
     leaf: PositionedTreemapLeaf,
     baseLabelSp: Float,
@@ -349,11 +514,13 @@ private fun DrawScope.drawTreemapUnderlay(
     diagram: TreemapDiagram,
     theme: MaradonaTheme,
     isDark: Boolean,
+    viewport: DiagramRect? = null,
 ) {
     val baseBorderW = diagram.config.borderWidth.coerceAtLeast(0f)
 
     // 1. Sections
     for (sec in layout.sections) {
+        if (!rectIntersectsViewport(sec.rect, viewport, 4f * density)) continue
         val baseColor = theme.seriesColor(sec.colorIndex)
         val customFill = parseCssColor(sec.node.style?.fill)
         val customStroke = parseCssColor(sec.node.style?.stroke)
@@ -382,6 +549,7 @@ private fun DrawScope.drawTreemapUnderlay(
 
     // 2. Leaves
     for (leaf in layout.leaves) {
+        if (!rectIntersectsViewport(leaf.rect, viewport, 4f * density)) continue
         val baseColor = theme.seriesColor(leaf.colorIndex)
         val customFill = parseCssColor(leaf.node.style?.fill)
         val customStroke = parseCssColor(leaf.node.style?.stroke)

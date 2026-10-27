@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -24,20 +28,29 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassLayout
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.StateBoxMetrics
 import dev.maradona.layout.StateDiagramLayout
 import dev.maradona.layout.StateLayout
@@ -46,6 +59,7 @@ import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.StateDiagram
 import dev.maradona.model.StateKind
 import dev.maradona.model.StateNode
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -54,6 +68,19 @@ import kotlin.math.sin
 
 private class StateLayoutHolder {
     var layout: StateDiagramLayout? = null
+    var naturalLayout: StateDiagramLayout? = null
+    var adaptedTbLayout: StateDiagramLayout? = null
+    var hdrSizes: Map<String, DiagramSize> = emptyMap()
+    var descSizes: Map<String, DiagramSize> = emptyMap()
+    var metricsById: Map<String, StateBoxMetrics> = emptyMap()
+    var trLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var noteSizes: Map<Int, DiagramSize> = emptyMap()
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -72,10 +99,13 @@ fun MaradonaStateLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 44f, layerGap = 48f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (StateDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { StateLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { StateLayoutHolder() }
     val uriHandler = LocalUriHandler.current
     val transitionDescriptions = remember(diagram) { stateTransitionDescriptions(diagram) }
     val compositeIds = remember(diagram) {
@@ -87,6 +117,106 @@ fun MaradonaStateLayout(
             }
             .map { it.id }
             .toSet()
+    }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    var observedBoundedWidthPx by remember(diagram, theme, layoutOptions) { mutableIntStateOf(Int.MAX_VALUE) }
+    var boundedWidthObserved by remember(diagram, theme, layoutOptions) { mutableStateOf(false) }
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, observedBoundedWidthPx)
+
+    val naturalLayout = run {
+        val cachedNatural = holder.naturalLayout
+        if (
+            cachedNatural != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cachedNatural
+        } else {
+            computePremeasuredStateLayout(
+                diagram = diagram,
+                compositeIds = compositeIds,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.naturalLayout = pre.naturalLayout
+                holder.adaptedTbLayout = null
+                holder.hdrSizes = pre.hdrSizes
+                holder.descSizes = pre.descSizes
+                holder.metricsById = pre.metricsById
+                holder.trLabelSizes = pre.trLabelSizes
+                holder.noteSizes = pre.noteSizes
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.naturalLayout
+        }
+    }
+
+    fun resolveAdaptedTbLayout(): StateDiagramLayout {
+        holder.adaptedTbLayout?.let { return it }
+        val scaledOptions = with(layoutOptions) {
+            copy(
+                nodeGap = nodeGap * renderDensity,
+                layerGap = layerGap * renderDensity,
+                padding = padding * renderDensity,
+                subgraphPaddingX = subgraphPaddingX * renderDensity,
+                subgraphPaddingY = subgraphPaddingY * renderDensity,
+                density = renderDensity,
+                directionOverride = Direction.TB,
+            )
+        }
+        return StateLayout.layout(
+            diagram = diagram,
+            stateBoxSize = { holder.metricsById.getValue(it.id) },
+            transitionLabelSize = { idx, _ -> holder.trLabelSizes[idx] },
+            noteBoxSize = { idx, _ -> holder.noteSizes[idx] ?: DiagramSize(0f, 0f) },
+            titleSize = holder.titleSize,
+            options = scaledOptions,
+        ).also { holder.adaptedTbLayout = it }
+    }
+
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    val wantVerticalInComposition = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        effectiveAvailableWidthPx in 1 until breakpointPx &&
+        naturalLayout.width > effectiveAvailableWidthPx
+    val precomputedLayout = if (wantVerticalInComposition) {
+        resolveAdaptedTbLayout()
+    } else {
+        naturalLayout
+    }
+    holder.layout = precomputedLayout
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val needsParentWidthProbe = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        availableWidthPx == Int.MAX_VALUE &&
+        !boundedWidthObserved
+    val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedStateById = remember(precomputedLayout) {
+        precomputedLayout.states.associateBy { it.state.id }
     }
 
     Layout(
@@ -102,9 +232,25 @@ fun MaradonaStateLayout(
                 } else {
                     "State diagram. ${diagram.states.size} states, ${diagram.transitions.size} transitions."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (s in diagram.states) {
+                            val ps = positionedStateById[s.id] ?: continue
+                            if (rectIntersectsViewport(ps.rect, vp, margin = 8f)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = s.id, label = s.label))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawStateUnderlay(it, compositeIds, theme) }
+                holder.layout?.let { drawStateUnderlay(it, compositeIds, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
@@ -121,6 +267,12 @@ fun MaradonaStateLayout(
                 )
             }
             for ((sIdx, s) in diagram.states.withIndex()) {
+                if (activeCullViewport != null) {
+                    val ps = positionedStateById[s.id]
+                    if (ps != null && !rectIntersectsViewport(ps.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 val isComp = s.id in compositeIds
                 val textColor = parseCssColor(s.style?.textColor)
                     ?: if (isComp) theme.subgraphText else theme.nodeText
@@ -181,6 +333,12 @@ fun MaradonaStateLayout(
                 )
             }
             for ((idx, note) in diagram.notes.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pn = precomputedLayout.notes.getOrNull(idx)
+                    if (pn != null && !rectIntersectsViewport(pn.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .layoutId("note:$idx")
@@ -202,6 +360,12 @@ fun MaradonaStateLayout(
             }
             for ((idx, tr) in diagram.transitions.withIndex()) {
                 if (!tr.label.isNullOrBlank()) {
+                    if (activeCullViewport != null) {
+                        val lr = precomputedLayout.transitions.getOrNull(idx)?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, margin = 8f)) {
+                            continue
+                        }
+                    }
                     BasicText(
                         text = annotatedLabel(tr.label),
                         modifier = Modifier
@@ -243,17 +407,32 @@ fun MaradonaStateLayout(
         val padX = 14f * renderDensity
         val padY = 8f * renderDensity
 
+        val effectiveHdrSizes = HashMap<String, DiagramSize>(holder.hdrSizes).apply {
+            for ((k, pl) in hdrPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveDescSizes = HashMap<String, DiagramSize>(holder.descSizes).apply {
+            for ((k, pl) in descPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveTrLabelSizes = HashMap<Int, DiagramSize>(holder.trLabelSizes).apply {
+            for ((k, pl) in trLabelPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveNoteSizes = HashMap<Int, DiagramSize>(holder.noteSizes).apply {
+            for ((k, pl) in notePlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
         fun computeMetrics(s: StateNode): StateBoxMetrics {
             val isComp = s.id in compositeIds
             if (!isComp && s.kind != StateKind.Normal) {
                 return StateLayout.defaultStateMetrics(s, renderDensity)
             }
-            val hdr = hdrPlaceables[s.id]
-            val desc = descPlaceables[s.id]
-            val hdrW = hdr?.width?.toFloat() ?: 0f
-            val hdrH = hdr?.height?.toFloat() ?: 0f
-            val descW = desc?.width?.toFloat() ?: 0f
-            val descH = desc?.height?.toFloat() ?: 0f
+            val hdr = effectiveHdrSizes[s.id]
+            val desc = effectiveDescSizes[s.id]
+            val hdrW = hdr?.width ?: 0f
+            val hdrH = hdr?.height ?: 0f
+            val descW = desc?.width ?: 0f
+            val descH = desc?.height ?: 0f
             val headerHeight = max(28f * renderDensity, hdrH + padY * 2f)
             if (isComp || desc == null) {
                 val width = max(84f * renderDensity, hdrW + padX * 2f)
@@ -284,31 +463,47 @@ fun MaradonaStateLayout(
         fun runLayout(opts: LayoutOptions): StateDiagramLayout = StateLayout.layout(
             diagram = diagram,
             stateBoxSize = { metricsById.getValue(it.id) },
-            transitionLabelSize = { idx, _ ->
-                trLabelPlaceables[idx]?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
-            },
-            noteBoxSize = { idx, _ ->
-                val pl = notePlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            transitionLabelSize = { idx, _ -> effectiveTrLabelSizes[idx] },
+            noteBoxSize = { idx, _ -> effectiveNoteSizes[idx] ?: DiagramSize(0f, 0f) },
+            titleSize = effectiveTitleSize,
             options = opts,
         )
 
-        var result = runLayout(scaledOptions)
+        val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        if (!boundedWidthObserved || observedBoundedWidthPx != boundedWidth) {
+            observedBoundedWidthPx = boundedWidth
+            boundedWidthObserved = true
+        }
+        val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
-        val effectiveMaxWidth = minOf(
-            if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE,
-            availableWidthPx,
-        )
-        if (
-            autoDirection &&
+        val measuredNatural = if (activeCullViewport == null) runLayout(scaledOptions) else naturalLayout
+        val wantVerticalAtMeasure = autoDirection &&
             (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
             layoutOptions.directionOverride == null &&
             effectiveMaxWidth in 1 until breakpoint &&
-            result.width > effectiveMaxWidth
-        ) {
-            result = runLayout(scaledOptions.copy(directionOverride = Direction.TB))
+            measuredNatural.width > effectiveMaxWidth
+
+        val result = if (activeCullViewport != null && wantVerticalAtMeasure != wantVerticalInComposition) {
+            precomputedLayout
+        } else if (wantVerticalAtMeasure) {
+            if (activeCullViewport == null) {
+                runLayout(scaledOptions.copy(directionOverride = Direction.TB)).also {
+                    holder.adaptedTbLayout = it
+                }
+            } else {
+                resolveAdaptedTbLayout()
+            }
+        } else {
+            measuredNatural
+        }
+        if (activeCullViewport == null) {
+            holder.hdrSizes = effectiveHdrSizes
+            holder.descSizes = effectiveDescSizes
+            holder.metricsById = metricsById
+            holder.trLabelSizes = effectiveTrLabelSizes
+            holder.noteSizes = effectiveNoteSizes
+            holder.titleSize = effectiveTitleSize
+            holder.naturalLayout = measuredNatural
         }
         holder.layout = result
         onLayout(result)
@@ -321,6 +516,33 @@ fun MaradonaStateLayout(
                 )
             }
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            result.transitions.size
+        } else {
+            result.transitions.count { tr ->
+                polylineIntersectsViewport(tr.points, activeCullViewport, margin = edgeMargin)
+            }
+        }
+        val compositeStates = result.states.filter { it.state.id in compositeIds }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            compositeStates.size
+        } else {
+            compositeStates.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = result.states.size,
+                composedEdgeLabels = trLabelPlaceables.size,
+                totalEdgeLabels = diagram.transitions.count { !it.label.isNullOrBlank() },
+                drawnEdges = drawnEdges,
+                totalEdges = result.transitions.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = compositeStates.size,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
@@ -358,6 +580,178 @@ fun MaradonaStateLayout(
     }
 }
 
+private data class PremeasuredStateResult(
+    val naturalLayout: StateDiagramLayout,
+    val hdrSizes: Map<String, DiagramSize>,
+    val descSizes: Map<String, DiagramSize>,
+    val metricsById: Map<String, StateBoxMetrics>,
+    val trLabelSizes: Map<Int, DiagramSize>,
+    val noteSizes: Map<Int, DiagramSize>,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredStateLayout(
+    diagram: StateDiagram,
+    compositeIds: Set<String>,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredStateResult {
+    val renderDensity = densityObj.density
+    val padX = 14f * renderDensity
+    val padY = 8f * renderDensity
+    val descGap = with(densityObj) { 3.dp.roundToPx().toFloat() }
+
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val hdrSizes = HashMap<String, DiagramSize>(diagram.states.size)
+    val descSizes = HashMap<String, DiagramSize>(diagram.states.size)
+    val metricsById = HashMap<String, StateBoxMetrics>(diagram.states.size)
+
+    for (s in diagram.states) {
+        val isComp = s.id in compositeIds
+        if (!isComp && s.kind != StateKind.Normal) {
+            metricsById[s.id] = StateLayout.defaultStateMetrics(s, renderDensity)
+            continue
+        }
+        val textColor = parseCssColor(s.style?.textColor)
+            ?: if (isComp) theme.subgraphText else theme.nodeText
+        val hdrStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = if (isComp) theme.subgraphFontSize else theme.nodeFontSize,
+            fontWeight = if (isComp || s.descriptions.isNotEmpty()) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = TextAlign.Center,
+        )
+        val hdrSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(s.label),
+            style = hdrStyle,
+        )
+        hdrSizes[s.id] = hdrSz
+
+        val descSz = if (!isComp && s.descriptions.isNotEmpty()) {
+            val descStyle = TextStyle(
+                color = textColor,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.edgeLabelFontSize,
+                textAlign = TextAlign.Start,
+            )
+            var maxW = 0f
+            var sumH = 0f
+            for ((i, desc) in s.descriptions.withIndex()) {
+                val sz = measureAnnotatedTextSize(
+                    textMeasurer = textMeasurer,
+                    densityObj = densityObj,
+                    text = annotatedLabel(desc),
+                    style = descStyle,
+                )
+                if (sz.width > maxW) maxW = sz.width
+                sumH += sz.height
+                if (i > 0) sumH += descGap
+            }
+            DiagramSize(maxW, sumH).also { descSizes[s.id] = it }
+        } else null
+
+        val headerHeight = max(28f * renderDensity, hdrSz.height + padY * 2f)
+        metricsById[s.id] = if (isComp || descSz == null) {
+            val width = max(84f * renderDensity, hdrSz.width + padX * 2f)
+            StateBoxMetrics(width = width, height = headerHeight, headerHeight = headerHeight, descriptionHeight = 0f)
+        } else {
+            val descBoxH = descSz.height + padY * 1.5f
+            val width = maxOf(84f * renderDensity, hdrSz.width + padX * 2f, descSz.width + padX * 2f)
+            StateBoxMetrics(
+                width = width,
+                height = headerHeight + descBoxH,
+                headerHeight = headerHeight,
+                descriptionHeight = descBoxH,
+            )
+        }
+    }
+
+    val notePadH = with(densityObj) { 10.dp.roundToPx() * 2 }
+    val notePadV = with(densityObj) { 6.dp.roundToPx() * 2 }
+    val noteStyle = TextStyle(
+        color = theme.noteText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Start,
+    )
+    val noteSizes = diagram.notes.mapIndexed { idx, note ->
+        val sz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(note.text),
+            style = noteStyle,
+        )
+        idx to DiagramSize(sz.width + notePadH, sz.height + notePadV)
+    }.toMap()
+
+    val trPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val trPadV = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val trStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val trLabelSizes = HashMap<Int, DiagramSize>()
+    for ((idx, tr) in diagram.transitions.withIndex()) {
+        if (!tr.label.isNullOrBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(tr.label),
+                style = trStyle,
+            )
+            trLabelSizes[idx] = DiagramSize(sz.width + trPadH, sz.height + trPadV)
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            padding = padding * renderDensity,
+            subgraphPaddingX = subgraphPaddingX * renderDensity,
+            subgraphPaddingY = subgraphPaddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val naturalLayout = StateLayout.layout(
+        diagram = diagram,
+        stateBoxSize = { metricsById.getValue(it.id) },
+        transitionLabelSize = { idx, _ -> trLabelSizes[idx] },
+        noteBoxSize = { idx, _ -> noteSizes[idx] ?: DiagramSize(0f, 0f) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredStateResult(
+        naturalLayout = naturalLayout,
+        hdrSizes = hdrSizes,
+        descSizes = descSizes,
+        metricsById = metricsById,
+        trLabelSizes = trLabelSizes,
+        noteSizes = noteSizes,
+        titleSize = titleSize,
+    )
+}
+
 private fun stateTransitionDescriptions(diagram: StateDiagram): Map<String, String> {
     val labelById = diagram.states.associate { s ->
         s.id to when (s.kind) {
@@ -382,8 +776,10 @@ private fun DrawScope.drawStateUnderlay(
     layout: StateDiagramLayout,
     compositeIds: Set<String>,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
+    val cullMargin = 24f * unit
     val cornerRadius = CornerRadius(8f * unit, 8f * unit)
     val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
     val dottedEffect = PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)
@@ -392,6 +788,7 @@ private fun DrawScope.drawStateUnderlay(
     for (ps in layout.states) {
         if (ps.state.id !in compositeIds) continue
         val r = ps.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val fill = parseCssColor(ps.state.style?.fill) ?: theme.subgraphFill
         val border = parseCssColor(ps.state.style?.stroke) ?: theme.subgraphBorder
         val strokeW = (ps.state.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 1.25f) * unit
@@ -431,6 +828,7 @@ private fun DrawScope.drawStateUnderlay(
     for (note in layout.notes) {
         val nPts = note.connectorPoints
         if (nPts.size >= 2) {
+            if (!polylineIntersectsViewport(nPts, viewport, margin = cullMargin)) continue
             val samples = ClassLayout.basisSplineSamples(nPts)
             val splineHitsObstacle = (0 until samples.lastIndex).any { i ->
                 val a = samples[i]
@@ -465,6 +863,7 @@ private fun DrawScope.drawStateUnderlay(
     for (tr in layout.transitions) {
         val pts = tr.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, margin = cullMargin)) continue
         val endTrim = 7.5f * unit
         val trimmed = trimPath(pts, startBy = 0f, endBy = endTrim)
         if (trimmed.size >= 2) {
@@ -506,6 +905,7 @@ private fun DrawScope.drawStateUnderlay(
     for (ps in layout.states) {
         if (ps.state.id in compositeIds) continue
         val r = ps.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val s = ps.state
         val fill = parseCssColor(s.style?.fill) ?: theme.nodeFill
         val border = parseCssColor(s.style?.stroke) ?: theme.nodeBorder
@@ -590,6 +990,7 @@ private fun DrawScope.drawStateUnderlay(
     val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = noteFill,
             topLeft = Offset(r.x, r.y),

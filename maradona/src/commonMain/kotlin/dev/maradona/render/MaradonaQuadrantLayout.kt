@@ -16,25 +16,56 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.PositionedQuadrantPoint
 import dev.maradona.layout.QuadrantDiagramLayout
 import dev.maradona.layout.QuadrantLayout
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.QuadrantDiagram
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private class QuadrantLayoutHolder {
     var layout: QuadrantDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var qSizes: Map<Int, DiagramSize> = emptyMap()
+    var axisSizes: Map<String, DiagramSize> = emptyMap()
+    var ptLblSizes: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun PositionedQuadrantPoint.pointAndLabelBounds(): DiagramRect {
+    val r = radius + strokeWidth / 2f
+    val minX = min(labelRect.x, center.x - r)
+    val minY = min(labelRect.y, center.y - r)
+    val maxX = max(labelRect.right, center.x + r)
+    val maxY = max(labelRect.bottom, center.y + r)
+    return DiagramRect(minX, minY, maxX - minX, maxY - minY)
 }
 
 /**
@@ -50,11 +81,26 @@ fun MaradonaQuadrantLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (QuadrantDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { QuadrantLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { QuadrantLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
     val quadrantSpecs = remember(diagram) {
         listOf(
             1 to diagram.quadrant1Text,
@@ -76,6 +122,50 @@ fun MaradonaQuadrantLayout(
         }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredQuadrantLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                quadrantSpecs = quadrantSpecs,
+                axisSpecs = axisSpecs,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.qSizes = pre.qSizes
+                holder.axisSizes = pre.axisSizes
+                holder.ptLblSizes = pre.ptLblSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val activeCullViewport = effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedQuadrantByNum = remember(precomputedLayout) {
+        precomputedLayout.quadrants.associateBy { it.quadrantNumber }
+    }
+    val positionedPointById = remember(precomputedLayout) {
+        precomputedLayout.points.associateBy { it.point.id }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -89,25 +179,45 @@ fun MaradonaQuadrantLayout(
                 } else {
                     "Quadrant chart. ${diagram.points.size} points."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null && onNodeClick != null) {
+                    val offscreenEvents = buildList {
+                        for (pt in precomputedLayout.points) {
+                            if (rectIntersectsViewport(pt.pointAndLabelBounds(), vp, 12f * renderDensity)) continue
+                            add(MaradonaNodeClickEvent(nodeId = pt.point.id, label = pt.point.label))
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawQuadrantUnderlay(it, theme) }
+                holder.layout?.let { drawQuadrantUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, 8f * renderDensity)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
             for ((qNum, txt) in quadrantSpecs) {
+                if (activeCullViewport != null) {
+                    val qBox = positionedQuadrantByNum[qNum]
+                    if (qBox != null && !rectIntersectsViewport(qBox.rect, activeCullViewport, 8f * renderDensity)) continue
+                }
                 BasicText(
                     text = annotatedLabel(txt),
                     modifier = Modifier.layoutId("q:$qNum"),
@@ -134,6 +244,10 @@ fun MaradonaQuadrantLayout(
                 )
             }
             for ((pIdx, p) in diagram.points.withIndex()) {
+                if (activeCullViewport != null) {
+                    val ptPos = positionedPointById[p.id]
+                    if (ptPos != null && !rectIntersectsViewport(ptPos.pointAndLabelBounds(), activeCullViewport, 12f * renderDensity)) continue
+                }
                 BasicText(
                     text = annotatedLabel(p.label),
                     modifier = Modifier.layoutId("ptlbl:${p.id}"),
@@ -200,24 +314,36 @@ fun MaradonaQuadrantLayout(
             )
         }
 
+        val resolvedTitleSize = if (diagram.title != null) {
+            titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) } ?: holder.titleSize
+        } else {
+            null
+        }
+
         val layout = QuadrantLayout.layout(
             diagram = diagram,
             pointLabelSize = { p ->
                 val pl = ptLblPlaceables[p.id]
                 if (pl != null) DiagramSize(pl.width.toFloat(), pl.height.toFloat())
-                else QuadrantLayout.defaultTextSize(p.label, renderDensity)
+                else holder.ptLblSizes[p.id] ?: QuadrantLayout.defaultTextSize(p.label, renderDensity)
             },
             quadrantLabelSize = { qNum, s ->
                 val pl = qPlaceables[qNum]
                 if (pl != null) DiagramSize(pl.width.toFloat(), pl.height.toFloat())
-                else QuadrantLayout.defaultHeaderSize(s, renderDensity)
+                else holder.qSizes[qNum] ?: QuadrantLayout.defaultHeaderSize(s, renderDensity)
             },
             axisLabelSize = { s ->
-                axisSizeByText[s] ?: QuadrantLayout.defaultHeaderSize(s, renderDensity)
+                axisSizeByText[s] ?: holder.axisSizes[s] ?: QuadrantLayout.defaultHeaderSize(s, renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.qSizes = qPlaceables.mapValues { DiagramSize(it.value.width.toFloat(), it.value.height.toFloat()) }
+            holder.axisSizes = axisSizeByText
+            holder.ptLblSizes = ptLblPlaceables.mapValues { DiagramSize(it.value.width.toFloat(), it.value.height.toFloat()) }
+        }
         holder.layout = layout
         onLayout(layout)
 
@@ -227,6 +353,29 @@ fun MaradonaQuadrantLayout(
             val dPx = ((pt.radius + pt.strokeWidth / 2f) * 2f).roundToInt().coerceAtLeast(1)
             ptBoxPlaceables[pt.point.id] = m.measure(Constraints.fixed(dPx, dPx))
         }
+
+        val drawnPoints = if (activeCullViewport == null) {
+            layout.points.size
+        } else {
+            layout.points.count { rectIntersectsViewport(it.pointAndLabelBounds(), activeCullViewport, 12f * renderDensity) }
+        }
+        val drawnQuadrants = if (activeCullViewport == null) {
+            layout.quadrants.size
+        } else {
+            layout.quadrants.count { rectIntersectsViewport(it.rect, activeCullViewport, 8f * renderDensity) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = ptBoxPlaceables.size,
+                totalNodes = diagram.points.size,
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnPoints,
+                totalEdges = layout.points.size,
+                drawnSubgraphs = drawnQuadrants,
+                totalSubgraphs = layout.quadrants.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -274,9 +423,111 @@ fun MaradonaQuadrantLayout(
     }
 }
 
+private data class PremeasuredQuadrantResult(
+    val layout: QuadrantDiagramLayout,
+    val titleSize: DiagramSize?,
+    val qSizes: Map<Int, DiagramSize>,
+    val axisSizes: Map<String, DiagramSize>,
+    val ptLblSizes: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredQuadrantLayout(
+    diagram: QuadrantDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    quadrantSpecs: List<Pair<Int, String>>,
+    axisSpecs: List<Pair<Int, String>>,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredQuadrantResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val qStyle = TextStyle(
+        color = theme.nodeText.copy(alpha = 0.85f),
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(13f),
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center,
+    )
+    val qSizes = quadrantSpecs.associate { (qNum, txt) ->
+        qNum to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(txt),
+            style = qStyle,
+        )
+    }
+    val axStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(12.5f),
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+    )
+    val axisSizes = axisSpecs.associate { (_, axTxt) ->
+        axTxt to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(axTxt),
+            style = axStyle,
+        )
+    }
+    val ptLblStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(11.5f),
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+    )
+    val ptLblSizes = diagram.points.associate { p ->
+        p.id to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(p.label),
+            style = ptLblStyle,
+        )
+    }
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = QuadrantLayout.layout(
+        diagram = diagram,
+        pointLabelSize = { p -> ptLblSizes[p.id] ?: QuadrantLayout.defaultTextSize(p.label, renderDensity) },
+        quadrantLabelSize = { qNum, s -> qSizes[qNum] ?: QuadrantLayout.defaultHeaderSize(s, renderDensity) },
+        axisLabelSize = { s -> axisSizes[s] ?: QuadrantLayout.defaultHeaderSize(s, renderDensity) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredQuadrantResult(
+        layout = layout,
+        titleSize = titleSize,
+        qSizes = qSizes,
+        axisSizes = axisSizes,
+        ptLblSizes = ptLblSizes,
+    )
+}
+
 private fun DrawScope.drawQuadrantUnderlay(
     layout: QuadrantDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
     val fills = listOf(
@@ -289,6 +540,7 @@ private fun DrawScope.drawQuadrantUnderlay(
 
     // 1. Quadrant background fills.
     for (q in layout.quadrants) {
+        if (!rectIntersectsViewport(q.rect, viewport, 8f * unit)) continue
         val fill = fills[(q.quadrantNumber - 1).coerceIn(0, fills.lastIndex)]
         drawRect(
             color = fill,
@@ -299,29 +551,32 @@ private fun DrawScope.drawQuadrantUnderlay(
 
     // 2. Inner crosshairs & outer frame.
     val g = layout.gridRect
-    val midX = g.centerX
-    val midY = g.centerY
-    drawLine(
-        color = theme.subgraphBorder,
-        start = Offset(midX, g.y),
-        end = Offset(midX, g.bottom),
-        strokeWidth = 1.2f * unit,
-    )
-    drawLine(
-        color = theme.subgraphBorder,
-        start = Offset(g.x, midY),
-        end = Offset(g.right, midY),
-        strokeWidth = 1.2f * unit,
-    )
-    drawRect(
-        color = theme.nodeBorder,
-        topLeft = Offset(g.x, g.y),
-        size = Size(g.width, g.height),
-        style = Stroke(width = 2f * unit),
-    )
+    if (rectIntersectsViewport(g, viewport, 8f * unit)) {
+        val midX = g.centerX
+        val midY = g.centerY
+        drawLine(
+            color = theme.subgraphBorder,
+            start = Offset(midX, g.y),
+            end = Offset(midX, g.bottom),
+            strokeWidth = 1.2f * unit,
+        )
+        drawLine(
+            color = theme.subgraphBorder,
+            start = Offset(g.x, midY),
+            end = Offset(g.right, midY),
+            strokeWidth = 1.2f * unit,
+        )
+        drawRect(
+            color = theme.nodeBorder,
+            topLeft = Offset(g.x, g.y),
+            size = Size(g.width, g.height),
+            style = Stroke(width = 2f * unit),
+        )
+    }
 
     // 3. Data points.
     for (pt in layout.points) {
+        if (!rectIntersectsViewport(pt.pointAndLabelBounds(), viewport, 12f * unit)) continue
         val st = pt.point.style
         val fill = parseCssColor(st?.color) ?: defaultPointColor
         val stroke = parseCssColor(st?.strokeColor) ?: fill

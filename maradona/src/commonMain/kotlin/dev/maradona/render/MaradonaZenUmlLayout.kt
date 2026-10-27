@@ -24,21 +24,31 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
+import dev.maradona.layout.FlattenedZenUmlBlockSpec
+import dev.maradona.layout.FlattenedZenUmlMessageSpec
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.ZenUmlDiagramLayout
 import dev.maradona.layout.ZenUmlLayout
 import dev.maradona.model.MaradonaNodeClickEvent
@@ -46,6 +56,7 @@ import dev.maradona.model.ZenUmlDiagram
 import dev.maradona.model.ZenUmlMessageKind
 import dev.maradona.model.ZenUmlParticipant
 import dev.maradona.model.ZenUmlParticipantStereotype
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -54,6 +65,19 @@ import kotlin.math.sin
 
 private class ZenUmlLayoutHolder {
     var layout: ZenUmlDiagramLayout? = null
+    var participantSizes: Map<String, DiagramSize> = emptyMap()
+    var groupHeaderSizes: Map<Int, DiagramSize> = emptyMap()
+    var messageLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var commentSizes: Map<Int, DiagramSize> = emptyMap()
+    var blockTabSizes: Map<Int, DiagramSize> = emptyMap()
+    var blockCondSizes: Map<Int, DiagramSize> = emptyMap()
+    var blockDividerSizes: Map<Pair<Int, Int>, DiagramSize> = emptyMap()
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -65,11 +89,32 @@ fun MaradonaZenUmlLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (ZenUmlDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { ZenUmlLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { ZenUmlLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily, fontStyle = FontStyle.Italic).value,
+    )
 
     val specs = remember(diagram) { ZenUmlLayout.collectSpecs(diagram) }
     val msgSpecs = specs.first
@@ -89,6 +134,57 @@ fun MaradonaZenUmlLayout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredZenUmlLayout(
+                diagram = diagram,
+                effectiveParticipants = effectiveParticipants,
+                msgSpecs = msgSpecs,
+                blockSpecs = blockSpecs,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.participantSizes = pre.participantSizes
+                holder.groupHeaderSizes = pre.groupHeaderSizes
+                holder.messageLabelSizes = pre.messageLabelSizes
+                holder.commentSizes = pre.commentSizes
+                holder.blockTabSizes = pre.blockTabSizes
+                holder.blockCondSizes = pre.blockCondSizes
+                holder.blockDividerSizes = pre.blockDividerSizes
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+
+    val positionedParticipantById = remember(precomputedLayout) {
+        precomputedLayout.participants.associateBy { it.participant.id }
+    }
+    val positionedMessageByIndex = remember(precomputedLayout) {
+        precomputedLayout.messages.associateBy { it.messageIndex }
+    }
+    val positionedBlockByIndex = remember(precomputedLayout) {
+        precomputedLayout.blocks.associateBy { it.blockIndex }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -102,9 +198,29 @@ fun MaradonaZenUmlLayout(
                 } else {
                     "ZenUML sequence diagram. ${effectiveParticipants.size} participants, ${msgSpecs.size} messages."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (p in effectiveParticipants) {
+                            val pp = positionedParticipantById[p.id] ?: continue
+                            val topVis = rectIntersectsViewport(pp.topRect, vp, margin = 8f)
+                            val botVis = diagram.mirrorParticipants &&
+                                pp.bottomRect != null &&
+                                rectIntersectsViewport(pp.bottomRect, vp, margin = 8f)
+                            if (topVis || botVis) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = p.id, label = p.label))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawZenUmlUnderlay(it, theme) }
+                holder.layout?.let { drawZenUmlUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
@@ -122,6 +238,10 @@ fun MaradonaZenUmlLayout(
             }
 
             for ((gIdx, grp) in diagram.groups.withIndex()) {
+                val pg = precomputedLayout.groups.getOrNull(gIdx)
+                if (activeCullViewport != null && pg != null && !rectIntersectsViewport(pg.rect, activeCullViewport, margin = 8f)) {
+                    continue
+                }
                 BasicText(
                     text = annotatedLabel(grp.name),
                     modifier = Modifier
@@ -138,73 +258,101 @@ fun MaradonaZenUmlLayout(
             }
 
             for ((pIdx, p) in effectiveParticipants.withIndex()) {
+                val pp = positionedParticipantById[p.id]
                 val msgSummary = participantSummaries[p.id]
                 val baseDesc = if (msgSummary.isNullOrBlank()) "Participant ${p.label}" else "Participant ${p.label}. $msgSummary"
                 val clickEvent = if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = p.id, label = p.label) else null
-                ZenUmlParticipantCard(
-                    participant = p,
-                    theme = theme,
-                    modifier = Modifier
-                        .layoutId("p_top:${p.id}")
-                        .diagramNodeInteraction(
-                            baseDescription = baseDesc,
-                            traversalOrder = pIdx,
-                            event = clickEvent,
-                            onNodeClick = onNodeClick,
-                            uriHandler = uriHandler,
-                        ),
-                )
-                if (diagram.mirrorParticipants) {
+                val topVisible = activeCullViewport == null ||
+                    pp == null ||
+                    rectIntersectsViewport(pp.topRect, activeCullViewport, margin = 8f)
+                if (topVisible) {
                     ZenUmlParticipantCard(
                         participant = p,
                         theme = theme,
                         modifier = Modifier
-                            .layoutId("p_bot:${p.id}")
+                            .layoutId("p_top:${p.id}")
                             .diagramNodeInteraction(
                                 baseDescription = baseDesc,
-                                traversalOrder = effectiveParticipants.size + msgSpecs.size + pIdx,
+                                traversalOrder = pIdx,
                                 event = clickEvent,
                                 onNodeClick = onNodeClick,
                                 uriHandler = uriHandler,
                             ),
                     )
                 }
+                if (diagram.mirrorParticipants) {
+                    val botRect = pp?.bottomRect
+                    val botVisible = activeCullViewport == null ||
+                        botRect == null ||
+                        rectIntersectsViewport(botRect, activeCullViewport, margin = 8f)
+                    if (botVisible) {
+                        ZenUmlParticipantCard(
+                            participant = p,
+                            theme = theme,
+                            modifier = Modifier
+                                .layoutId("p_bot:${p.id}")
+                                .diagramNodeInteraction(
+                                    baseDescription = baseDesc,
+                                    traversalOrder = effectiveParticipants.size + msgSpecs.size + pIdx,
+                                    event = clickEvent,
+                                    onNodeClick = onNodeClick,
+                                    uriHandler = uriHandler,
+                                ),
+                        )
+                    }
+                }
             }
 
             for (mSpec in msgSpecs) {
+                val pm = positionedMessageByIndex[mSpec.index]
                 if (mSpec.displayText.isNotBlank()) {
-                    BasicText(
-                        text = annotatedLabel(mSpec.displayText),
-                        modifier = Modifier
-                            .layoutId("msg_lbl:${mSpec.index}")
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                        style = TextStyle(
-                            color = theme.nodeText,
-                            fontFamily = theme.monospaceFontFamily,
-                            fontSize = theme.scaledSp(11.5f),
-                            fontWeight = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontWeight.Normal else FontWeight.Medium,
-                            fontStyle = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontStyle.Italic else FontStyle.Normal,
-                        ),
-                    )
+                    val lblVisible = activeCullViewport == null ||
+                        pm == null ||
+                        rectIntersectsViewport(pm.labelRect, activeCullViewport, margin = 8f)
+                    if (lblVisible) {
+                        BasicText(
+                            text = annotatedLabel(mSpec.displayText),
+                            modifier = Modifier
+                                .layoutId("msg_lbl:${mSpec.index}")
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                            style = TextStyle(
+                                color = theme.nodeText,
+                                fontFamily = theme.monospaceFontFamily,
+                                fontSize = theme.scaledSp(11.5f),
+                                fontWeight = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontWeight.Normal else FontWeight.Medium,
+                                fontStyle = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontStyle.Italic else FontStyle.Normal,
+                            ),
+                        )
+                    }
                 }
                 if (!mSpec.commentText.isNullOrBlank()) {
-                    BasicText(
-                        text = annotatedLabel(mSpec.commentText),
-                        modifier = Modifier
-                            .layoutId("msg_comm:${mSpec.index}")
-                            .widthIn(max = 220.dp)
-                            .padding(horizontal = 6.dp, vertical = 3.dp),
-                        style = TextStyle(
-                            color = theme.noteText,
-                            fontFamily = theme.fontFamily,
-                            fontSize = theme.scaledSp(10.5f),
-                            fontStyle = FontStyle.Italic,
-                        ),
-                    )
+                    val commRect = pm?.commentRect
+                    val commVisible = activeCullViewport == null ||
+                        commRect == null ||
+                        rectIntersectsViewport(commRect, activeCullViewport, margin = 8f)
+                    if (commVisible) {
+                        BasicText(
+                            text = annotatedLabel(mSpec.commentText),
+                            modifier = Modifier
+                                .layoutId("msg_comm:${mSpec.index}")
+                                .widthIn(max = 220.dp)
+                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                            style = TextStyle(
+                                color = theme.noteText,
+                                fontFamily = theme.fontFamily,
+                                fontSize = theme.scaledSp(10.5f),
+                                fontStyle = FontStyle.Italic,
+                            ),
+                        )
+                    }
                 }
             }
 
             for (bSpec in blockSpecs) {
+                val pb = positionedBlockByIndex[bSpec.index]
+                if (activeCullViewport != null && pb != null && !rectIntersectsViewport(pb.rect, activeCullViewport, margin = 8f)) {
+                    continue
+                }
                 BasicText(
                     text = bSpec.keyword,
                     modifier = Modifier
@@ -307,32 +455,48 @@ fun MaradonaZenUmlLayout(
         val blkCondPlaceables = blkCondMeasurables.mapValues { (_, m) -> m.measure(unbounded) }
         val blkDivPlaceables = blkDivMeasurables.mapValues { (_, m) -> m.measure(unbounded) }
 
-        val participantSizes = pTopPlaceables.mapValues { (id, p) ->
-            val defaultSz = effectiveParticipants.firstOrNull { it.id == id }
-                ?.let { ZenUmlLayout.defaultParticipantSize(it, renderDensity) }
-            DiagramSize(
-                width = max(p.width.toFloat(), defaultSz?.width ?: 0f),
-                height = max(p.height.toFloat(), defaultSz?.height ?: 0f),
-            )
+        val participantSizes = HashMap<String, DiagramSize>(holder.participantSizes).apply {
+            for ((id, p) in pTopPlaceables) {
+                val defaultSz = effectiveParticipants.firstOrNull { it.id == id }
+                    ?.let { ZenUmlLayout.defaultParticipantSize(it, renderDensity) }
+                this[id] = DiagramSize(
+                    width = max(p.width.toFloat(), defaultSz?.width ?: 0f),
+                    height = max(p.height.toFloat(), defaultSz?.height ?: 0f),
+                )
+            }
         }
-        val groupHeaderSizes = grpHdrPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val groupHeaderSizes = HashMap<Int, DiagramSize>(holder.groupHeaderSizes).apply {
+            for ((idx, p) in grpHdrPlaceables) {
+                this[idx] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
-        val messageLabelSizes = msgLblPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val messageLabelSizes = HashMap<Int, DiagramSize>(holder.messageLabelSizes).apply {
+            for ((idx, p) in msgLblPlaceables) {
+                this[idx] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
-        val commentSizes = msgCommPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val commentSizes = HashMap<Int, DiagramSize>(holder.commentSizes).apply {
+            for ((idx, p) in msgCommPlaceables) {
+                this[idx] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
-        val blockTabSizes = blkTabPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val blockTabSizes = HashMap<Int, DiagramSize>(holder.blockTabSizes).apply {
+            for ((idx, p) in blkTabPlaceables) {
+                this[idx] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
-        val blockCondSizes = blkCondPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val blockCondSizes = HashMap<Int, DiagramSize>(holder.blockCondSizes).apply {
+            for ((idx, p) in blkCondPlaceables) {
+                this[idx] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
-        val blockDividerSizes = blkDivPlaceables.mapValues { (_, p) ->
-            DiagramSize(p.width.toFloat(), p.height.toFloat())
+        val blockDividerSizes = HashMap<Pair<Int, Int>, DiagramSize>(holder.blockDividerSizes).apply {
+            for ((k, p) in blkDivPlaceables) {
+                this[k] = DiagramSize(p.width.toFloat(), p.height.toFloat())
+            }
         }
+        val effectiveTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
 
         val scaledOptions = with(layoutOptions) {
             copy(
@@ -351,11 +515,52 @@ fun MaradonaZenUmlLayout(
             blockTabSizes = blockTabSizes,
             blockCondSizes = blockCondSizes,
             blockDividerSizes = blockDividerSizes,
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = effectiveTitleSize,
             options = scaledOptions,
         )
+        if (activeCullViewport == null) {
+            holder.participantSizes = participantSizes
+            holder.groupHeaderSizes = groupHeaderSizes
+            holder.messageLabelSizes = messageLabelSizes
+            holder.commentSizes = commentSizes
+            holder.blockTabSizes = blockTabSizes
+            holder.blockCondSizes = blockCondSizes
+            holder.blockDividerSizes = blockDividerSizes
+            holder.titleSize = effectiveTitleSize
+        }
         holder.layout = layout
         onLayout(layout)
+
+        val composedNodes = pTopPlaceables.size + (if (diagram.mirrorParticipants) pBotPlaceables.size else 0)
+        val totalNodes = effectiveParticipants.size * (if (diagram.mirrorParticipants) 2 else 1)
+        val edgeMargin = 30f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.messages.size
+        } else {
+            layout.messages.count { pm ->
+                val endX = if (pm.isSelf) max(pm.startX, pm.endX) + 34f * renderDensity else pm.endX
+                val endY = if (pm.isSelf) pm.y + max(18f * renderDensity, pm.selfLoopHeight) else pm.y
+                segmentIntersectsViewport(pm.startX, pm.y, endX, endY, activeCullViewport, margin = edgeMargin)
+            }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            layout.groups.size + layout.blocks.size
+        } else {
+            layout.groups.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) } +
+                layout.blocks.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = composedNodes,
+                totalNodes = totalNodes,
+                composedEdgeLabels = msgLblPlaceables.size,
+                totalEdgeLabels = layout.messages.size,
+                drawnEdges = drawnEdges,
+                totalEdges = layout.messages.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = layout.groups.size + layout.blocks.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceIn(constraints.minWidth, constraints.maxWidth)
         val hPx = layout.height.roundToInt().coerceIn(constraints.minHeight, constraints.maxHeight)
@@ -436,6 +641,249 @@ fun MaradonaZenUmlLayout(
     }
 }
 
+private data class PremeasuredZenUmlResult(
+    val layout: ZenUmlDiagramLayout,
+    val participantSizes: Map<String, DiagramSize>,
+    val groupHeaderSizes: Map<Int, DiagramSize>,
+    val messageLabelSizes: Map<Int, DiagramSize>,
+    val commentSizes: Map<Int, DiagramSize>,
+    val blockTabSizes: Map<Int, DiagramSize>,
+    val blockCondSizes: Map<Int, DiagramSize>,
+    val blockDividerSizes: Map<Pair<Int, Int>, DiagramSize>,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredZenUmlLayout(
+    diagram: ZenUmlDiagram,
+    effectiveParticipants: List<ZenUmlParticipant>,
+    msgSpecs: List<FlattenedZenUmlMessageSpec>,
+    blockSpecs: List<FlattenedZenUmlBlockSpec>,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredZenUmlResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val grpPadH = with(densityObj) { 8.dp.roundToPx() * 2 }
+    val grpPadV = with(densityObj) { 3.dp.roundToPx() * 2 }
+    val grpStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(11.5f),
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+    )
+    val groupHeaderSizes = diagram.groups.mapIndexed { gIdx, grp ->
+        val sz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(grp.name),
+            style = grpStyle,
+        )
+        gIdx to DiagramSize(sz.width + grpPadH, sz.height + grpPadV)
+    }.toMap()
+
+    val pMinW = with(densityObj) { 104.dp.roundToPx().toFloat() }
+    val pPadH = with(densityObj) { 14.dp.roundToPx() * 2 }
+    val pPadV = with(densityObj) { 8.dp.roundToPx() * 2 }
+    val pGap = with(densityObj) { 2.dp.roundToPx().toFloat() }
+    val stereoStyle = TextStyle(
+        color = theme.nodeText.copy(alpha = 0.78f),
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(10f),
+        fontStyle = FontStyle.Italic,
+        textAlign = TextAlign.Center,
+    )
+    val pLabelStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(13f),
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+    )
+    val participantSizes = effectiveParticipants.associate { p ->
+        val stereoText = p.rawAnnotation ?: when (p.stereotype) {
+            ZenUmlParticipantStereotype.DEFAULT -> null
+            ZenUmlParticipantStereotype.ACTOR -> "Actor"
+            ZenUmlParticipantStereotype.BOUNDARY -> "Boundary"
+            ZenUmlParticipantStereotype.CONTROL -> "Control"
+            ZenUmlParticipantStereotype.ENTITY -> "Entity"
+            ZenUmlParticipantStereotype.DATABASE -> "Database"
+            ZenUmlParticipantStereotype.COLLECTIONS -> "Collections"
+            ZenUmlParticipantStereotype.QUEUE -> "Queue"
+        }
+        val lblSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(p.label),
+            style = pLabelStyle,
+        )
+        val (colW, colH) = if (!stereoText.isNullOrBlank()) {
+            val stSz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = "«$stereoText»",
+                style = stereoStyle,
+            )
+            max(lblSz.width, stSz.width) to (stSz.height + pGap + lblSz.height)
+        } else {
+            lblSz.width to lblSz.height
+        }
+        val cardW = max(pMinW, colW + pPadH)
+        val cardH = colH + pPadV
+        val defaultSz = ZenUmlLayout.defaultParticipantSize(p, renderDensity)
+        p.id to DiagramSize(
+            width = max(cardW, defaultSz.width),
+            height = max(cardH, defaultSz.height),
+        )
+    }
+
+    val msgPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val msgPadV = with(densityObj) { 1.dp.roundToPx() * 2 }
+    val commMaxW = with(densityObj) { 220.dp.roundToPx() }
+    val commPadH = with(densityObj) { 6.dp.roundToPx() * 2 }
+    val commPadV = with(densityObj) { 3.dp.roundToPx() * 2 }
+    val commStyle = TextStyle(
+        color = theme.noteText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(10.5f),
+        fontStyle = FontStyle.Italic,
+    )
+    val messageLabelSizes = HashMap<Int, DiagramSize>()
+    val commentSizes = HashMap<Int, DiagramSize>()
+    for (mSpec in msgSpecs) {
+        if (mSpec.displayText.isNotBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(mSpec.displayText),
+                style = TextStyle(
+                    color = theme.nodeText,
+                    fontFamily = theme.monospaceFontFamily,
+                    fontSize = theme.scaledSp(11.5f),
+                    fontWeight = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontWeight.Normal else FontWeight.Medium,
+                    fontStyle = if (mSpec.kind == ZenUmlMessageKind.RETURN) FontStyle.Italic else FontStyle.Normal,
+                ),
+            )
+            messageLabelSizes[mSpec.index] = DiagramSize(sz.width + msgPadH, sz.height + msgPadV)
+        }
+        if (!mSpec.commentText.isNullOrBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(mSpec.commentText),
+                style = commStyle,
+                maxWidthPx = (commMaxW - commPadH).coerceAtLeast(1),
+            )
+            commentSizes[mSpec.index] = DiagramSize(
+                width = (sz.width + commPadH).coerceAtMost(commMaxW.toFloat()),
+                height = sz.height + commPadV,
+            )
+        }
+    }
+
+    val tabPadH = with(densityObj) { 6.dp.roundToPx() * 2 }
+    val tabPadV = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val condPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val condPadV = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val divPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val divPadV = with(densityObj) { 1.dp.roundToPx() * 2 }
+    val tabStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.monospaceFontFamily,
+        fontSize = theme.captionFontSize,
+        fontWeight = FontWeight.Bold,
+    )
+    val condStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.monospaceFontFamily,
+        fontSize = theme.captionFontSize,
+        fontWeight = FontWeight.Medium,
+    )
+    val divStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.monospaceFontFamily,
+        fontSize = theme.scaledSp(10.5f),
+        fontWeight = FontWeight.SemiBold,
+    )
+    val blockTabSizes = HashMap<Int, DiagramSize>()
+    val blockCondSizes = HashMap<Int, DiagramSize>()
+    val blockDividerSizes = HashMap<Pair<Int, Int>, DiagramSize>()
+    for (bSpec in blockSpecs) {
+        val tSz = measurePlainTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = bSpec.keyword,
+            style = tabStyle,
+        )
+        blockTabSizes[bSpec.index] = DiagramSize(tSz.width + tabPadH, tSz.height + tabPadV)
+        if (!bSpec.condition.isNullOrBlank()) {
+            val cSz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = "[${bSpec.condition}]",
+                style = condStyle,
+            )
+            blockCondSizes[bSpec.index] = DiagramSize(cSz.width + condPadH, cSz.height + condPadV)
+        }
+        for ((dIdx, divText) in bSpec.dividerLabels.withIndex()) {
+            val dSz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = "[$divText]",
+                style = divStyle,
+            )
+            blockDividerSizes[bSpec.index to dIdx] = DiagramSize(dSz.width + divPadH, dSz.height + divPadV)
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = ZenUmlLayout.layout(
+        diagram = diagram,
+        participantSizes = participantSizes,
+        groupHeaderSizes = groupHeaderSizes,
+        messageLabelSizes = messageLabelSizes,
+        commentSizes = commentSizes,
+        blockTabSizes = blockTabSizes,
+        blockCondSizes = blockCondSizes,
+        blockDividerSizes = blockDividerSizes,
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredZenUmlResult(
+        layout = layout,
+        participantSizes = participantSizes,
+        groupHeaderSizes = groupHeaderSizes,
+        messageLabelSizes = messageLabelSizes,
+        commentSizes = commentSizes,
+        blockTabSizes = blockTabSizes,
+        blockCondSizes = blockCondSizes,
+        blockDividerSizes = blockDividerSizes,
+        titleSize = titleSize,
+    )
+}
+
 @Composable
 private fun ZenUmlParticipantCard(
     participant: ZenUmlParticipant,
@@ -487,13 +935,16 @@ private fun ZenUmlParticipantCard(
 private fun DrawScope.drawZenUmlUnderlay(
     layout: ZenUmlDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
+    val cullMargin = 24f * density
     val lifelineDash = PathEffect.dashPathEffect(floatArrayOf(6f * density, 5f * density), 0f)
     val returnDash = PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
     val dividerDash = PathEffect.dashPathEffect(floatArrayOf(4f * density, 4f * density), 0f)
 
     // 1. Groups
     for (pg in layout.groups) {
+        if (!rectIntersectsViewport(pg.rect, viewport, margin = cullMargin)) continue
         val cr = CornerRadius(6f * density, 6f * density)
         drawRoundRect(
             color = theme.subgraphFill.copy(alpha = 0.55f),
@@ -513,6 +964,9 @@ private fun DrawScope.drawZenUmlUnderlay(
 
     // 2. Lifelines
     for (pp in layout.participants) {
+        if (!segmentIntersectsViewport(pp.lifelineX, pp.lifelineTopY, pp.lifelineX, pp.lifelineBottomY, viewport, margin = cullMargin)) {
+            continue
+        }
         drawLine(
             color = theme.edge.copy(alpha = 0.65f),
             start = Offset(pp.lifelineX, pp.lifelineTopY),
@@ -527,6 +981,7 @@ private fun DrawScope.drawZenUmlUnderlay(
     val frameStroke = theme.subgraphBorder
     for (pb in layout.blocks) {
         val r = pb.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val cr = CornerRadius(4f * density, 4f * density)
         drawRoundRect(
             color = frameFill,
@@ -574,6 +1029,7 @@ private fun DrawScope.drawZenUmlUnderlay(
     val actStroke = theme.accentBorder
     for (act in layout.activations.sortedBy { it.depth }) {
         val r = act.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val cr = CornerRadius(2f * density, 2f * density)
         drawRoundRect(
             color = actFill,
@@ -593,8 +1049,14 @@ private fun DrawScope.drawZenUmlUnderlay(
 
     // 5. Participant Header Cards (top and optional mirrored bottom)
     for (pp in layout.participants) {
-        drawParticipantHeaderBox(pp.topRect, pp.participant, theme)
-        pp.bottomRect?.let { drawParticipantHeaderBox(it, pp.participant, theme) }
+        if (rectIntersectsViewport(pp.topRect, viewport, margin = cullMargin)) {
+            drawParticipantHeaderBox(pp.topRect, pp.participant, theme)
+        }
+        pp.bottomRect?.let {
+            if (rectIntersectsViewport(it, viewport, margin = cullMargin)) {
+                drawParticipantHeaderBox(it, pp.participant, theme)
+            }
+        }
     }
 
     // 6. Messages & Comments
@@ -602,24 +1064,32 @@ private fun DrawScope.drawZenUmlUnderlay(
     val commentBorder = theme.noteBorder
     for (pm in layout.messages) {
         pm.commentRect?.let { cr ->
-            val corner = CornerRadius(4f * density, 4f * density)
-            drawRoundRect(
-                color = commentFill,
-                topLeft = Offset(cr.x, cr.y),
-                size = Size(cr.width, cr.height),
-                cornerRadius = corner,
-                style = Fill,
-            )
-            drawRoundRect(
-                color = commentBorder,
-                topLeft = Offset(cr.x, cr.y),
-                size = Size(cr.width, cr.height),
-                cornerRadius = corner,
-                style = Stroke(width = 1.1f * density),
-            )
+            if (rectIntersectsViewport(cr, viewport, margin = cullMargin)) {
+                val corner = CornerRadius(4f * density, 4f * density)
+                drawRoundRect(
+                    color = commentFill,
+                    topLeft = Offset(cr.x, cr.y),
+                    size = Size(cr.width, cr.height),
+                    cornerRadius = corner,
+                    style = Fill,
+                )
+                drawRoundRect(
+                    color = commentBorder,
+                    topLeft = Offset(cr.x, cr.y),
+                    size = Size(cr.width, cr.height),
+                    cornerRadius = corner,
+                    style = Stroke(width = 1.1f * density),
+                )
+            }
         }
 
         if (pm.displayText.isBlank() && pm.commentRect != null) continue
+
+        val endX = if (pm.isSelf) max(pm.startX, pm.endX) + 34f * density else pm.endX
+        val endY = if (pm.isSelf) pm.y + max(18f * density, pm.selfLoopHeight) else pm.y
+        val msgVisible = segmentIntersectsViewport(pm.startX, pm.y, endX, endY, viewport, margin = 30f * density) ||
+            (pm.labelRect.width > 0f && rectIntersectsViewport(pm.labelRect, viewport, margin = cullMargin))
+        if (!msgVisible) continue
 
         // Label background pill so lifelines don't cut through text
         if (pm.labelRect.width > 0f && pm.labelRect.height > 0f) {

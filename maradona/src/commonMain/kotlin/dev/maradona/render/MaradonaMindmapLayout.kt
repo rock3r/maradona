@@ -19,18 +19,27 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.MindmapDiagramLayout
 import dev.maradona.layout.MindmapLayout
 import dev.maradona.model.MaradonaNodeClickEvent
@@ -38,6 +47,7 @@ import dev.maradona.model.MindmapDiagram
 import dev.maradona.model.MindmapNode
 import dev.maradona.model.MindmapShape
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -46,6 +56,48 @@ import kotlin.math.sin
 
 private class MindmapLayoutHolder {
     var layout: MindmapDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var nodeSizes: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun computeMindmapNodeSize(
+    n: MindmapNode,
+    labelSize: DiagramSize,
+    renderDensity: Float,
+): DiagramSize {
+    val padX = when (n.shape) {
+        MindmapShape.Circle, MindmapShape.Bang -> 18f * renderDensity
+        MindmapShape.Hexagon, MindmapShape.Cloud -> 20f * renderDensity
+        else -> 14f * renderDensity
+    }
+    val padY = when (n.shape) {
+        MindmapShape.Circle, MindmapShape.Bang -> 14f * renderDensity
+        else -> 9f * renderDensity
+    }
+    val textW = labelSize.width
+    val textH = labelSize.height
+    val w = max(64f * renderDensity, textW + padX * 2f)
+    val h = max(30f * renderDensity, textH + padY * 2f)
+    return when (n.shape) {
+        MindmapShape.Circle -> {
+            val d = max(max(w, h), kotlin.math.hypot(textW, textH) + padY * 2f)
+            DiagramSize(d, d)
+        }
+        MindmapShape.Bang, MindmapShape.Cloud -> {
+            val rw = textW + 20f * renderDensity
+            val rh = textH + 12f * renderDensity
+            DiagramSize(
+                width = max(w * 1.22f, rw * 1.78f),
+                height = max(h * 1.25f, rh * 1.82f),
+            )
+        }
+        else -> DiagramSize(w, h)
+    }
 }
 
 /**
@@ -61,11 +113,28 @@ fun MaradonaMindmapLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 18f, layerGap = 54f),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (MindmapDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { MindmapLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { MindmapLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
     val childSummaries = remember(diagram) {
         val labelById = diagram.nodes.associate { it.id to it.label }
         val childrenByParent = diagram.nodes.groupBy { it.parentId }
@@ -77,6 +146,44 @@ fun MaradonaMindmapLayout(
                 if (kids.isNotEmpty()) add("branches to ${kids.joinToString(", ")}")
             }.joinToString("; ")
         }
+    }
+
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredMindmapLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.nodeSizes = pre.nodeSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedNodeById = remember(precomputedLayout) {
+        precomputedLayout.nodes.associateBy { it.node.id }
     }
 
     Layout(
@@ -92,25 +199,48 @@ fun MaradonaMindmapLayout(
                 } else {
                     "Mindmap diagram. ${diagram.nodes.size} nodes."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (n in diagram.nodes) {
+                            val pn = positionedNodeById[n.id] ?: continue
+                            if (rectIntersectsViewport(pn.rect, vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = n.id, label = n.label))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawMindmapUnderlay(it, theme) }
+                holder.layout?.let { drawMindmapUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
             for ((nIdx, n) in diagram.nodes.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pn = positionedNodeById[n.id]
+                    if (pn != null && !rectIntersectsViewport(pn.rect, activeCullViewport, cullMargin)) continue
+                }
                 val isRoot = n.parentId == null
                 val textColor = parseCssColor(n.style?.textColor) ?: theme.nodeText
                 val isLarge = "large" in n.classes
@@ -167,39 +297,27 @@ fun MaradonaMindmapLayout(
             }
         }
 
-        fun computeNodeSize(n: MindmapNode): DiagramSize {
-            val pl = lblPlaceables[n.id] ?: return MindmapLayout.defaultNodeSize(n, renderDensity)
-            val padX = when (n.shape) {
-                MindmapShape.Circle, MindmapShape.Bang -> 18f * renderDensity
-                MindmapShape.Hexagon, MindmapShape.Cloud -> 20f * renderDensity
-                else -> 14f * renderDensity
+        val sizesById = diagram.nodes.associate { n ->
+            val pl = lblPlaceables[n.id]
+            val sz = if (pl != null) {
+                computeMindmapNodeSize(
+                    n = n,
+                    labelSize = DiagramSize(pl.width.toFloat(), pl.height.toFloat()),
+                    renderDensity = renderDensity,
+                )
+            } else {
+                holder.nodeSizes[n.id] ?: MindmapLayout.defaultNodeSize(n, renderDensity)
             }
-            val padY = when (n.shape) {
-                MindmapShape.Circle, MindmapShape.Bang -> 14f * renderDensity
-                else -> 9f * renderDensity
-            }
-            val textW = pl.width.toFloat()
-            val textH = pl.height.toFloat()
-            val w = max(64f * renderDensity, textW + padX * 2f)
-            val h = max(30f * renderDensity, textH + padY * 2f)
-            return when (n.shape) {
-                MindmapShape.Circle -> {
-                    val d = max(max(w, h), kotlin.math.hypot(textW, textH) + padY * 2f)
-                    DiagramSize(d, d)
-                }
-                MindmapShape.Bang, MindmapShape.Cloud -> {
-                    val rw = textW + 20f * renderDensity
-                    val rh = textH + 12f * renderDensity
-                    DiagramSize(
-                        width = max(w * 1.22f, rw * 1.78f),
-                        height = max(h * 1.25f, rh * 1.82f),
-                    )
-                }
-                else -> DiagramSize(w, h)
-            }
+            n.id to sz
+        }
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.nodeSizes = sizesById
         }
 
-        val sizesById = diagram.nodes.associate { it.id to computeNodeSize(it) }
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -214,7 +332,7 @@ fun MaradonaMindmapLayout(
         val result = MindmapLayout.layout(
             diagram = diagram,
             nodeSize = { sizesById.getValue(it.id) },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = result
@@ -228,6 +346,25 @@ fun MaradonaMindmapLayout(
                 )
             }
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            result.edges.size
+        } else {
+            result.edges.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeMargin) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = diagram.nodes.size,
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnEdges,
+                totalEdges = result.edges.size,
+                drawnSubgraphs = 0,
+                totalSubgraphs = 0,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
@@ -248,11 +385,96 @@ fun MaradonaMindmapLayout(
     }
 }
 
+private data class PremeasuredMindmapResult(
+    val layout: MindmapDiagramLayout,
+    val titleSize: DiagramSize?,
+    val nodeSizes: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredMindmapLayout(
+    diagram: MindmapDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredMindmapResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val nodeSizes = HashMap<String, DiagramSize>(diagram.nodes.size)
+    for (n in diagram.nodes) {
+        val isRoot = n.parentId == null
+        val textColor = parseCssColor(n.style?.textColor) ?: theme.nodeText
+        val isLarge = "large" in n.classes
+        val baseFontSize = when {
+            isRoot -> theme.scaledSp(15f)
+            isLarge -> theme.scaledSp(14.5f)
+            else -> theme.nodeFontSize
+        }
+        val displayAnnotated = if (!n.icon.isNullOrBlank()) {
+            AnnotatedString("${resolveMermaidIconGlyph(n.icon)} ") + annotatedLabel(n.label, theme.monospaceFontFamily)
+        } else {
+            annotatedLabel(n.label, theme.monospaceFontFamily)
+        }
+        val lblSize = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = displayAnnotated,
+            style = TextStyle(
+                color = textColor,
+                fontFamily = theme.fontFamily,
+                fontSize = baseFontSize,
+                fontWeight = if (isRoot || "urgent" in n.classes) FontWeight.Bold else FontWeight.Medium,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        nodeSizes[n.id] = computeMindmapNodeSize(n, lblSize, renderDensity)
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            padding = padding * renderDensity,
+            subgraphPaddingX = subgraphPaddingX * renderDensity,
+            subgraphPaddingY = subgraphPaddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = MindmapLayout.layout(
+        diagram = diagram,
+        nodeSize = { nodeSizes.getValue(it.id) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredMindmapResult(
+        layout = layout,
+        titleSize = titleSize,
+        nodeSizes = nodeSizes,
+    )
+}
+
 private fun DrawScope.drawMindmapUnderlay(
     layout: MindmapDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
+    val edgeMargin = 20f * unit
+    val nodeMargin = 8f * unit
 
     fun branchColor(branchIndex: Int): Color {
         if (branchIndex < 0) return theme.nodeBorder
@@ -263,6 +485,7 @@ private fun DrawScope.drawMindmapUnderlay(
     for (edge in layout.edges) {
         val pts = edge.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
         val accent = branchColor(edge.branchIndex)
         val strokeW = max(1.5f, 3.2f - edge.depth * 0.45f) * unit
         val path = basisSpline(pts)
@@ -276,6 +499,7 @@ private fun DrawScope.drawMindmapUnderlay(
     // 2. Mindmap node shapes.
     for (pn in layout.nodes) {
         val r = pn.rect
+        if (!rectIntersectsViewport(r, viewport, nodeMargin)) continue
         val n = pn.node
         val accent = branchColor(pn.branchIndex)
         val isUrgent = "urgent" in n.classes

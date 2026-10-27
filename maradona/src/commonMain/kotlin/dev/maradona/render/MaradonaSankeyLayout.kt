@@ -20,17 +20,28 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.PositionedSankeyLink
+import dev.maradona.layout.PositionedSankeyNode
 import dev.maradona.layout.SankeyDiagramLayout
 import dev.maradona.layout.SankeyLayout
 import dev.maradona.model.MaradonaNodeClickEvent
@@ -38,10 +49,35 @@ import dev.maradona.model.SankeyDiagram
 import dev.maradona.model.SankeyLabelStyle
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private class SankeyLayoutHolder {
     var layout: SankeyDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var labelSizes: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun PositionedSankeyNode.nodeAndLabelBounds(): DiagramRect {
+    val minX = min(rect.x, labelRect.x)
+    val minY = min(rect.y, labelRect.y)
+    val maxX = max(rect.right, labelRect.right)
+    val maxY = max(rect.bottom, labelRect.bottom)
+    return DiagramRect(minX, minY, maxX - minX, maxY - minY)
+}
+
+private fun PositionedSankeyLink.ribbonBounds(): DiagramRect {
+    val halfW = thickness / 2f
+    val minX = min(start.x, end.x)
+    val maxX = max(start.x, end.x)
+    val minY = min(start.y - halfW, end.y - halfW)
+    val maxY = max(start.y + halfW, end.y + halfW)
+    return DiagramRect(minX, minY, max(1f, maxX - minX), max(1f, maxY - minY))
 }
 
 private fun resolveSankeyNodeColor(
@@ -69,11 +105,25 @@ fun MaradonaSankeyLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (SankeyDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { SankeyLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { SankeyLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
 
     // Precompute formatted label texts and flow summaries for each node in diagram.nodes order.
     val nodeLabelTexts = remember(diagram) {
@@ -101,6 +151,44 @@ fun MaradonaSankeyLayout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredSankeyLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                nodeLabelTexts = nodeLabelTexts,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.labelSizes = pre.labelSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val activeCullViewport = effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedNodeByIndex = remember(precomputedLayout) {
+        precomputedLayout.nodes.associateBy { it.nodeIndex }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -114,25 +202,47 @@ fun MaradonaSankeyLayout(
                 } else {
                     "Sankey diagram. ${diagram.nodes.size} nodes, ${diagram.links.size} links."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null && onNodeClick != null) {
+                    val offscreenEvents = buildList {
+                        for (pn in precomputedLayout.nodes) {
+                            if (rectIntersectsViewport(pn.nodeAndLabelBounds(), vp, 16f * renderDensity)) continue
+                            add(MaradonaNodeClickEvent(nodeId = pn.node.id, label = pn.node.id))
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawSankeyUnderlay(it, diagram, theme) }
+                holder.layout?.let { drawSankeyUnderlay(it, diagram, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, 8f * renderDensity)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
             for ((idx, lblText) in nodeLabelTexts.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pn = positionedNodeByIndex[idx]
+                    if (pn != null && !rectIntersectsViewport(pn.nodeAndLabelBounds(), activeCullViewport, 16f * renderDensity)) {
+                        continue
+                    }
+                }
                 BasicText(
                     text = annotatedLabel(lblText),
                     modifier = Modifier.layoutId("nodelbl:$idx"),
@@ -170,7 +280,7 @@ fun MaradonaSankeyLayout(
 
         var titlePlaceable: Placeable? = null
         val nodeLblPlaceables = HashMap<Int, Placeable>()
-        val labelSizesByText = HashMap<String, DiagramSize>()
+        val labelSizesByText = HashMap<String, DiagramSize>(holder.labelSizes)
         val nodeBoxMeasurables = HashMap<Int, Measurable>()
 
         for (m in measurables) {
@@ -205,14 +315,24 @@ fun MaradonaSankeyLayout(
             )
         }
 
+        val resolvedTitleSize = if (!diagram.title.isNullOrBlank()) {
+            titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) } ?: holder.titleSize
+        } else {
+            null
+        }
+
         val layout = SankeyLayout.layout(
             diagram = diagram,
             nodeLabelSize = { s ->
                 labelSizesByText[s] ?: SankeyLayout.defaultLabelSize(s, renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.labelSizes = labelSizesByText
+        }
         holder.layout = layout
         onLayout(layout)
 
@@ -226,6 +346,24 @@ fun MaradonaSankeyLayout(
                 ),
             )
         }
+
+        val drawnLinks = if (activeCullViewport == null) {
+            layout.links.size
+        } else {
+            layout.links.count { rectIntersectsViewport(it.ribbonBounds(), activeCullViewport, 16f * renderDensity) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = nodeBoxPlaceables.size,
+                totalNodes = layout.nodes.size,
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnLinks,
+                totalEdges = layout.links.size,
+                drawnSubgraphs = 0,
+                totalSubgraphs = 0,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -252,10 +390,80 @@ fun MaradonaSankeyLayout(
     }
 }
 
+private data class PremeasuredSankeyResult(
+    val layout: SankeyDiagramLayout,
+    val titleSize: DiagramSize?,
+    val labelSizes: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredSankeyLayout(
+    diagram: SankeyDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    nodeLabelTexts: List<String>,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredSankeyResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val nodeLblStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(11.5f),
+        fontWeight = FontWeight.Medium,
+    )
+    val labelSizes = HashMap<String, DiagramSize>(nodeLabelTexts.size)
+    for (txt in nodeLabelTexts) {
+        val sz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(txt),
+            style = nodeLblStyle,
+        )
+        val prev = labelSizes[txt]
+        labelSizes[txt] = DiagramSize(
+            maxOf(prev?.width ?: 0f, sz.width),
+            maxOf(prev?.height ?: 0f, sz.height),
+        )
+    }
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = SankeyLayout.layout(
+        diagram = diagram,
+        nodeLabelSize = { s -> labelSizes[s] ?: SankeyLayout.defaultLabelSize(s, renderDensity) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredSankeyResult(
+        layout = layout,
+        titleSize = titleSize,
+        labelSizes = labelSizes,
+    )
+}
+
 private fun DrawScope.drawSankeyUnderlay(
     layout: SankeyDiagramLayout,
     diagram: SankeyDiagram,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
     val nodeColors = layout.nodes.associate { pn ->
@@ -277,6 +485,7 @@ private fun DrawScope.drawSankeyUnderlay(
     }
 
     for (pl in layout.links) {
+        if (!rectIntersectsViewport(pl.ribbonBounds(), viewport, 16f * unit)) continue
         val srcCol = (nodeColors[pl.sourceNodeIndex] ?: theme.seriesColor(0)).copy(alpha = 0.45f)
         val dstCol = (nodeColors[pl.targetNodeIndex] ?: theme.seriesColor(1)).copy(alpha = 0.45f)
         val halfW = pl.thickness / 2f
@@ -325,6 +534,7 @@ private fun DrawScope.drawSankeyUnderlay(
 
     // 2. Node bars.
     for (pn in layout.nodes) {
+        if (!rectIntersectsViewport(pn.nodeAndLabelBounds(), viewport, 16f * unit)) continue
         val fill = nodeColors[pn.nodeIndex] ?: theme.seriesColor(0)
         drawRect(
             color = fill,
@@ -345,6 +555,7 @@ private fun DrawScope.drawSankeyUnderlay(
         val padY = 1.5f * unit
         val r = CornerRadius(3f * unit, 3f * unit)
         for (pn in layout.nodes) {
+            if (!rectIntersectsViewport(pn.nodeAndLabelBounds(), viewport, 16f * unit)) continue
             val lr = pn.labelRect
             drawRoundRect(
                 color = theme.background.copy(alpha = 0.85f),

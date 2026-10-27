@@ -20,30 +20,59 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.PositionedRadarCurve
+import dev.maradona.layout.PositionedRadarLegendItem
 import dev.maradona.layout.RadarDiagramLayout
 import dev.maradona.layout.RadarLayout
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.RadarDiagram
 import dev.maradona.model.RadarGraticule
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private class RadarLayoutHolder {
     var layout: RadarDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var axisSizesByText: Map<String, DiagramSize> = emptyMap()
+    var legendSizesByText: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun legendItemRect(li: PositionedRadarLegendItem): DiagramRect {
+    val minX = min(li.swatchRect.x, li.labelRect.x)
+    val minY = min(li.swatchRect.y, li.labelRect.y)
+    val maxX = max(li.swatchRect.right, li.labelRect.right)
+    val maxY = max(li.swatchRect.bottom, li.labelRect.bottom)
+    return DiagramRect(minX, minY, maxX - minX, maxY - minY)
 }
 
 private fun resolveRadarCurveColor(
@@ -68,11 +97,69 @@ fun MaradonaRadarLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (RadarDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { RadarLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { RadarLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredRadarLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.axisSizesByText = pre.axisSizesByText
+                holder.legendSizesByText = pre.legendSizesByText
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedAxisByIndex = remember(precomputedLayout) {
+        precomputedLayout.axes.associateBy { it.axisIndex }
+    }
+    val positionedLegendByCurveIndex = remember(precomputedLayout) {
+        precomputedLayout.legendItems.associateBy { it.curveIndex }
+    }
 
     Layout(
         modifier = modifier
@@ -87,26 +174,58 @@ fun MaradonaRadarLayout(
                 } else {
                     "Radar diagram. ${diagram.axes.size} axes, ${diagram.curves.size} curves."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for ((idx, axis) in diagram.axes.withIndex()) {
+                            val pa = positionedAxisByIndex[idx] ?: continue
+                            if (rectIntersectsViewport(pa.labelRect, vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = axis.id, label = axis.label))
+                            }
+                        }
+                        if (diagram.config.showLegend) {
+                            for ((idx, curve) in diagram.curves.withIndex()) {
+                                val li = positionedLegendByCurveIndex[idx] ?: continue
+                                if (rectIntersectsViewport(legendItemRect(li), vp, cullMargin)) continue
+                                if (onNodeClick != null) {
+                                    add(MaradonaNodeClickEvent(nodeId = curve.id, label = curve.label))
+                                }
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawRadarUnderlay(it, diagram, theme) }
+                holder.layout?.let { drawRadarUnderlay(it, diagram, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for ((idx, axis) in diagram.axes.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pa = positionedAxisByIndex[idx]
+                    if (pa != null && !rectIntersectsViewport(pa.labelRect, activeCullViewport, cullMargin)) continue
+                }
                 BasicText(
                     text = annotatedLabel(axis.label),
                     modifier = Modifier.layoutId("axis_lbl:$idx"),
@@ -134,6 +253,10 @@ fun MaradonaRadarLayout(
 
             if (diagram.config.showLegend) {
                 for ((idx, curve) in diagram.curves.withIndex()) {
+                    if (activeCullViewport != null) {
+                        val li = positionedLegendByCurveIndex[idx]
+                        if (li != null && !rectIntersectsViewport(legendItemRect(li), activeCullViewport, cullMargin)) continue
+                    }
                     BasicText(
                         text = annotatedLabel(curve.label),
                         modifier = Modifier.layoutId("legend_lbl:$idx"),
@@ -166,12 +289,17 @@ fun MaradonaRadarLayout(
 
         var titlePlaceable: Placeable? = null
         val axisLblPlaceables = HashMap<Int, Placeable>()
-        val axisSizesByText = HashMap<String, DiagramSize>()
+        val axisSizesByText = HashMap<String, DiagramSize>(holder.axisSizesByText)
         val axisBoxMeasurables = HashMap<Int, Measurable>()
 
         val legendLblPlaceables = HashMap<Int, Placeable>()
-        val legendSizesByText = HashMap<String, DiagramSize>()
+        val legendSizesByText = HashMap<String, DiagramSize>(holder.legendSizesByText)
         val legendBoxMeasurables = HashMap<Int, Measurable>()
+
+        if (activeCullViewport == null) {
+            axisSizesByText.clear()
+            legendSizesByText.clear()
+        }
 
         for (m in measurables) {
             val id = m.layoutId as? String ?: continue
@@ -214,6 +342,15 @@ fun MaradonaRadarLayout(
             }
         }
 
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.axisSizesByText = axisSizesByText
+            holder.legendSizesByText = legendSizesByText
+        }
+
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -230,7 +367,7 @@ fun MaradonaRadarLayout(
             legendLabelSize = { s ->
                 legendSizesByText[s] ?: RadarLayout.defaultLabelSize(s, renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
@@ -254,6 +391,39 @@ fun MaradonaRadarLayout(
             val totalH = max(li.swatchRect.height, li.labelRect.height).roundToInt().coerceAtLeast(1)
             legendBoxPlaceables[li.curveIndex] = m.measure(Constraints.fixed(totalW, totalH))
         }
+
+        val edgeMargin = 20f * renderDensity
+        val totalEdges = layout.axes.size + layout.curves.size
+        val drawnEdges = if (activeCullViewport == null) {
+            totalEdges
+        } else {
+            val visibleSpokes = layout.axes.count { pa ->
+                segmentIntersectsViewport(
+                    layout.center.x,
+                    layout.center.y,
+                    pa.lineEnd.x,
+                    pa.lineEnd.y,
+                    activeCullViewport,
+                    edgeMargin,
+                )
+            }
+            val visibleCurves = layout.curves.count { pc ->
+                radarCurveIntersectsViewport(pc, activeCullViewport, edgeMargin)
+            }
+            visibleSpokes + visibleCurves
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = axisBoxPlaceables.size + legendBoxPlaceables.size,
+                totalNodes = layout.axes.size + (if (diagram.config.showLegend) layout.curves.size else 0),
+                composedEdgeLabels = 0,
+                totalEdgeLabels = 0,
+                drawnEdges = drawnEdges,
+                totalEdges = totalEdges,
+                drawnSubgraphs = 0,
+                totalSubgraphs = 0,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -289,10 +459,109 @@ fun MaradonaRadarLayout(
     }
 }
 
+private data class PremeasuredRadarResult(
+    val layout: RadarDiagramLayout,
+    val titleSize: DiagramSize?,
+    val axisSizesByText: Map<String, DiagramSize>,
+    val legendSizesByText: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredRadarLayout(
+    diagram: RadarDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredRadarResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val axisStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        fontWeight = FontWeight.Medium,
+    )
+    val axisSizesByText = HashMap<String, DiagramSize>()
+    for (axis in diagram.axes) {
+        val sz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(axis.label),
+            style = axisStyle,
+            maxLines = 1,
+        )
+        val prev = axisSizesByText[axis.label]
+        axisSizesByText[axis.label] = DiagramSize(
+            maxOf(prev?.width ?: 0f, sz.width),
+            maxOf(prev?.height ?: 0f, sz.height),
+        )
+    }
+
+    val legendStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        fontWeight = FontWeight.Normal,
+    )
+    val legendSizesByText = HashMap<String, DiagramSize>()
+    if (diagram.config.showLegend) {
+        for (curve in diagram.curves) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(curve.label),
+                style = legendStyle,
+                maxLines = 1,
+            )
+            val prev = legendSizesByText[curve.label]
+            legendSizesByText[curve.label] = DiagramSize(
+                maxOf(prev?.width ?: 0f, sz.width),
+                maxOf(prev?.height ?: 0f, sz.height),
+            )
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = RadarLayout.layout(
+        diagram = diagram,
+        axisLabelSize = { s -> axisSizesByText[s] ?: RadarLayout.defaultLabelSize(s, renderDensity) },
+        legendLabelSize = { s -> legendSizesByText[s] ?: RadarLayout.defaultLabelSize(s, renderDensity) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredRadarResult(
+        layout = layout,
+        titleSize = titleSize,
+        axisSizesByText = axisSizesByText,
+        legendSizesByText = legendSizesByText,
+    )
+}
+
 private fun DrawScope.drawRadarUnderlay(
     layout: RadarDiagramLayout,
     diagram: RadarDiagram,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val cx = layout.center.x
     val cy = layout.center.y
@@ -301,11 +570,14 @@ private fun DrawScope.drawRadarUnderlay(
     val graticuleFill = theme.nodeFill.copy(alpha = 0.35f)
     val spokeStrokeW = max(1f, 1.15f * density)
     val spokeColor = theme.nodeBorder.copy(alpha = 0.65f)
+    val edgeMargin = 20f * density
 
     // 1. Graticule rings (outermost first for subtle background tint)
     val numAxes = layout.axes.size
     for (t in layout.ticks downTo 1) {
         val r = layout.radius * t.toFloat() / layout.ticks.toFloat()
+        val ringRect = DiagramRect(cx - r, cy - r, r * 2f, r * 2f)
+        if (!rectIntersectsViewport(ringRect, viewport, 4f * density)) continue
         if (layout.graticule == RadarGraticule.Polygon && numAxes >= 3) {
             val poly = Path()
             for (i in 0 until numAxes) {
@@ -329,6 +601,7 @@ private fun DrawScope.drawRadarUnderlay(
 
     // 2. Radial axis lines
     for (pa in layout.axes) {
+        if (!segmentIntersectsViewport(cx, cy, pa.lineEnd.x, pa.lineEnd.y, viewport, edgeMargin)) continue
         drawLine(
             color = spokeColor,
             start = Offset(cx, cy),
@@ -350,6 +623,7 @@ private fun DrawScope.drawRadarUnderlay(
     for (pc in layout.curves) {
         val pts = pc.points
         if (pts.isEmpty()) continue
+        if (!radarCurveIntersectsViewport(pc, viewport, edgeMargin)) continue
         val curveColor = resolveRadarCurveColor(pc.curveIndex, diagram.config.customPalette, theme)
         if (pts.size >= 2) {
             val path = buildRadarCurvePath(pts, pc.useSmoothClosedCurve, pc.tension)
@@ -375,12 +649,33 @@ private fun DrawScope.drawRadarUnderlay(
     val swatchStroke = Stroke(width = max(1f, 1.25f * density))
     val swatchAlpha = max(0.35f, fillAlpha)
     for (li in layout.legendItems) {
+        if (!rectIntersectsViewport(li.swatchRect, viewport, 4f * density)) continue
         val curveColor = resolveRadarCurveColor(li.curveIndex, diagram.config.customPalette, theme)
         val topLeft = Offset(li.swatchRect.x, li.swatchRect.y)
         val sz = Size(li.swatchRect.width, li.swatchRect.height)
         drawRect(color = curveColor.copy(alpha = swatchAlpha), topLeft = topLeft, size = sz, style = Fill)
         drawRect(color = curveColor, topLeft = topLeft, size = sz, style = swatchStroke)
     }
+}
+
+private fun radarCurveIntersectsViewport(
+    pc: PositionedRadarCurve,
+    viewport: DiagramRect?,
+    margin: Float,
+): Boolean {
+    if (viewport == null) return true
+    val pts = pc.points
+    if (pts.isEmpty()) return false
+    if (pts.size < 2 || !pc.useSmoothClosedCurve) {
+        return polylineIntersectsViewport(pts, viewport, margin)
+    }
+    val bounds = buildRadarCurvePath(pts, pc.useSmoothClosedCurve, pc.tension).getBounds()
+    return DiagramRect(
+        x = bounds.left - margin,
+        y = bounds.top - margin,
+        width = bounds.width + margin * 2f,
+        height = bounds.height + margin * 2f,
+    ).intersects(viewport)
 }
 
 private fun buildRadarCurvePath(

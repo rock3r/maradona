@@ -23,15 +23,22 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.ArchitectureLayout
@@ -39,15 +46,26 @@ import dev.maradona.layout.DiagramPoint
 import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.model.ArchitectureDiagram
 import dev.maradona.model.ArchitecturePortDir
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 private class ArchitectureLayoutHolder {
     var layout: ArchitectureDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var grpLblSizes: Map<String, DiagramSize> = emptyMap()
+    var svcLblSizes: Map<String, DiagramSize> = emptyMap()
+    var edgeLblSizesByText: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -64,11 +82,27 @@ fun MaradonaArchitectureLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (ArchitectureDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { ArchitectureLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { ArchitectureLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
     val labelFontSp = diagram.config.fontSize.coerceAtLeast(1f)
     val edgeSummaries = remember(diagram) {
         val labelById = diagram.services.associate { it.id to (it.title?.takeIf { t -> t.isNotBlank() } ?: it.id) }
@@ -84,6 +118,49 @@ fun MaradonaArchitectureLayout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredArchitectureLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.grpLblSizes = pre.grpLblSizes
+                holder.svcLblSizes = pre.svcLblSizes
+                holder.edgeLblSizesByText = pre.edgeLblSizesByText
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedGroupById = remember(precomputedLayout) {
+        precomputedLayout.groups.associateBy { it.group.id }
+    }
+    val positionedServiceById = remember(precomputedLayout) {
+        precomputedLayout.services.associateBy { it.service.id }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -97,26 +174,50 @@ fun MaradonaArchitectureLayout(
                 } else {
                     "Architecture diagram. ${diagram.services.size} services, ${diagram.groups.size} groups, ${diagram.edges.size} edges."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (svc in diagram.services) {
+                            val ps = positionedServiceById[svc.id] ?: continue
+                            if (rectIntersectsViewport(ps.bounds, vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                val desc = svc.title?.takeIf { it.isNotBlank() } ?: svc.id
+                                add(MaradonaNodeClickEvent(nodeId = svc.id, label = desc))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawArchitectureUnderlay(it, theme) }
+                holder.layout?.let { drawArchitectureUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for (grp in diagram.groups) {
+                if (activeCullViewport != null) {
+                    val pg = positionedGroupById[grp.id]
+                    if (pg != null && !rectIntersectsViewport(pg.rect, activeCullViewport, cullMargin)) continue
+                }
                 val grpLabel = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
                 val sgScale = if (theme.subgraphFontSize.value > 0f) theme.subgraphFontSize.value / 14f else 1f
                 BasicText(
@@ -133,6 +234,10 @@ fun MaradonaArchitectureLayout(
             }
 
             for ((svcIdx, svc) in diagram.services.withIndex()) {
+                if (activeCullViewport != null) {
+                    val ps = positionedServiceById[svc.id]
+                    if (ps != null && !rectIntersectsViewport(ps.bounds, activeCullViewport, cullMargin)) continue
+                }
                 val svcTitle = svc.title?.takeIf { it.isNotBlank() }
                 if (svcTitle != null) {
                     BasicText(
@@ -181,6 +286,10 @@ fun MaradonaArchitectureLayout(
 
             for ((edgeIdx, edge) in diagram.edges.withIndex()) {
                 if (!edge.title.isNullOrBlank()) {
+                    if (activeCullViewport != null) {
+                        val lr = precomputedLayout.edges.getOrNull(edgeIdx)?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, cullMargin)) continue
+                    }
                     BasicText(
                         text = annotatedLabel(edge.title),
                         modifier = Modifier.layoutId("edgelbl:$edgeIdx"),
@@ -200,15 +309,21 @@ fun MaradonaArchitectureLayout(
 
         var titlePlaceable: Placeable? = null
         val grpLblPlaceables = HashMap<String, Placeable>()
-        val grpLblSizes = HashMap<String, DiagramSize>()
+        val grpLblSizes = HashMap<String, DiagramSize>(holder.grpLblSizes)
 
         val svcLblPlaceables = HashMap<String, Placeable>()
-        val svcLblSizes = HashMap<String, DiagramSize>()
+        val svcLblSizes = HashMap<String, DiagramSize>(holder.svcLblSizes)
         val svcIconTxtMeasurables = HashMap<String, Measurable>()
         val svcBoxMeasurables = HashMap<String, Measurable>()
 
         val edgeLblPlaceables = HashMap<Int, Placeable>()
-        val edgeLblSizesByText = HashMap<String, DiagramSize>()
+        val edgeLblSizesByText = HashMap<String, DiagramSize>(holder.edgeLblSizesByText)
+
+        if (activeCullViewport == null) {
+            grpLblSizes.clear()
+            svcLblSizes.clear()
+            edgeLblSizesByText.clear()
+        }
 
         for (m in measurables) {
             val id = m.layoutId as? String ?: continue
@@ -250,6 +365,16 @@ fun MaradonaArchitectureLayout(
             }
         }
 
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.grpLblSizes = grpLblSizes
+            holder.svcLblSizes = svcLblSizes
+            holder.edgeLblSizesByText = edgeLblSizesByText
+        }
+
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -269,7 +394,7 @@ fun MaradonaArchitectureLayout(
             edgeLabelSize = { lbl ->
                 edgeLblSizesByText[lbl] ?: ArchitectureLayout.defaultLabelSize(lbl, renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
@@ -293,6 +418,30 @@ fun MaradonaArchitectureLayout(
                 )
             }
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.edges.size
+        } else {
+            layout.edges.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeMargin) }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            layout.groups.size
+        } else {
+            layout.groups.count { rectIntersectsViewport(it.rect, activeCullViewport) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = svcBoxPlaceables.size,
+                totalNodes = layout.services.size,
+                composedEdgeLabels = edgeLblPlaceables.size,
+                totalEdgeLabels = layout.edges.count { it.labelRect != null },
+                drawnEdges = drawnEdges,
+                totalEdges = layout.edges.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = layout.groups.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -345,9 +494,132 @@ fun MaradonaArchitectureLayout(
     }
 }
 
+private data class PremeasuredArchitectureResult(
+    val layout: ArchitectureDiagramLayout,
+    val titleSize: DiagramSize?,
+    val grpLblSizes: Map<String, DiagramSize>,
+    val svcLblSizes: Map<String, DiagramSize>,
+    val edgeLblSizesByText: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredArchitectureLayout(
+    diagram: ArchitectureDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredArchitectureResult {
+    val renderDensity = densityObj.density
+    val labelFontSp = diagram.config.fontSize.coerceAtLeast(1f)
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val sgScale = if (theme.subgraphFontSize.value > 0f) theme.subgraphFontSize.value / 14f else 1f
+    val grpStyle = TextStyle(
+        color = theme.subgraphText,
+        fontFamily = theme.fontFamily,
+        fontSize = (labelFontSp * sgScale).sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+    val grpLblSizes = HashMap<String, DiagramSize>(diagram.groups.size)
+    for (grp in diagram.groups) {
+        val grpLabel = grp.title?.takeIf { it.isNotBlank() } ?: grp.id
+        grpLblSizes[grp.id] = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(grpLabel),
+            style = grpStyle,
+        )
+    }
+
+    val svcStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(labelFontSp),
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+    )
+    val svcLblSizes = HashMap<String, DiagramSize>(diagram.services.size)
+    for (svc in diagram.services) {
+        val svcTitle = svc.title?.takeIf { it.isNotBlank() } ?: continue
+        svcLblSizes[svc.id] = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(svcTitle),
+            style = svcStyle,
+        )
+    }
+
+    val edgeStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val edgeLblSizesByText = HashMap<String, DiagramSize>()
+    for (edge in diagram.edges) {
+        val title = edge.title
+        if (!title.isNullOrBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(title),
+                style = edgeStyle,
+            )
+            val prev = edgeLblSizesByText[title]
+            edgeLblSizesByText[title] = DiagramSize(
+                maxOf(prev?.width ?: 0f, sz.width),
+                maxOf(prev?.height ?: 0f, sz.height),
+            )
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = ArchitectureLayout.layout(
+        diagram = diagram,
+        serviceLabelSize = { svcId, lbl ->
+            svcLblSizes[svcId] ?: ArchitectureLayout.defaultLabelSize(lbl, renderDensity)
+        },
+        groupLabelSize = { grpId, lbl ->
+            grpLblSizes[grpId] ?: ArchitectureLayout.defaultLabelSize(lbl, renderDensity)
+        },
+        edgeLabelSize = { lbl ->
+            edgeLblSizesByText[lbl] ?: ArchitectureLayout.defaultLabelSize(lbl, renderDensity)
+        },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredArchitectureResult(
+        layout = layout,
+        titleSize = titleSize,
+        grpLblSizes = grpLblSizes,
+        svcLblSizes = svcLblSizes,
+        edgeLblSizesByText = edgeLblSizesByText,
+    )
+}
+
 private fun DrawScope.drawArchitectureUnderlay(
     layout: ArchitectureDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val iconTileBg = theme.accentBorder
     val iconFg = theme.accentText
@@ -357,6 +629,7 @@ private fun DrawScope.drawArchitectureUnderlay(
     // 1. Groups
     for (pg in layout.groups) {
         val r = pg.rect
+        if (!rectIntersectsViewport(r, viewport, 8f * density)) continue
         val cr = CornerRadius(6f * density, 6f * density)
         drawRoundRect(
             color = theme.subgraphFill.copy(alpha = 0.42f),
@@ -381,26 +654,28 @@ private fun DrawScope.drawArchitectureUnderlay(
     // 2. Edges (drawn behind service tiles so port attachments meet the tile border cleanly)
     val edgeStrokeW = max(1.2f, 2f * density)
     val edgeStroke = Stroke(width = edgeStrokeW, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val edgeMargin = 20f * density
     for (pe in layout.edges) {
         val pts = pe.points
-        if (pts.size < 2) continue
-        val path = Path().apply {
-            moveTo(pts[0].x, pts[0].y)
-            for (i in 1 until pts.size) {
-                lineTo(pts[i].x, pts[i].y)
+        if (pts.size >= 2 && polylineIntersectsViewport(pts, viewport, edgeMargin)) {
+            val path = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (i in 1 until pts.size) {
+                    lineTo(pts[i].x, pts[i].y)
+                }
             }
-        }
-        drawPath(path = path, color = theme.edge, style = edgeStroke)
+            drawPath(path = path, color = theme.edge, style = edgeStroke)
 
-        if (pe.edge.lhsInto) {
-            drawPortArrowHead(tip = pts.first(), portDir = pe.edge.lhsDir, color = theme.edge)
-        }
-        if (pe.edge.rhsInto) {
-            drawPortArrowHead(tip = pts.last(), portDir = pe.edge.rhsDir, color = theme.edge)
+            if (pe.edge.lhsInto) {
+                drawPortArrowHead(tip = pts.first(), portDir = pe.edge.lhsDir, color = theme.edge)
+            }
+            if (pe.edge.rhsInto) {
+                drawPortArrowHead(tip = pts.last(), portDir = pe.edge.rhsDir, color = theme.edge)
+            }
         }
 
         val lr = pe.labelRect
-        if (lr != null) {
+        if (lr != null && rectIntersectsViewport(lr, viewport, 8f * density)) {
             drawRoundRect(
                 color = theme.edgeLabelBackground.copy(alpha = 0.92f),
                 topLeft = Offset(lr.x, lr.y),
@@ -413,6 +688,7 @@ private fun DrawScope.drawArchitectureUnderlay(
 
     // 3. Junctions
     for (pj in layout.junctions) {
+        if (!rectIntersectsViewport(pj.rect, viewport, 8f * density)) continue
         drawCircle(
             color = theme.edge,
             radius = 3.6f * density,
@@ -422,6 +698,7 @@ private fun DrawScope.drawArchitectureUnderlay(
 
     // 4. Services
     for (ps in layout.services) {
+        if (!rectIntersectsViewport(ps.bounds, viewport, 8f * density)) continue
         val svc = ps.service
         val ir = ps.iconRect
         if (svc.icon != null || !svc.iconText.isNullOrBlank()) {
