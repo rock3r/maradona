@@ -668,7 +668,7 @@ internal object NodeRefReader {
             val escapedTagGuard = "&\u200Blt;"
             segment
                 .replace(
-                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
+                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:b|strong|i|em|br|u|ins|s|del|strike|sub|sup|code|img)\b)"""),
                     escapedTagGuard,
                 )
                 .replace("&quot;", "\"").replace("#quot;", "\"")

@@ -302,7 +302,7 @@ object MaradonaSvgExporter {
                 val layout = FlowchartLayout.layout(
                     chart = model.chart,
                     nodeSize = { defaultFlowNodeSize(it, theme) },
-                    edgeLabelSize = { e -> e.label?.let { defaultTextSize(it, theme.edgeLabelFontSize.value) } },
+                    edgeLabelSize = { e -> e.label?.let { defaultEdgeLabelSize(it, theme.edgeLabelFontSize.value) } },
                     options = options,
                 )
                 exportFlowchartToSvg(model.chart, layout, theme)
@@ -843,14 +843,32 @@ object MaradonaSvgExporter {
                 sb.append(
                     """  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""",
                 ).append('\n')
+                val edgeFontSize = theme.edgeLabelFontSize.value
+                val edgeTextStyle = if (textMeasurer != null) {
+                    TextStyle(
+                        fontFamily = theme.fontFamily,
+                        fontSize = (edgeFontSize / (density.density * density.fontScale).coerceAtLeast(0.01f)).sp,
+                    )
+                } else {
+                    null
+                }
+                val edgeSpanLines = wrapFormattedLabelLines(
+                    label = lbl,
+                    fontSp = edgeFontSize,
+                    maxWidth = 172f * wrapScale,
+                    textMeasurer = textMeasurer,
+                    textStyle = edgeTextStyle,
+                    density = density,
+                )
                 appendRichSpanLines(
                     sb = sb,
                     indent = "  ",
                     centerX = lr.centerX,
                     centerY = lr.centerY,
-                    spanLines = parseFormattedLabelLines(lbl),
+                    spanLines = edgeSpanLines,
                     colorHex = theme.edgeLabelText.toSvgHex(),
-                    fontSize = theme.edgeLabelFontSize.value,
+                    fontSize = edgeFontSize,
+                    imageScale = imgScale,
                 )
             }
         }
@@ -3026,8 +3044,16 @@ object MaradonaSvgExporter {
         return NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
     }
 
-    private fun defaultTextSize(text: String, fontSp: Float): DiagramSize {
-        val spanLines = parseFormattedLabelLines(text)
+    private fun defaultEdgeLabelSize(text: String, fontSp: Float): DiagramSize =
+        measureSpanLinesSize(wrapFormattedLabelLines(text, fontSp, 172f), fontSp)
+
+    private fun defaultTextSize(text: String, fontSp: Float): DiagramSize =
+        measureSpanLinesSize(parseFormattedLabelLines(text), fontSp)
+
+    private fun measureSpanLinesSize(
+        spanLines: List<List<FormattedTextSpan>>,
+        fontSp: Float,
+    ): DiagramSize {
         var maxLineW = 0f
         var totalH = 0f
         for (line in spanLines) {
