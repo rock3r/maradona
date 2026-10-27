@@ -390,7 +390,7 @@ fun MaradonaDiagram(
             }
         }
 
-        LaunchedEffect(naturalSize, model) {
+        LaunchedEffect(naturalSize, viewResetKey) {
             if (initialViewApplied || naturalSize.width <= 0 || naturalSize.height <= 0) return@LaunchedEffect
             if (initialScale != null) {
                 // Absolute scale: the oracle needs exactly 0.1x/1x/5x, and the

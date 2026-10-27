@@ -1,8 +1,13 @@
 package dev.maradona.sample
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -13,7 +18,9 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Density
+import dev.maradona.render.DiagramZoom
 import dev.maradona.render.LocalMaradonaTheme
+import dev.maradona.render.MaradonaDiagram
 import dev.maradona.theme.jewel.ProvideJewelMaradonaTheme
 import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 import java.io.ByteArrayInputStream
@@ -370,6 +377,41 @@ class SampleAppThemeAndSelectionTest {
             )
         } finally {
             scene.close()
+        }
+
+        // 6. Verify resetViewKey also reapplies initialZoom = DiagramZoom.Natural and initialPan on an oversized diagram
+        var resetKey by mutableIntStateOf(0)
+        val naturalScene = ImageComposeScene(width = 320, height = 240, density = Density(2f)) {
+            MaradonaDiagram(
+                source = sampleExamples.getValue("Shapes"),
+                initialZoom = DiagramZoom.Natural,
+                initialPan = Offset(0.2f, 0.8f),
+                resetViewKey = resetKey,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        try {
+            var natClock = 1L
+            repeat(4) { naturalScene.render(natClock++ * 16_000_000L) }
+            val initialNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+
+            naturalScene.sendPointerEvent(PointerEventType.Press, Offset(160f, 120f), timeMillis = natClock * 16L)
+            naturalScene.render(natClock++ * 16_000_000L)
+            naturalScene.sendPointerEvent(PointerEventType.Move, Offset(40f, 40f), timeMillis = natClock * 16L)
+            naturalScene.render(natClock++ * 16_000_000L)
+            naturalScene.sendPointerEvent(PointerEventType.Release, Offset(40f, 40f), timeMillis = natClock * 16L)
+            val pannedNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            assertFalse(initialNaturalPng.contentEquals(pannedNaturalPng))
+
+            resetKey++
+            repeat(4) { naturalScene.render(natClock++ * 16_000_000L) }
+            val restoredNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            assertTrue(
+                initialNaturalPng.contentEquals(restoredNaturalPng),
+                "Expected resetViewKey to reapply initialZoom = DiagramZoom.Natural and initialPan",
+            )
+        } finally {
+            naturalScene.close()
         }
     }
 }
