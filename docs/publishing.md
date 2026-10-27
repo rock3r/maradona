@@ -8,8 +8,8 @@ The sample modules (`:sample-shared`, `:sample-desktop`, `:sample-android`, and 
 
 | Gradle Module | Multiplatform Root Coordinate | Published Target Artifacts |
 | --- | --- | --- |
-| **`:maradona`** | `dev.sebastiano.maradona:maradona:<version>` | `maradona`, `maradona-desktop` (`.jar`), `maradona-android` (`.aar`), `maradona-iosarm64` (`.klib`), `maradona-iossimulatorarm64` (`.klib`) |
-| **`:maradona-material3`** | `dev.sebastiano.maradona:maradona-material3:<version>` | `maradona-material3`, `maradona-material3-desktop` (`.jar`), `maradona-material3-android` (`.aar`), `maradona-material3-iosarm64` (`.klib`), `maradona-material3-iossimulatorarm64` (`.klib`) |
+| **`:maradona`** | `dev.sebastiano.maradona:maradona:<version>` | `maradona`, `maradona-desktop` (`.jar`, JDK 25+), `maradona-android` (`.aar`, `minSdk 24`, JDK 25+), `maradona-iosarm64` (`.klib`), `maradona-iossimulatorarm64` (`.klib`) |
+| **`:maradona-material3`** | `dev.sebastiano.maradona:maradona-material3:<version>` | `maradona-material3`, `maradona-material3-desktop` (`.jar`, JDK 25+), `maradona-material3-android` (`.aar`, `minSdk 24`, JDK 25+), `maradona-material3-iosarm64` (`.klib`), `maradona-material3-iossimulatorarm64` (`.klib`) |
 | **`:maradona-jewel`** | `dev.sebastiano.maradona:maradona-jewel:<version>` | `maradona-jewel`, `maradona-jewel-desktop` (`.jar`, Desktop JVM / JDK 25+ only) |
 
 Shared coordinates and POM metadata (`GROUP`, `VERSION_NAME`, `POM_URL`, `POM_LICENSE_*`, `POM_SCM_*`, `POM_DEVELOPER_*`) live in the root [`gradle.properties`](../gradle.properties). Per-module `POM_ARTIFACT_ID`, `POM_NAME`, and `POM_DESCRIPTION` live in each library module's own `gradle.properties`. Every published JAR, `-sources.jar`, and `-javadoc.jar` bundles [`LICENSE`](../LICENSE) and [`NOTICE`](../NOTICE) under `META-INF/`.

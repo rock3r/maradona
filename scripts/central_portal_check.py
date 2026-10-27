@@ -15,9 +15,11 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -396,6 +398,48 @@ def validate_jar(component: str, jar_path: Path) -> list[str]:
                 errors.append(f"{component} is missing required entry {required_entry}")
             elif entries[required_entry] <= 0:
                 errors.append(f"{component} required entry {required_entry} is empty")
+        if component.endswith("-desktop"):
+            majors: set[int] = set()
+            for name in jar.namelist():
+                if name.endswith(".class"):
+                    data = jar.read(name)
+                    if len(data) >= 8 and data[:4] == b"\xca\xfe\xba\xbe":
+                        _, major = struct.unpack(">HH", data[4:8])
+                        majors.add(major)
+            if majors != {69}:
+                errors.append(
+                    f"{component} expected Java 25 classfile major version {{69}}, got {sorted(majors)}"
+                )
+    return errors
+
+
+def validate_aar(component: str, aar_path: Path) -> list[str]:
+    errors: list[str] = []
+    with zipfile.ZipFile(aar_path) as aar:
+        names = set(aar.namelist())
+        if "AndroidManifest.xml" not in names:
+            errors.append(f"{component} is missing AndroidManifest.xml")
+        else:
+            manifest_xml = aar.read("AndroidManifest.xml").decode("utf-8", errors="replace")
+            if 'android:minSdkVersion="24"' not in manifest_xml:
+                errors.append(
+                    f'{component} AndroidManifest.xml must declare android:minSdkVersion="24"'
+                )
+        if "classes.jar" not in names:
+            errors.append(f"{component} is missing classes.jar")
+        else:
+            majors: set[int] = set()
+            with zipfile.ZipFile(io.BytesIO(aar.read("classes.jar"))) as inner:
+                for name in inner.namelist():
+                    if name.endswith(".class"):
+                        data = inner.read(name)
+                        if len(data) >= 8 and data[:4] == b"\xca\xfe\xba\xbe":
+                            _, major = struct.unpack(">HH", data[4:8])
+                            majors.add(major)
+            if majors != {69}:
+                errors.append(
+                    f"{component}!classes.jar expected Java 25 classfile major version {{69}}, got {sorted(majors)}"
+                )
     return errors
 
 
@@ -483,6 +527,8 @@ def validate_deployment(base_url: str, token: str, deployment_id: str, version: 
                 ("-sources.jar", "-javadoc.jar", "-metadata.jar")
             ):
                 errors.extend(validate_jar(component, payload))
+            elif relative_path.endswith(".aar"):
+                errors.extend(validate_aar(component, payload))
 
     for file_check in checked:
         print(f"{file_check.size:>10}  {file_check.path}")

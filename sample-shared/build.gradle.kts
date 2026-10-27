@@ -6,10 +6,13 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(25)
+
     jvm("desktop")
     android {
         namespace = "dev.maradona.sample.shared"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
+        minSdk = libs.versions.android.min.sdk.get().toInt()
     }
 
     listOf(

@@ -1,3 +1,4 @@
+import org.gradle.api.JavaVersion
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -7,8 +8,9 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(25)
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_11
+        jvmTarget = JvmTarget.JVM_25
     }
     dependencies {
         implementation(project(":sample-shared"))
@@ -27,6 +29,11 @@ android {
         targetSdk = libs.versions.android.target.sdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 
     buildTypes {

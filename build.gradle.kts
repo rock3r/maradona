@@ -2,7 +2,9 @@ import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
 import com.vanniktech.maven.publish.MavenPublishBaseExtension
 import com.vanniktech.maven.publish.SourcesJar
+import java.io.DataInputStream
 import java.util.jar.JarFile
+import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.gradle.jvm.tasks.Jar
 import org.w3c.dom.Element
@@ -155,6 +157,63 @@ tasks.register("verifyMavenLocalPublication") {
                     }
                     if (jf.getJarEntry("META-INF/NOTICE") == null) {
                         errors += "$artifactId: ${jarFile.name} is missing META-INF/NOTICE"
+                    }
+                }
+            }
+
+            // Verify JVM 25 classfile major version (69) in desktop .jar and Android .aar (classes.jar),
+            // and verify android:minSdkVersion="24" in Android .aar manifests.
+            val primaryFile = moduleDir.resolve("$baseName${spec.primaryExtension}")
+            if (primaryFile.isFile && spec.primaryExtension == ".jar" && artifactId.endsWith("-desktop")) {
+                JarFile(primaryFile).use { jf ->
+                    val majors = mutableSetOf<Int>()
+                    val entries = jf.entries()
+                    while (entries.hasMoreElements()) {
+                        val entry = entries.nextElement()
+                        if (!entry.isDirectory && entry.name.endsWith(".class")) {
+                            DataInputStream(jf.getInputStream(entry)).use { dis ->
+                                if (dis.readInt() == 0xCAFEBABE.toInt()) {
+                                    dis.readUnsignedShort() // minor
+                                    majors += dis.readUnsignedShort()
+                                }
+                            }
+                        }
+                    }
+                    if (majors != setOf(69)) {
+                        errors += "$artifactId: expected Java 25 classfile major version [69] in ${primaryFile.name}, got $majors"
+                    }
+                }
+            } else if (primaryFile.isFile && spec.primaryExtension == ".aar") {
+                JarFile(primaryFile).use { aar ->
+                    val manifestEntry = aar.getJarEntry("AndroidManifest.xml")
+                    if (manifestEntry == null) {
+                        errors += "$artifactId: ${primaryFile.name} is missing AndroidManifest.xml"
+                    } else {
+                        val manifestXml = aar.getInputStream(manifestEntry).bufferedReader().readText()
+                        if (!manifestXml.contains("""android:minSdkVersion="24"""")) {
+                            errors += "$artifactId: ${primaryFile.name} AndroidManifest.xml must declare android:minSdkVersion=\"24\", got:\n$manifestXml"
+                        }
+                    }
+                    val classesEntry = aar.getJarEntry("classes.jar")
+                    if (classesEntry == null) {
+                        errors += "$artifactId: ${primaryFile.name} is missing classes.jar"
+                    } else {
+                        val majors = mutableSetOf<Int>()
+                        ZipInputStream(aar.getInputStream(classesEntry)).use { zis ->
+                            while (true) {
+                                val entry = zis.nextEntry ?: break
+                                if (!entry.isDirectory && entry.name.endsWith(".class")) {
+                                    val dis = DataInputStream(zis)
+                                    if (dis.readInt() == 0xCAFEBABE.toInt()) {
+                                        dis.readUnsignedShort() // minor
+                                        majors += dis.readUnsignedShort()
+                                    }
+                                }
+                            }
+                        }
+                        if (majors != setOf(69)) {
+                            errors += "$artifactId: expected Java 25 classfile major version [69] in ${primaryFile.name}!classes.jar, got $majors"
+                        }
                     }
                 }
             }

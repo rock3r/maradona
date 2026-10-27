@@ -7,12 +7,15 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(25)
+
     // All library code lives in commonMain and uses only Compose Multiplatform
     // common APIs, so every target shares the same sources.
     jvm("desktop")
     android {
         namespace = "dev.maradona"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
+        minSdk = libs.versions.android.min.sdk.get().toInt()
     }
     iosArm64()
     iosSimulatorArm64()

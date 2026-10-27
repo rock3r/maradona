@@ -190,8 +190,8 @@ See [`docs/diagram-syntax.md`](docs/diagram-syntax.md) for the complete syntax a
 
 | Module | Targets | Purpose |
 | --- | --- | --- |
-| **`:maradona`** | `jvm("desktop")`, `android`, `iosArm64()`, `iosSimulatorArm64()` | Core parser, 23 layout engines, `MaradonaDiagram`, `MaradonaTheme`, `MaradonaSvgExporter` (`compose-runtime`, `compose-foundation`, `compose-ui` only) |
-| **`:maradona-material3`** | `jvm("desktop")`, `android`, `iosArm64()`, `iosSimulatorArm64()` | Live `MaterialTheme` connector (`ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, `MaradonaTheme.fromMaterial3`) |
+| **`:maradona`** | `jvm("desktop")` (JDK 25+), `android` (`minSdk 24`, JDK 25+), `iosArm64()`, `iosSimulatorArm64()` | Core parser, 23 layout engines, `MaradonaDiagram`, `MaradonaTheme`, `MaradonaSvgExporter` (`compose-runtime`, `compose-foundation`, `compose-ui` only) |
+| **`:maradona-material3`** | `jvm("desktop")` (JDK 25+), `android` (`minSdk 24`, JDK 25+), `iosArm64()`, `iosSimulatorArm64()` | Live `MaterialTheme` connector (`ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, `MaradonaTheme.fromMaterial3`) |
 | **`:maradona-jewel`** | `jvm("desktop")` (*Desktop JVM / JDK 25+ only*) | Live JetBrains `JewelTheme` connector (`ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, `MaradonaTheme.fromJewel`) |
 
 All library code lives in `commonMain` across three layers:
