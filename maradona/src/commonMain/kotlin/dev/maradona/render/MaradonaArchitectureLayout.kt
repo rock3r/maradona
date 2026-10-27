@@ -657,25 +657,25 @@ private fun DrawScope.drawArchitectureUnderlay(
     val edgeMargin = 20f * density
     for (pe in layout.edges) {
         val pts = pe.points
-        if (pts.size < 2) continue
-        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
-        val path = Path().apply {
-            moveTo(pts[0].x, pts[0].y)
-            for (i in 1 until pts.size) {
-                lineTo(pts[i].x, pts[i].y)
+        if (pts.size >= 2 && polylineIntersectsViewport(pts, viewport, edgeMargin)) {
+            val path = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (i in 1 until pts.size) {
+                    lineTo(pts[i].x, pts[i].y)
+                }
             }
-        }
-        drawPath(path = path, color = theme.edge, style = edgeStroke)
+            drawPath(path = path, color = theme.edge, style = edgeStroke)
 
-        if (pe.edge.lhsInto) {
-            drawPortArrowHead(tip = pts.first(), portDir = pe.edge.lhsDir, color = theme.edge)
-        }
-        if (pe.edge.rhsInto) {
-            drawPortArrowHead(tip = pts.last(), portDir = pe.edge.rhsDir, color = theme.edge)
+            if (pe.edge.lhsInto) {
+                drawPortArrowHead(tip = pts.first(), portDir = pe.edge.lhsDir, color = theme.edge)
+            }
+            if (pe.edge.rhsInto) {
+                drawPortArrowHead(tip = pts.last(), portDir = pe.edge.rhsDir, color = theme.edge)
+            }
         }
 
         val lr = pe.labelRect
-        if (lr != null) {
+        if (lr != null && rectIntersectsViewport(lr, viewport, 8f * density)) {
             drawRoundRect(
                 color = theme.edgeLabelBackground.copy(alpha = 0.92f),
                 topLeft = Offset(lr.x, lr.y),

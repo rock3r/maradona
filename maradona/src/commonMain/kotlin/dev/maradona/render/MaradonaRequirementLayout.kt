@@ -823,29 +823,29 @@ private fun DrawScope.drawRequirementUnderlay(
     val edgeColor = theme.edge
     for (pr in layout.relations) {
         val pts = pr.points
-        if (pts.size < 2) continue
-        if (!polylineIntersectsViewport(pts, viewport, 20f * unit)) continue
-        val path = Path().apply {
-            moveTo(pts[0].x, pts[0].y)
-            for (i in 1 until pts.size) {
-                lineTo(pts[i].x, pts[i].y)
+        if (pts.size >= 2 && polylineIntersectsViewport(pts, viewport, 20f * unit)) {
+            val path = Path().apply {
+                moveTo(pts[0].x, pts[0].y)
+                for (i in 1 until pts.size) {
+                    lineTo(pts[i].x, pts[i].y)
+                }
             }
-        }
-        drawPath(
-            path = path,
-            color = edgeColor,
-            style = Stroke(
-                width = 1.5f * unit,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round,
-                pathEffect = if (pr.relation.isContains) null else dashEffect,
-            ),
-        )
+            drawPath(
+                path = path,
+                color = edgeColor,
+                style = Stroke(
+                    width = 1.5f * unit,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                    pathEffect = if (pr.relation.isContains) null else dashEffect,
+                ),
+            )
 
-        if (pr.relation.isContains) {
-            drawContainsMarker(pts[0], pts[1], edgeColor, theme.background, unit)
-        } else {
-            drawOpenArrow(pts[pts.lastIndex - 1], pts.last(), edgeColor, unit)
+            if (pr.relation.isContains) {
+                drawContainsMarker(pts[0], pts[1], edgeColor, theme.background, unit)
+            } else {
+                drawOpenArrow(pts[pts.lastIndex - 1], pts.last(), edgeColor, unit)
+            }
         }
 
         val lr = pr.labelRect

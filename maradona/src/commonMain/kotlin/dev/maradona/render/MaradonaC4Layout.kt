@@ -880,38 +880,38 @@ private fun DrawScope.drawC4Underlay(
     val edgeMargin = 20f * density
     for (pr in layout.relationships) {
         val pts = pr.points
-        if (pts.size < 2) continue
-        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
         val lineColor = parseCssColor(pr.relationship.style?.lineColor) ?: defaultRelLineColor
-        val path = Path().apply {
-            moveTo(pts.first().x, pts.first().y)
-            if (pts.size == 3) {
-                quadraticTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y)
-            } else {
-                for (i in 1 until pts.size) {
-                    lineTo(pts[i].x, pts[i].y)
+        if (pts.size >= 2 && polylineIntersectsViewport(pts, viewport, edgeMargin)) {
+            val path = Path().apply {
+                moveTo(pts.first().x, pts.first().y)
+                if (pts.size == 3) {
+                    quadraticTo(pts[1].x, pts[1].y, pts[2].x, pts[2].y)
+                } else {
+                    for (i in 1 until pts.size) {
+                        lineTo(pts[i].x, pts[i].y)
+                    }
                 }
             }
-        }
-        drawPath(
-            path = path,
-            color = lineColor,
-            style = Stroke(width = 1.6f * density, pathEffect = relDash),
-        )
+            drawPath(
+                path = path,
+                color = lineColor,
+                style = Stroke(width = 1.6f * density, pathEffect = relDash),
+            )
 
-        if (pr.endArrow) {
-            val prev = pts[pts.size - 2]
-            val tip = pts.last()
-            drawRelArrowhead(from = prev, to = tip, color = lineColor)
-        }
-        if (pr.startArrow) {
-            val next = pts[1]
-            val tip = pts.first()
-            drawRelArrowhead(from = next, to = tip, color = lineColor)
+            if (pr.endArrow) {
+                val prev = pts[pts.size - 2]
+                val tip = pts.last()
+                drawRelArrowhead(from = prev, to = tip, color = lineColor)
+            }
+            if (pr.startArrow) {
+                val next = pts[1]
+                val tip = pts.first()
+                drawRelArrowhead(from = next, to = tip, color = lineColor)
+            }
         }
 
         val lr = pr.labelRect
-        if (lr != null) {
+        if (lr != null && rectIntersectsViewport(lr, viewport, 8f * density)) {
             val cr = CornerRadius(4f * density, 4f * density)
             drawRoundRect(
                 color = theme.background.copy(alpha = 0.92f),
