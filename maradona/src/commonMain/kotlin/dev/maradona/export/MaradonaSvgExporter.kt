@@ -505,11 +505,10 @@ object MaradonaSvgExporter {
                     el.id to DiagramSize(neededW, neededH)
                 }
                 val boundaryHeaderSizes = d.boundaries.associate { b ->
-                    val hdr = listOfNotNull(
-                        b.label.takeIf { it.isNotBlank() },
-                        b.type.takeIf { it.isNotBlank() }?.let { "[$it]" },
-                    ).joinToString(" ")
-                    b.id to defaultTextSize(hdr, theme.scaledSp(12.5f).value)
+                    val bLines = c4BoundaryHeaderSpanLines(b, theme)
+                    val bW = bLines.maxOfOrNull { (lf, line) -> line.sumOf { it.text.length } * lf * 0.62f }?.coerceAtLeast(1f) ?: 1f
+                    val bH = bLines.sumOf { (lf, _) -> (lf * 1.4f).toDouble() }.toFloat()
+                    b.id to DiagramSize(bW + 20f * dens, bH + 8f * dens)
                 }
                 val relLabelSizes = d.relationships.mapIndexedNotNull { idx, rel ->
                     val indexedLabel = if (!rel.index.isNullOrBlank()) "${rel.index}: ${rel.label}" else rel.label
@@ -1620,16 +1619,9 @@ object MaradonaSvgExporter {
             val bStrokeHex = (parseCssColor(pb.boundary.style?.borderColor) ?: theme.subgraphBorder).toSvgHex()
             val bTextHex = (parseCssColor(pb.boundary.style?.fontColor) ?: theme.subgraphText).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$bFillHex" stroke="$bStrokeHex" stroke-width="1.3" stroke-dasharray="6,4"/>""").append('\n')
-            val hdrSpans = buildList {
-                if (pb.boundary.label.isNotBlank()) {
-                    addAll(parseFormattedLabelLines(pb.boundary.label).flatten())
-                }
-                pb.boundary.type.takeIf { it.isNotBlank() }?.let {
-                    add(FormattedTextSpan(if (isNotEmpty()) " [$it]" else "[$it]"))
-                }
-            }
-            if (hdrSpans.isNotEmpty()) {
-                appendRichSpanLines(sb, "  ", pb.headerRect.centerX, pb.headerRect.centerY, listOf(hdrSpans), bTextHex, theme.scaledSp(12.5f).value)
+            val hdrLines = c4BoundaryHeaderSpanLines(pb.boundary, theme)
+            if (hdrLines.isNotEmpty()) {
+                appendSizedSpanLines(sb, "  ", pb.headerRect.centerX, pb.headerRect.centerY, hdrLines, bTextHex)
             }
         }
 
@@ -1991,6 +1983,22 @@ object MaradonaSvgExporter {
 
         sb.append("</svg>")
         return sb.toString()
+    }
+
+    private fun c4BoundaryHeaderSpanLines(
+        b: dev.maradona.model.C4Boundary,
+        theme: MaradonaTheme,
+    ): List<Pair<Float, List<FormattedTextSpan>>> = buildList {
+        val lblFont = theme.scaledSp(12.5f).value
+        val typeFont = theme.scaledSp(10f).value
+        if (b.label.isNotBlank()) {
+            for (line in parseFormattedLabelLines(b.label)) {
+                add(lblFont to line)
+            }
+        }
+        b.type.takeIf { it.isNotBlank() }?.let {
+            add(typeFont to listOf(FormattedTextSpan("[$it]")))
+        }
     }
 
     private fun classHeaderSpanLines(
