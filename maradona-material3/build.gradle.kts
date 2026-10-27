@@ -7,10 +7,13 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(25)
+
     jvm("desktop")
     android {
         namespace = "dev.maradona.theme.material3"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
+        minSdk = libs.versions.android.min.sdk.get().toInt()
     }
     iosArm64()
     iosSimulatorArm64()

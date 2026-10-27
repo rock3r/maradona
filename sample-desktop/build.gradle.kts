@@ -7,6 +7,8 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(25)
+
     jvm("desktop")
 
     sourceSets {

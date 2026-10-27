@@ -13,7 +13,7 @@ First public release of Maradona (`dev.sebastiano.maradona`).
 
 ### Added
 
-- **Core library (`dev.sebastiano.maradona:maradona`)** for **Desktop (`jvm("desktop")`)**, **Android (`minSdk 24`)**, and **iOS (`iosArm64`, `iosSimulatorArm64`)**:
+- **Core library (`dev.sebastiano.maradona:maradona`)** for **Desktop (`jvm("desktop")`, JDK 25+)**, **Android (`minSdk 24`, JDK 25+)**, and **iOS (`iosArm64`, `iosSimulatorArm64`)**:
   - Pure-Kotlin parsers (`MaradonaParser`), layout engines, interactive Compose Multiplatform renderers (`MaradonaDiagram`), and standalone SVG export (`MaradonaSvgExporter`) across all **23 Mermaid diagram families**:
     1. Flowcharts (`flowchart` / `graph`) with 12 node shapes, Mermaid v2 `@{ shape, label }` metadata, nested subgraphs with cluster coalescing and cross-subgraph edge deflection, `style` / `classDef` / `linkStyle`, and `click` directives.
     2. Sequence diagrams (`sequenceDiagram`) with `participant` / `actor`, activations, `loop` / `alt` / `opt` / `par` / `critical` / `break` / `rect` / `box` frames, notes, `autonumber`, and participant links.
