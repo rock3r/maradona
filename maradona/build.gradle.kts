@@ -9,6 +9,9 @@ plugins {
 kotlin {
     jvmToolchain(25)
 
+    @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+    abiValidation()
+
     // All library code lives in commonMain and uses only Compose Multiplatform
     // common APIs, so every target shares the same sources.
     jvm("desktop")

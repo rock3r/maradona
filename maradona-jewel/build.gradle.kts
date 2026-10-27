@@ -8,6 +8,9 @@ plugins {
 kotlin {
     jvmToolchain(25)
 
+    @OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+    abiValidation()
+
     // Jewel is a Desktop JVM look-and-feel library; keeping this connector
     // desktop-only ensures Android and iOS targets never pull in Jewel dependencies.
     jvm("desktop")
