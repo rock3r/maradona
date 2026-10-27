@@ -934,26 +934,96 @@ fun wrapFormattedLabelLines(
             }
         }
 
-        fun pushSpanToken(template: FormattedTextSpan, tokenText: String) {
+        fun appendSpansToLine(list: MutableList<FormattedTextSpan>, spansToAdd: List<FormattedTextSpan>) {
+            for (sp in spansToAdd) {
+                if (sp.inlineImage != null) {
+                    list += sp
+                } else {
+                    appendToLine(list, sp, sp.text)
+                }
+            }
+        }
+
+        fun sliceSpans(spans: List<FormattedTextSpan>, startChar: Int, endChar: Int): List<FormattedTextSpan> {
+            if (startChar >= endChar) return emptyList()
+            val result = ArrayList<FormattedTextSpan>()
+            var offset = 0
+            for (sp in spans) {
+                val spStart = offset
+                val spEnd = offset + sp.text.length
+                offset = spEnd
+                if (spEnd <= startChar || spStart >= endChar) continue
+                val localStart = (startChar - spStart).coerceAtLeast(0)
+                val localEnd = (endChar - spStart).coerceAtMost(sp.text.length)
+                if (localStart < localEnd) {
+                    appendToLine(result, sp, sp.text.substring(localStart, localEnd))
+                }
+            }
+            return result
+        }
+
+        fun pushSpansToken(tokenSpans: List<FormattedTextSpan>) {
             val candidate = ArrayList(curLine)
-            appendToLine(candidate, template, tokenText)
+            appendSpansToLine(candidate, tokenSpans)
             if (curLine.isNotEmpty() && measureSpansWidthPx(candidate) > maxWidthPx) {
                 out += curLine
                 curLine = ArrayList()
-                appendToLine(curLine, template, tokenText)
+                appendSpansToLine(curLine, tokenSpans)
             } else {
                 curLine = candidate
             }
         }
 
+        val pendingWordSpans = ArrayList<FormattedTextSpan>()
+
+        fun flushPendingWord() {
+            if (pendingWordSpans.isEmpty()) return
+            val wordSpans = ArrayList(pendingWordSpans)
+            pendingWordSpans.clear()
+            if (measureSpansWidthPx(wordSpans) <= maxWidthPx) {
+                pushSpansToken(wordSpans)
+            } else {
+                if (curLine.isNotEmpty()) {
+                    out += curLine
+                    curLine = ArrayList()
+                }
+                val totalLen = wordSpans.sumOf { it.text.length }
+                var pos = 0
+                while (pos < totalLen) {
+                    var lo = pos + 1
+                    var hi = totalLen
+                    var bestEnd = lo
+                    while (lo <= hi) {
+                        val mid = (lo + hi) ushr 1
+                        val probe = sliceSpans(wordSpans, pos, mid)
+                        if (measureSpansWidthPx(probe) <= maxWidthPx) {
+                            bestEnd = mid
+                            lo = mid + 1
+                        } else {
+                            hi = mid - 1
+                        }
+                    }
+                    val chunk = sliceSpans(wordSpans, pos, bestEnd)
+                    if (bestEnd < totalLen) {
+                        out += chunk
+                    } else {
+                        appendSpansToLine(curLine, chunk)
+                    }
+                    pos = bestEnd
+                }
+            }
+        }
+
         for (span in line) {
             if (span.inlineImage != null) {
-                pushSpanToken(span, span.text)
+                flushPendingWord()
+                pushSpansToken(listOf(span))
                 continue
             }
-            val words = Regex("""\S+|\s+""").findAll(span.text).map { it.value }.toList()
-            for (word in words) {
-                if (word.isBlank()) {
+            val tokens = Regex("""\S+|\s+""").findAll(span.text).map { it.value }.toList()
+            for (token in tokens) {
+                if (token.isBlank()) {
+                    flushPendingWord()
                     if (curLine.isNotEmpty()) {
                         val candidate = ArrayList(curLine)
                         appendToLine(candidate, span, " ")
@@ -961,42 +1031,12 @@ fun wrapFormattedLabelLines(
                             curLine = candidate
                         }
                     }
-                    continue
-                }
-                val singleWordList = ArrayList<FormattedTextSpan>().apply { appendToLine(this, span, word) }
-                if (measureSpansWidthPx(singleWordList) <= maxWidthPx) {
-                    pushSpanToken(span, word)
                 } else {
-                    if (curLine.isNotEmpty()) {
-                        out += curLine
-                        curLine = ArrayList()
-                    }
-                    var pos = 0
-                    while (pos < word.length) {
-                        var lo = pos + 1
-                        var hi = word.length
-                        var bestEnd = lo
-                        while (lo <= hi) {
-                            val mid = (lo + hi) ushr 1
-                            val probe = listOf(span.copy(text = word.substring(pos, mid)))
-                            if (measureSpansWidthPx(probe) <= maxWidthPx) {
-                                bestEnd = mid
-                                lo = mid + 1
-                            } else {
-                                hi = mid - 1
-                            }
-                        }
-                        val chunk = word.substring(pos, bestEnd)
-                        if (bestEnd < word.length) {
-                            out += listOf(span.copy(text = chunk))
-                        } else {
-                            appendToLine(curLine, span, chunk)
-                        }
-                        pos = bestEnd
-                    }
+                    appendToLine(pendingWordSpans, span, token)
                 }
             }
         }
+        flushPendingWord()
         if (curLine.isNotEmpty()) {
             out += curLine
         }
