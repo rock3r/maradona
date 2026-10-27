@@ -349,9 +349,9 @@ object MaradonaSvgExporter {
                     classBoxSize = { c ->
                         val hdrLines = buildList {
                             for (ann in c.annotations) {
-                                if (ann.isNotBlank()) add("«${plainTextLabel(ann)}»")
+                                if (ann.isNotBlank()) add("«$ann»")
                             }
-                            addAll(plainTextLabel(c.displayTitle).split('\n'))
+                            addAll(rawSvgLines(c.displayTitle))
                         }
                         val hdrSize = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
                         val memberWidths = (c.attributes + c.methods).map {
@@ -462,7 +462,7 @@ object MaradonaSvgExporter {
                 val layout = RequirementLayout.layout(
                     diagram = d,
                     itemBoxSize = { item ->
-                        val hdrLines = listOf(item.stereotype) + plainTextLabel(item.name).split('\n')
+                        val hdrLines = listOf(item.stereotype) + rawSvgLines(item.name)
                         val hdrSz = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
                         val hdrH = max(44f * dens, hdrSz.height + 16f * dens)
                         val bodySizes = item.bodyLines.map { defaultTextSize(it, theme.edgeLabelFontSize.value) }
@@ -491,10 +491,12 @@ object MaradonaSvgExporter {
                 val fontSize = theme.nodeFontSize.value
                 val elementSizes = d.elements.associate { el ->
                     val defaultSz = C4Layout.defaultElementSize(el, dens)
-                    val initialLines = c4WrappedCardLines(el, fontSize, c4WrapWidth(defaultSz.width, dens))
-                    val maxLineCols = initialLines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+                    val initialLines = c4WrappedCardSpanLines(el, fontSize, c4WrapWidth(defaultSz.width, dens))
+                    val maxLineCols = initialLines.maxOfOrNull { line ->
+                        line.sumOf { span -> span.inlineImage?.let { 4 } ?: span.text.length }
+                    }?.coerceAtLeast(1) ?: 1
                     val neededW = max(defaultSz.width, (maxLineCols * fontSize * 0.62f + 28f * dens).coerceAtMost(280f * dens))
-                    val wrappedLines = c4WrappedCardLines(el, fontSize, c4WrapWidth(neededW, dens))
+                    val wrappedLines = c4WrappedCardSpanLines(el, fontSize, c4WrapWidth(neededW, dens))
                     val personExtra = if (el.kind.isPerson) 22f * dens else 0f
                     val dbExtra = if (el.kind.isDatabase) 12f * dens else 0f
                     val neededH = max(defaultSz.height, wrappedLines.size * fontSize * 1.38f + 28f * dens + personExtra + dbExtra)
@@ -502,7 +504,7 @@ object MaradonaSvgExporter {
                 }
                 val boundaryHeaderSizes = d.boundaries.associate { b ->
                     val hdr = listOfNotNull(
-                        plainTextLabel(b.label),
+                        b.label.takeIf { it.isNotBlank() },
                         b.type.takeIf { it.isNotBlank() }?.let { "[$it]" },
                     ).joinToString(" ")
                     b.id to defaultTextSize(hdr, theme.subgraphFontSize.value)
@@ -510,8 +512,8 @@ object MaradonaSvgExporter {
                 val relLabelSizes = d.relationships.mapIndexedNotNull { idx, rel ->
                     val indexedLabel = if (!rel.index.isNullOrBlank()) "${rel.index}: ${rel.label}" else rel.label
                     val lines = buildList {
-                        if (indexedLabel.isNotBlank()) addAll(plainTextLabel(indexedLabel).split('\n'))
-                        if (!rel.technology.isNullOrBlank()) add("[${plainTextLabel(rel.technology)}]")
+                        if (indexedLabel.isNotBlank()) addAll(rawSvgLines(indexedLabel))
+                        if (!rel.technology.isNullOrBlank()) add("[${rel.technology}]")
                     }
                     if (lines.isEmpty()) null else idx to defaultTextSize(lines.joinToString("\n"), theme.edgeLabelFontSize.value)
                 }.toMap()
@@ -778,6 +780,7 @@ object MaradonaSvgExporter {
         density: Density = Density(imageScale.coerceAtLeast(0.01f), 1f),
     ): String {
         val imgScale = imageScale.coerceAtLeast(0.01f)
+        val wrapScale = density.density.coerceAtLeast(0.01f)
         val w = ceil(layout.width).toInt().coerceAtLeast(1)
         val h = ceil(layout.height).toInt().coerceAtLeast(1)
         val sb = StringBuilder()
@@ -886,7 +889,7 @@ object MaradonaSvgExporter {
             val spanLines = wrapFormattedLabelLines(
                 label = node.label,
                 fontSp = fontSize,
-                maxWidth = NodeSizing.WRAPPING_WIDTH * imgScale,
+                maxWidth = NodeSizing.WRAPPING_WIDTH * wrapScale,
                 textMeasurer = textMeasurer,
                 textStyle = nodeTextStyle,
                 density = density,
@@ -974,7 +977,7 @@ object MaradonaSvgExporter {
             val notch = 6f
             val tabPts = "${fmt(tr.x)},${fmt(tr.y)} ${fmt(tr.right)},${fmt(tr.y)} ${fmt(tr.right)},${fmt(tr.bottom - notch)} ${fmt(tr.right - notch)},${fmt(tr.bottom)} ${fmt(tr.x)},${fmt(tr.bottom)}"
             sb.append("""  <polygon points="$tabPts" fill="${theme.nodeFill.toSvgHex()}" stroke="$borderHex" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "  ", tr.centerX, tr.centerY, listOf(plainTextLabel(blk.tag)), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", tr.centerX, tr.centerY, rawSvgLines(blk.tag), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             if (!blk.label.isNullOrBlank() && blk.labelRect != null) {
                 appendMultilineText(sb, "  ", blk.labelRect.centerX, blk.labelRect.centerY, rawSvgLines("[${blk.label}]"), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
@@ -1171,7 +1174,7 @@ object MaradonaSvgExporter {
 
             val hdrLines = buildList {
                 for (ann in c.annotations) {
-                    if (ann.isNotBlank()) add("«${plainTextLabel(ann)}»")
+                    if (ann.isNotBlank()) add("«$ann»")
                 }
                 addAll(rawSvgLines(c.displayTitle))
             }
@@ -1524,11 +1527,17 @@ object MaradonaSvgExporter {
             val bStrokeHex = (parseCssColor(pb.boundary.style?.borderColor) ?: theme.subgraphBorder).toSvgHex()
             val bTextHex = (parseCssColor(pb.boundary.style?.fontColor) ?: theme.subgraphText).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$bFillHex" stroke="$bStrokeHex" stroke-width="1.3" stroke-dasharray="6,4"/>""").append('\n')
-            val hdr = listOfNotNull(
-                plainTextLabel(pb.boundary.label),
-                pb.boundary.type.takeIf { it.isNotBlank() }?.let { "[$it]" },
-            ).joinToString(" ")
-            appendMultilineText(sb, "  ", pb.headerRect.centerX, pb.headerRect.centerY, listOf(hdr), bTextHex, theme.subgraphFontSize.value)
+            val hdrSpans = buildList {
+                if (pb.boundary.label.isNotBlank()) {
+                    addAll(parseFormattedLabelLines(pb.boundary.label).flatten())
+                }
+                pb.boundary.type.takeIf { it.isNotBlank() }?.let {
+                    add(FormattedTextSpan(if (isNotEmpty()) " [$it]" else "[$it]"))
+                }
+            }
+            if (hdrSpans.isNotEmpty()) {
+                appendRichSpanLines(sb, "  ", pb.headerRect.centerX, pb.headerRect.centerY, listOf(hdrSpans), bTextHex, theme.subgraphFontSize.value)
+            }
         }
 
         // 2. Elements (Person, Database, Queue, System, Container, Component, External)
@@ -1581,8 +1590,8 @@ object MaradonaSvgExporter {
 
             val fontSize = theme.nodeFontSize.value
             val wrapW = c4WrapWidth(r.width, dens)
-            val cardLines = c4WrappedCardLines(el, fontSize, wrapW)
-            appendMultilineText(sb, "    ", r.centerX, r.centerY, cardLines, textHex, fontSize)
+            val cardSpanLines = c4WrappedCardSpanLines(el, fontSize, wrapW)
+            appendRichSpanLines(sb, "    ", r.centerX, r.centerY, cardSpanLines, textHex, fontSize)
             sb.append("""  </g>""").append('\n')
             if (url != null) sb.append("""  </a>""").append('\n')
         }
@@ -1608,13 +1617,16 @@ object MaradonaSvgExporter {
             } else {
                 pr.relationship.label
             }
-            val relLines = buildList {
-                if (indexedLabel.isNotBlank()) addAll(rawSvgLines(indexedLabel))
-                if (!pr.relationship.technology.isNullOrBlank()) add("[${plainTextLabel(pr.relationship.technology)}]")
+            val relSpanLines = buildList {
+                if (indexedLabel.isNotBlank()) addAll(parseFormattedLabelLines(indexedLabel))
+                if (!pr.relationship.technology.isNullOrBlank()) {
+                    val techSpans = parseFormattedLabelLines(pr.relationship.technology).flatten()
+                    add(listOf(FormattedTextSpan("[")) + techSpans + listOf(FormattedTextSpan("]")))
+                }
             }
-            if (lr != null && relLines.isNotEmpty()) {
+            if (lr != null && relSpanLines.isNotEmpty()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.background.copy(alpha = 0.92f).toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, relLines, textHex, theme.edgeLabelFontSize.value)
+                appendRichSpanLines(sb, "  ", lr.centerX, lr.centerY, relSpanLines, textHex, theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1749,7 +1761,7 @@ object MaradonaSvgExporter {
             val notch = 6f
             val tabPts = "${fmt(tr.x)},${fmt(tr.y)} ${fmt(tr.right)},${fmt(tr.y)} ${fmt(tr.right)},${fmt(tr.bottom - notch)} ${fmt(tr.right - notch)},${fmt(tr.bottom)} ${fmt(tr.x)},${fmt(tr.bottom)}"
             sb.append("""  <polygon points="$tabPts" fill="${theme.subgraphFill.toSvgHex()}" stroke="$borderHex" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "  ", tr.centerX, tr.centerY, listOf(plainTextLabel(blk.keyword)), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", tr.centerX, tr.centerY, rawSvgLines(blk.keyword), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             if (!blk.condition.isNullOrBlank() && blk.conditionRect != null) {
                 appendMultilineText(sb, "  ", blk.conditionRect.centerX, blk.conditionRect.centerY, rawSvgLines("[${blk.condition}]"), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
@@ -2387,11 +2399,11 @@ object MaradonaSvgExporter {
 
                 val tktRect = pt.ticketRect
                 if (tktRect != null && !t.ticket.isNullOrBlank()) {
-                    appendMultilineText(sb, "    ", tktRect.centerX, tktRect.centerY, listOf(plainTextLabel(t.ticket)), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                    appendMultilineText(sb, "    ", tktRect.centerX, tktRect.centerY, rawSvgLines(t.ticket), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
                 }
                 val asgRect = pt.assignedRect
                 if (asgRect != null && !t.assigned.isNullOrBlank()) {
-                    appendMultilineText(sb, "    ", asgRect.centerX, asgRect.centerY, listOf(plainTextLabel(t.assigned)), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                    appendMultilineText(sb, "    ", asgRect.centerX, asgRect.centerY, rawSvgLines(t.assigned), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
                 }
                 sb.append("""  </g>""").append('\n')
                 if (ticketUrl != null) sb.append("""  </a>""").append('\n')
@@ -2503,7 +2515,7 @@ object MaradonaSvgExporter {
             } else {
                 plain.take(maxChars - 1) + "…"
             }
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, listOf(fitted), textHex, lblSp)
+            appendPlainMultilineText(sb, "  ", r.centerX, r.centerY, listOf(fitted), textHex, lblSp)
         }
         sb.append("</svg>")
         return sb.toString()
@@ -2670,7 +2682,7 @@ object MaradonaSvgExporter {
                 val rawHdr = if (layout.showValues && sec.formattedValue.isNotBlank()) "${sec.node.name} (${sec.formattedValue})" else sec.node.name
                 val fittedHdr = fitTreemapLine(plainTextLabel(rawHdr).replace('\n', ' '), sec.headerRect.width, hdrFont)
                 if (fittedHdr.isNotEmpty()) {
-                    appendMultilineText(sb, "  ", sec.headerRect.centerX, sec.headerRect.centerY, listOf(fittedHdr), textHex, hdrFont)
+                    appendPlainMultilineText(sb, "  ", sec.headerRect.centerX, sec.headerRect.centerY, listOf(fittedHdr), textHex, hdrFont)
                 }
             }
         }
@@ -2695,7 +2707,7 @@ object MaradonaSvgExporter {
                         r.height >= lineH * 2f + 6f &&
                         lf.formattedValue.length * lblSp * 0.55f <= r.width - 8f
                     val leafLines = if (valFits) listOf(fittedName, lf.formattedValue) else listOf(fittedName)
-                    appendMultilineText(sb, "  ", r.centerX, r.centerY, leafLines, textHex, lblSp)
+                    appendPlainMultilineText(sb, "  ", r.centerX, r.centerY, leafLines, textHex, lblSp)
                 }
             }
         }
@@ -2733,21 +2745,21 @@ object MaradonaSvgExporter {
     private fun zenUmlCommentWrapWidth(noteWidth: Float, dens: Float): Float =
         (noteWidth - 16f * dens).coerceAtLeast(48f * dens)
 
-    private fun c4WrappedCardLines(
+    private fun c4WrappedCardSpanLines(
         el: dev.maradona.model.C4Element,
         fontSize: Float,
         maxWidth: Float,
-    ): List<String> {
+    ): List<List<FormattedTextSpan>> {
         val displayLabel = if (!el.sprite.isNullOrBlank()) {
             "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
         } else {
             el.label
         }
         return buildList {
-            addAll(wrapSvgLines(el.typeHeaderText, fontSize, maxWidth))
-            addAll(wrapSvgLines(displayLabel, fontSize, maxWidth))
+            addAll(wrapSvgLines(el.typeHeaderText, fontSize, maxWidth).map { listOf(FormattedTextSpan(it)) })
+            addAll(wrapFormattedLabelLines(displayLabel, fontSize, maxWidth))
             if (!el.description.isNullOrBlank()) {
-                addAll(wrapSvgLines(el.description, fontSize, maxWidth))
+                addAll(wrapFormattedLabelLines(el.description, fontSize, maxWidth))
             }
         }
     }
@@ -3326,6 +3338,28 @@ object MaradonaSvgExporter {
             centerX = centerX,
             centerY = centerY,
             spanLines = spanLines,
+            colorHex = colorHex,
+            fontSize = fontSize,
+            rotationDeg = rotationDeg,
+        )
+    }
+
+    private fun appendPlainMultilineText(
+        sb: StringBuilder,
+        indent: String,
+        centerX: Float,
+        centerY: Float,
+        lines: List<String>,
+        colorHex: String,
+        fontSize: Float,
+        rotationDeg: Float = 0f,
+    ) {
+        appendRichSpanLines(
+            sb = sb,
+            indent = indent,
+            centerX = centerX,
+            centerY = centerY,
+            spanLines = lines.map { listOf(FormattedTextSpan(it)) },
             colorHex = colorHex,
             fontSize = fontSize,
             rotationDeg = rotationDeg,

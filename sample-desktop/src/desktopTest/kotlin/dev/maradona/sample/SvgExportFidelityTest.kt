@@ -99,4 +99,35 @@ class SvgExportFidelityTest {
             }
         }
     }
+
+    @Test
+    fun measuredFlowchartExportAtHighFontScaleWrapsToDensityConstraint() {
+        val mmd = """
+            flowchart LR
+                A["Long wrapping label with many words to verify density wrapping width"]
+        """.trimIndent()
+        var svg: String? = null
+        val scene = ImageComposeScene(width = 600, height = 400, density = Density(1f, 2f)) {
+            val tm = rememberTextMeasurer()
+            val dens = LocalDensity.current
+            if (svg == null) {
+                svg = MaradonaSvgExporter.exportToSvg(
+                    source = mmd,
+                    textMeasurer = tm,
+                    density = dens,
+                )
+            }
+        }
+        try {
+            scene.render(16_000_000L)
+            val exported = assertNotNull(svg)
+            val textCount = Regex("""<text\b""").findAll(exported).count()
+            assertTrue(
+                textCount >= 3,
+                "Expected long label at Density(1f, 2f) to wrap against 120dp (120px) constraint into >= 3 lines, got $textCount",
+            )
+        } finally {
+            scene.close()
+        }
+    }
 }

@@ -754,4 +754,38 @@ class MaradonaSvgExporterTest {
         assertTrue(svg.contains("""<title>Invoke callback A</title>"""), "Expected tooltip on callback node A")
         assertTrue(svg.contains("""<a href="https://example.com/status" target="_self">"""), "Expected link + target on node B")
     }
+
+    @Test
+    fun preservesCodeSpansInPacketTreemapAndC4LabelsWithoutDoubleParsing() {
+        val packetSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            packet
+                0-31: "<code>fa:fa-check</code>"
+            """.trimIndent(),
+        )
+        assertTrue(packetSvg.contains("fa:fa-check"), "Expected literal code span text in packet SVG")
+        assertTrue(!packetSvg.contains("✓"), "Expected code span in packet SVG not to be re-parsed as icon glyph")
+
+        val treemapSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            treemap-beta
+            "<code>fa:fa-check</code>"
+                "`**raw**`": 50
+            """.trimIndent(),
+        )
+        assertTrue(treemapSvg.contains("fa:fa-check"), "Expected literal code span text in treemap section header")
+        assertTrue(treemapSvg.contains("**raw**"), "Expected literal markdown delimiters inside code span in treemap leaf")
+
+        val c4Svg = MaradonaSvgExporter.exportToSvg(
+            """
+            C4Context
+                Boundary(b0, "<code>fa:fa-check</code>", "Boundary") {
+                    System(sys, "`fa:fa-server`", "Core")
+                }
+            """.trimIndent(),
+        )
+        assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-check</tspan>"""), "Expected code span in C4 boundary header")
+        assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-server</tspan>"""), "Expected code span in C4 card label")
+        assertTrue(!c4Svg.contains("✓"), "Expected C4 boundary code span not to be re-parsed as icon glyph")
+    }
 }
