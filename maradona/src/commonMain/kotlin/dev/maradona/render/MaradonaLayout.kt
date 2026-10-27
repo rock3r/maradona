@@ -553,15 +553,16 @@ private fun computePremeasuredFlowchartLayout(
     )
     val edgeLabelSizes = chart.edges.map { edge ->
         val label = edge.label ?: return@map null
-        val m = textMeasurer.measure(
+        val m = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
             text = annotatedLabel(label, theme.monospaceFontFamily),
             style = edgeTextStyle,
-            constraints = Constraints(maxWidth = (maxEdgeLabelW - edgePadH * 2).coerceAtLeast(1)),
-            density = densityObj,
+            maxWidthPx = (maxEdgeLabelW - edgePadH * 2).coerceAtLeast(1),
         )
         DiagramSize(
-            width = (m.size.width + edgePadH * 2).coerceAtMost(maxEdgeLabelW).toFloat(),
-            height = (m.size.height + edgePadV * 2).toFloat(),
+            width = m.width + edgePadH * 2f,
+            height = m.height + edgePadV * 2f,
         )
     }
 
@@ -571,13 +572,13 @@ private fun computePremeasuredFlowchartLayout(
         fontSize = theme.subgraphFontSize,
     )
     val subgraphLabelSizes = chart.subgraphs.associate { sg ->
-        val m = textMeasurer.measure(
+        val m = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
             text = annotatedLabel(sg.label, theme.monospaceFontFamily),
             style = sgTextStyle,
-            constraints = Constraints(),
-            density = densityObj,
         )
-        sg.id to DiagramSize(m.size.width.toFloat(), m.size.height.toFloat())
+        sg.id to m
     }
 
     val scaledOptions = with(layoutOptions) {
