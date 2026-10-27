@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ArchitectureDiagramLayout
@@ -681,8 +683,8 @@ object MaradonaSvgExporter {
                     diagram = d,
                     taskLabelSize = { t ->
                         measureSpanLinesSize(
-                            wrapFormattedLabelLines("${t.label} (${t.score})", theme.nodeFontSize.value, 180f * dens),
-                            theme.nodeFontSize.value,
+                            wrapFormattedLabelLines(t.label, theme.edgeLabelFontSize.value, 180f * dens),
+                            theme.edgeLabelFontSize.value,
                         )
                     },
                     sectionTitleSize = { s -> defaultTextSize(s, theme.subgraphFontSize.value) },
@@ -812,7 +814,7 @@ object MaradonaSvgExporter {
         val w = ceil(layout.width).toInt().coerceAtLeast(1)
         val h = ceil(layout.height).toInt().coerceAtLeast(1)
         val sb = StringBuilder()
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" width="$w" height="$h">""").append('\n')
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" width="$w" height="$h" font-family="${theme.fontFamily.toSvgFontFamily()}">""").append('\n')
         sb.append("""  <rect width="100%" height="100%" fill="${theme.background.toSvgHex()}"/>""").append('\n')
 
         // 1. Subgraph containers
@@ -2321,17 +2323,16 @@ object MaradonaSvgExporter {
         val faceFillHex = theme.noteFill.toSvgHex()
         val faceStrokeHex = theme.noteBorder.toSvgHex()
         val featHex = theme.noteText.toSvgHex()
-        val taskFont = theme.nodeFontSize.value
-        val taskStyle = exportTextStyle(theme, taskFont, densityObj, textMeasurer)
+        val taskFont = theme.edgeLabelFontSize.value
+        val taskStyle = exportTextStyle(theme, taskFont, densityObj, textMeasurer, fontWeight = FontWeight.Medium)
         for (pt in layout.tasks) {
             sb.append("""  <line x1="${fmt(pt.lineStart.x)}" y1="${fmt(pt.lineStart.y)}" x2="${fmt(pt.lineEnd.x)}" y2="${fmt(pt.lineEnd.y)}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1.3" stroke-dasharray="4,3"/>""").append('\n')
             val r = pt.cardRect
             val fillHex = theme.seriesFill(pt.sectionIndex).toSvgHex()
             val strokeHex = theme.seriesColor(pt.sectionIndex).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
-            val taskText = "${pt.task.label} (${pt.task.score})"
             val taskSpanLines = wrapFormattedLabelLines(
-                label = taskText,
+                label = pt.task.label,
                 fontSp = taskFont,
                 maxWidth = 180f * dens,
                 textMeasurer = textMeasurer,
@@ -2901,13 +2902,22 @@ object MaradonaSvgExporter {
         fontSp: Float,
         densityObj: Density,
         textMeasurer: TextMeasurer?,
+        fontWeight: FontWeight? = null,
     ): TextStyle? {
         if (textMeasurer == null) return null
         val scale = (densityObj.density * densityObj.fontScale).coerceAtLeast(0.01f)
         return TextStyle(
             fontFamily = theme.fontFamily,
             fontSize = (fontSp / scale).sp,
+            fontWeight = fontWeight,
         )
+    }
+
+    private fun FontFamily.toSvgFontFamily(): String = when (this) {
+        FontFamily.Monospace -> "monospace"
+        FontFamily.Serif -> "serif"
+        FontFamily.Cursive -> "cursive"
+        else -> "sans-serif"
     }
 
     private fun c4WrappedCardSpanLines(
@@ -2953,7 +2963,7 @@ object MaradonaSvgExporter {
         val w = ceil(width).toInt().coerceAtLeast(1)
         val h = ceil(height).toInt().coerceAtLeast(1)
         val sb = StringBuilder()
-        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" width="$w" height="$h">""").append('\n')
+        sb.append("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 $w $h" width="$w" height="$h" font-family="${theme.fontFamily.toSvgFontFamily()}">""").append('\n')
         sb.append("""  <rect width="100%" height="100%" fill="${theme.background.toSvgHex()}"/>""").append('\n')
         if (!titleText.isNullOrBlank() && titleRect != null) {
             appendMultilineText(
@@ -3401,7 +3411,7 @@ object MaradonaSvgExporter {
         if (spanLine.none { it.inlineImage != null }) {
             val innerXml = renderSpansToSvgContent(spanLine)
             sb.append(
-                """$indent<text x="${fmt(centerX)}" y="${fmt(baselineY)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
+                """$indent<text x="${fmt(centerX)}" y="${fmt(baselineY)}" text-anchor="middle" fill="$colorHex" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
             ).append('\n')
             return
         }
@@ -3428,7 +3438,7 @@ object MaradonaSvgExporter {
             val innerXml = renderSpansToSvgContent(pendingTextSpans)
             if (innerXml.isNotEmpty()) {
                 sb.append(
-                    """$indent<text x="${fmt(textRunStartX)}" y="${fmt(baselineY)}" text-anchor="start" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
+                    """$indent<text x="${fmt(textRunStartX)}" y="${fmt(baselineY)}" text-anchor="start" fill="$colorHex" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
                 ).append('\n')
             }
             pendingTextSpans.clear()
