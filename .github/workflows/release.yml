@@ -44,24 +44,17 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      checkout_ref: ${{ steps.version.outputs.checkout_ref }}
       dry_run: ${{ steps.version.outputs.dry_run }}
       automatic_release: ${{ steps.version.outputs.automatic_release }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "25"
-          cache: gradle
+          fetch-depth: 0
 
-      - name: Accept Android SDK licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-
-      - name: Derive release version from SemVer tag
+      - name: Resolve and check out release tag or dry-run commit
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -69,6 +62,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_AUTO_RELEASE: ${{ inputs.automatic_release }}
+          CURRENT_SHA: ${{ github.sha }}
         run: |
           if [ "$EVENT_NAME" = "release" ]; then
             raw_tag="$RELEASE_TAG"
@@ -80,11 +74,32 @@ jobs:
             auto_release="${INPUT_AUTO_RELEASE:-true}"
           fi
           version="$(bash .github/scripts/derive-release-version.sh "$raw_tag")"
+          if git rev-parse -q --verify "refs/tags/$raw_tag" >/dev/null; then
+            checkout_ref="refs/tags/$raw_tag"
+            git checkout --detach "$checkout_ref"
+          elif [ "$dry_run" = "true" ]; then
+            checkout_ref="$CURRENT_SHA"
+            echo "Tag $raw_tag does not exist yet; dry_run=true is testing current commit $checkout_ref"
+          else
+            echo "::error::Tag $raw_tag does not exist in the repository; refusing non-dry-run release."
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$raw_tag" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
           echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
           echo "automatic_release=$auto_release" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag=$raw_tag -> version=$version (dry_run=$dry_run, automatic_release=$auto_release)"
+          echo "Resolved tag=$raw_tag -> version=$version (checkout_ref=$checkout_ref, dry_run=$dry_run, automatic_release=$auto_release)"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
       - name: Run desktop, Android host & APK build checks
         run: |
@@ -107,12 +122,15 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.release-gate.outputs.version }}
       RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
+      CHECKOUT_REF: ${{ needs.release-gate.outputs.checkout_ref }}
       DRY_RUN: ${{ needs.release-gate.outputs.dry_run }}
       AUTOMATIC_RELEASE: ${{ needs.release-gate.outputs.automatic_release }}
 
     steps:
-      - name: Check out repository
+      - name: Check out release ref
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.checkout_ref }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4

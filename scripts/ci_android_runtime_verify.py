@@ -65,9 +65,33 @@ def screencap(serial: str | None, dest: Path) -> bytes:
     return data
 
 
-def png_dimensions_and_sample_variance(png_bytes: bytes) -> tuple[int, int, int]:
-    """Parse PNG IHDR width/height and count distinct IDAT decompressed byte values to prove non-blank rendering."""
-    width, height = struct.unpack(">II", png_bytes[16:24])
+def _paeth(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa = abs(p - a)
+    pb = abs(p - b)
+    pc = abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    if pb <= pc:
+        return b
+    return c
+
+
+def decode_png_rgb_grid(
+    png_bytes: bytes,
+    y_start: int = 0,
+    y_end: int | None = None,
+    step: int = 4,
+) -> tuple[int, int, list[tuple[int, int, int]]]:
+    """Decode an 8-bit RGB/RGBA PNG, unfilter scanlines up to y_end, and return sampled (R, G, B) pixels."""
+    width, height, bit_depth, color_type, interlace = struct.unpack(">IIBB2xB", png_bytes[16:29])
+    if bit_depth != 8 or color_type not in (2, 6) or interlace != 0:
+        raise ValueError(
+            f"Unsupported PNG format: bit_depth={bit_depth}, color_type={color_type}, interlace={interlace}"
+        )
+    bpp = 4 if color_type == 6 else 3
+    stride = width * bpp
+
     idat_chunks: list[bytes] = []
     offset = 8
     while offset + 8 <= len(png_bytes):
@@ -80,11 +104,73 @@ def png_dimensions_and_sample_variance(png_bytes: bytes) -> tuple[int, int, int]
         elif chunk_type == b"IEND":
             break
     raw = zlib.decompress(b"".join(idat_chunks))
-    # Sample every 97th byte across the middle 60% of the image to verify multiple colors exist
-    start = len(raw) // 5
-    end = (len(raw) * 4) // 5
-    distinct_bytes = len(set(raw[start:end:97]))
-    return width, height, distinct_bytes
+
+    limit_y = min(height, y_end if y_end is not None else height)
+    prev_row = bytearray(stride)
+    cur_row = bytearray(stride)
+    samples: list[tuple[int, int, int]] = []
+
+    pos = 0
+    for y in range(limit_y):
+        ftype = raw[pos]
+        pos += 1
+        scan = raw[pos : pos + stride]
+        pos += stride
+        if ftype == 0:
+            cur_row[:] = scan
+        elif ftype == 1:
+            for i in range(stride):
+                left = cur_row[i - bpp] if i >= bpp else 0
+                cur_row[i] = (scan[i] + left) & 0xFF
+        elif ftype == 2:
+            for i in range(stride):
+                cur_row[i] = (scan[i] + prev_row[i]) & 0xFF
+        elif ftype == 3:
+            for i in range(stride):
+                left = cur_row[i - bpp] if i >= bpp else 0
+                up = prev_row[i]
+                cur_row[i] = (scan[i] + ((left + up) >> 1)) & 0xFF
+        elif ftype == 4:
+            for i in range(stride):
+                left = cur_row[i - bpp] if i >= bpp else 0
+                up = prev_row[i]
+                up_left = prev_row[i - bpp] if i >= bpp else 0
+                cur_row[i] = (scan[i] + _paeth(left, up, up_left)) & 0xFF
+        else:
+            raise ValueError(f"Unsupported PNG filter type {ftype} at row {y}")
+
+        if y >= y_start and (y - y_start) % step == 0:
+            for x in range(0, width, step):
+                px = x * bpp
+                samples.append((cur_row[px], cur_row[px + 1], cur_row[px + 2]))
+        prev_row, cur_row = cur_row, prev_row
+
+    return width, height, samples
+
+
+def count_non_background_pixels(samples: list[tuple[int, int, int]], tolerance: int = 6) -> int:
+    if not samples:
+        return 0
+    bg_r, bg_g, bg_b = samples[0]
+    count = 0
+    for r, g, b in samples:
+        if abs(r - bg_r) > tolerance or abs(g - bg_g) > tolerance or abs(b - bg_b) > tolerance:
+            count += 1
+    return count
+
+
+def count_differing_pixels(
+    samples_a: list[tuple[int, int, int]],
+    samples_b: list[tuple[int, int, int]],
+    tolerance: int = 4,
+) -> int:
+    if len(samples_a) != len(samples_b):
+        raise ValueError(f"Sample grid size mismatch: {len(samples_a)} vs {len(samples_b)}")
+    diff = 0
+    for (r1, g1, b1), (r2, g2, b2) in zip(samples_a, samples_b):
+        if abs(r1 - r2) > tolerance or abs(g1 - g2) > tolerance or abs(b1 - b2) > tolerance:
+            diff += 1
+    return diff
 
 
 def wait_for_boot(serial: str | None, timeout_sec: int = 180) -> None:
@@ -157,10 +243,12 @@ def verify_interactive_sample(serial: str | None, out_dir: Path) -> None:
     print(f"   Found 'Reset zoom and pan to fit' button at bounds=({x1},{y1})-({x2},{y2}), center=({bx},{by})")
 
     initial_png = screencap(serial, out_dir / "sample-initial-fitted.png")
-    w, h, distinct = png_dimensions_and_sample_variance(initial_png)
-    if distinct < 4:
-        raise RuntimeError(f"Initial sample screenshot appears blank (distinct sample bytes={distinct})")
-    print(f"   Captured sample-initial-fitted.png ({w}x{h}, {len(initial_png)} bytes)")
+    # Sample the diagram canvas region (below the status bar y=160, above the bottom editor panel y=780)
+    w, h, initial_canvas = decode_png_rgb_grid(initial_png, y_start=160, y_end=780, step=4)
+    initial_fg = count_non_background_pixels(initial_canvas)
+    if initial_fg < 100:
+        raise RuntimeError(f"Initial sample screenshot appears blank (non-background canvas pixels={initial_fg})")
+    print(f"   Captured sample-initial-fitted.png ({w}x{h}, {len(initial_png)} bytes, fg_samples={initial_fg})")
 
     # Swipe-pan the diagram canvas (top half of the portrait phone screen)
     cx = w // 2
@@ -168,15 +256,23 @@ def verify_interactive_sample(serial: str | None, out_dir: Path) -> None:
     run_adb(serial, "shell", "input", "swipe", str(cx), str(cy), str(max(80, cx - 280)), str(max(120, cy - 220)), "250")
     time.sleep(1.0)
     panned_png = screencap(serial, out_dir / "sample-panned.png")
-    if panned_png == initial_png:
-        raise RuntimeError("Swipe-pan on diagram canvas did not change rendered pixels")
-    print(f"   Captured sample-panned.png ({len(panned_png)} bytes, displaced from initial)")
+    _, _, panned_canvas = decode_png_rgb_grid(panned_png, y_start=160, y_end=780, step=4)
+    pan_diff = count_differing_pixels(initial_canvas, panned_canvas)
+    if pan_diff < 100:
+        raise RuntimeError(f"Swipe-pan on diagram canvas did not displace diagram pixels (diff={pan_diff})")
+    print(f"   Captured sample-panned.png ({len(panned_png)} bytes, displaced_canvas_samples={pan_diff})")
 
-    # Tap the top-right reset-to-fit button
+    # Tap the top-right reset-to-fit button and verify the diagram canvas returns to the initial fitted state
     run_adb(serial, "shell", "input", "tap", str(bx), str(by))
     time.sleep(1.0)
     reset_png = screencap(serial, out_dir / "sample-after-reset.png")
-    print(f"   Captured sample-after-reset.png ({len(reset_png)} bytes)")
+    _, _, reset_canvas = decode_png_rgb_grid(reset_png, y_start=160, y_end=780, step=4)
+    reset_diff = count_differing_pixels(initial_canvas, reset_canvas)
+    if reset_diff > 15:
+        raise RuntimeError(
+            f"Tapping reset-to-fit button did not restore initial fitted canvas (diff vs initial={reset_diff}, vs panned={count_differing_pixels(panned_canvas, reset_canvas)})"
+        )
+    print(f"   Captured sample-after-reset.png ({len(reset_png)} bytes, diff_vs_initial={reset_diff})")
 
     idle_frames = measure_idle_frames(serial, window_sec=1.5)
     print(f"   Idle frames rendered over 1.5s after reset: {idle_frames}")
@@ -242,13 +338,17 @@ def verify_oracle_families(serial: str | None, out_dir: Path) -> None:
 
         time.sleep(0.4)
         png = screencap(serial, out_dir / f"oracle-{chart}.png")
-        w, h, distinct = png_dimensions_and_sample_variance(png)
-        if distinct < 3:
-            raise RuntimeError(f"Oracle screenshot for {chart} appears blank (distinct={distinct})")
+        w, h, oracle_samples = decode_png_rgb_grid(png, y_start=0, y_end=1400, step=6)
+        fg_pixels = count_non_background_pixels(oracle_samples)
+        if fg_pixels < 50:
+            raise RuntimeError(f"Oracle screenshot for {chart} appears blank (non-background samples={fg_pixels})")
         idle_frames = measure_idle_frames(serial, window_sec=1.0)
         if idle_frames > 2:
             raise RuntimeError(f"Chart {chart} vibrated on Android ({idle_frames} idle frames in 1.0s)")
-        print(f"   [PASS] {chart:<20} canvas={canvas_size:<10} screenshot={w}x{h} ({len(png)} B) idle_frames={idle_frames}", flush=True)
+        print(
+            f"   [PASS] {chart:<20} canvas={canvas_size:<10} screenshot={w}x{h} ({len(png)} B) fg_samples={fg_pixels} idle_frames={idle_frames}",
+            flush=True,
+        )
 
 
 def main() -> int:
