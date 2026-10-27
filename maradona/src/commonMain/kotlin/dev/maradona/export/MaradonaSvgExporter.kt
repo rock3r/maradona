@@ -180,7 +180,7 @@ object MaradonaSvgExporter {
             val dens = density.density.coerceAtLeast(0.01f)
             val textScale = (dens * density.fontScale.coerceAtLeast(0.01f))
             val svgTheme = if (kotlin.math.abs(textScale - 1f) < 1e-4f) {
-                theme.copy().also { it.svgExportImageScale = 1f }
+                theme
             } else {
                 theme.copy(
                     nodeFontSize = theme.nodeFontSize * textScale,
@@ -188,7 +188,7 @@ object MaradonaSvgExporter {
                     subgraphFontSize = theme.subgraphFontSize * textScale,
                     titleFontSize = theme.titleFontSize * textScale,
                     captionFontSize = theme.captionFontSize * textScale,
-                ).also { it.svgExportImageScale = textScale }
+                )
             }
             return when (model) {
                 is MaradonaDiagramModel.FlowchartModel -> {
@@ -923,6 +923,7 @@ object MaradonaSvgExporter {
                 textMeasurer = textMeasurer,
                 textStyle = nodeTextStyle,
                 density = density,
+                includeInlineImages = true,
             )
             appendRichSpanLines(
                 sb = sb,
@@ -2874,8 +2875,6 @@ object MaradonaSvgExporter {
         }
     }
 
-    private var currentSvgImageScale: Float = 1f
-
     private fun startSvgDocument(
         width: Float,
         height: Float,
@@ -2883,7 +2882,6 @@ object MaradonaSvgExporter {
         titleText: String?,
         titleRect: DiagramRect?,
     ): StringBuilder {
-        currentSvgImageScale = theme.svgExportImageScale.coerceAtLeast(0.01f)
         val w = ceil(width).toInt().coerceAtLeast(1)
         val h = ceil(height).toInt().coerceAtLeast(1)
         val sb = StringBuilder()
@@ -2898,7 +2896,6 @@ object MaradonaSvgExporter {
                 lines = rawSvgLines(titleText),
                 colorHex = theme.nodeText.toSvgHex(),
                 fontSize = theme.titleFontSize.value,
-                imageScale = currentSvgImageScale,
             )
         }
         return sb
@@ -3111,7 +3108,12 @@ object MaradonaSvgExporter {
 
     private fun defaultFlowNodeSize(node: FlowNode, theme: MaradonaTheme): DiagramSize {
         val fontSize = theme.nodeFontSize.value
-        val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH)
+        val spanLines = wrapFormattedLabelLines(
+            label = node.label,
+            fontSp = fontSize,
+            maxWidth = NodeSizing.WRAPPING_WIDTH,
+            includeInlineImages = true,
+        )
         var maxLineW = 0f
         var totalH = 0f
         for (line in spanLines) {
@@ -3398,7 +3400,7 @@ object MaradonaSvgExporter {
         colorHex: String,
         fontSize: Float,
         rotationDeg: Float = 0f,
-        imageScale: Float = currentSvgImageScale,
+        imageScale: Float = 1f,
     ) {
         if (spanLines.isEmpty()) return
         val lineHeights = spanLines.map { line ->
@@ -3448,7 +3450,6 @@ object MaradonaSvgExporter {
         colorHex: String,
         fontSize: Float,
         rotationDeg: Float = 0f,
-        imageScale: Float = currentSvgImageScale,
     ) {
         val spanLines = if (lines.isEmpty()) {
             emptyList()
@@ -3464,7 +3465,6 @@ object MaradonaSvgExporter {
             colorHex = colorHex,
             fontSize = fontSize,
             rotationDeg = rotationDeg,
-            imageScale = imageScale,
         )
     }
 

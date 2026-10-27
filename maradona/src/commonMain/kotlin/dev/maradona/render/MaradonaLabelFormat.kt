@@ -440,9 +440,7 @@ fun annotatedLabel(
                     if (spec.inlineId in inlineImageIds) {
                         appendInlineContent(spec.inlineId, "[${spec.alt}]")
                     } else {
-                        pushStringAnnotation("maradona_inline_img", "${spec.widthPx},${spec.heightPx}")
                         append("[🖼 ${spec.alt}]")
-                        pop()
                     }
                 }
                 i = endMarker + 1
@@ -669,7 +667,10 @@ data class FormattedTextSpan(
  * underline, strikethrough, inline code, subscript/superscript, expanded icon
  * glyphs (`fa:`, `mdi:`, `::icon()`), and inline `<img .../>` / `![alt](url)` specs.
  */
-fun parseFormattedLabelLines(label: String): List<List<FormattedTextSpan>> {
+fun parseFormattedLabelLines(
+    label: String,
+    includeInlineImages: Boolean = false,
+): List<List<FormattedTextSpan>> {
     val (prepared, images) = prepareLabelWithImagesAndIcons(label)
     val lines = ArrayList<MutableList<FormattedTextSpan>>()
     var currentLine = ArrayList<FormattedTextSpan>()
@@ -723,10 +724,14 @@ fun parseFormattedLabelLines(label: String): List<List<FormattedTextSpan>> {
                 val imgIdx = prepared.substring(i + 5, endMarker).toIntOrNull()
                 val spec = imgIdx?.let { images.getOrNull(it) }
                 if (spec != null) {
-                    currentLine += FormattedTextSpan(
-                        text = "[${spec.alt}]",
-                        inlineImage = spec,
-                    )
+                    if (includeInlineImages) {
+                        currentLine += FormattedTextSpan(
+                            text = "[${spec.alt}]",
+                            inlineImage = spec,
+                        )
+                    } else {
+                        emitText("[🖼 ${spec.alt}]")
+                    }
                 }
                 i = endMarker + 1
                 continue
@@ -836,10 +841,11 @@ fun wrapFormattedLabelLines(
     textMeasurer: TextMeasurer? = null,
     textStyle: TextStyle? = null,
     density: Density = Density(1f, 1f),
+    includeInlineImages: Boolean = false,
 ): List<List<FormattedTextSpan>> {
     val maxWidthPx = maxWidth.coerceAtLeast(fontSp * 2f)
     val maxChars = kotlin.math.max(8, (maxWidthPx / (fontSp * 0.62f)).toInt())
-    val parsedLines = parseFormattedLabelLines(label)
+    val parsedLines = parseFormattedLabelLines(label, includeInlineImages)
     val out = ArrayList<List<FormattedTextSpan>>()
 
     fun measureSpansWidthPx(spans: List<FormattedTextSpan>): Float {

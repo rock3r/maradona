@@ -154,8 +154,6 @@ data class MaradonaTheme(
     /** C4 element card palette (`Person`, `System`, `Container`, `Component`, `External`). */
     val c4Palette: MaradonaC4Palette = MaradonaC4Palette.default(),
 ) {
-    internal var svgExportImageScale: Float = 1f
-
     /** True when [background] has dark relative luminance. */
     val isDark: Boolean
         get() = isColorDark(background)
