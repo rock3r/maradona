@@ -511,13 +511,27 @@ object MaradonaSvgExporter {
                 }
                 val relLabelSizes = d.relationships.mapIndexedNotNull { idx, rel ->
                     val indexedLabel = if (!rel.index.isNullOrBlank()) "${rel.index}: ${rel.label}" else rel.label
-                    val relFont = theme.edgeLabelFontSize.value
+                    val mainFont = theme.scaledSp(10.5f).value
+                    val techFont = theme.scaledSp(9.5f).value
                     val relWrapW = 188f * dens
-                    val spanLines = buildList {
-                        if (indexedLabel.isNotBlank()) addAll(wrapFormattedLabelLines(indexedLabel, relFont, relWrapW))
-                        if (!rel.technology.isNullOrBlank()) addAll(wrapFormattedLabelLines("[${rel.technology}]", relFont, relWrapW))
+                    val mainSz = if (indexedLabel.isNotBlank()) {
+                        measureSpanLinesSize(wrapFormattedLabelLines(indexedLabel, mainFont, relWrapW), mainFont)
+                    } else {
+                        null
                     }
-                    if (spanLines.isEmpty()) null else idx to measureSpanLinesSize(spanLines, relFont)
+                    val techSz = if (!rel.technology.isNullOrBlank()) {
+                        measureSpanLinesSize(wrapFormattedLabelLines("[${rel.technology}]", techFont, relWrapW), techFont)
+                    } else {
+                        null
+                    }
+                    if (mainSz == null && techSz == null) {
+                        null
+                    } else {
+                        idx to DiagramSize(
+                            width = max(mainSz?.width ?: 0f, techSz?.width ?: 0f),
+                            height = (mainSz?.height ?: 0f) + (techSz?.height ?: 0f),
+                        )
+                    }
                 }.toMap()
                 val layout = C4Layout.layout(
                     diagram = d,
@@ -1667,38 +1681,56 @@ object MaradonaSvgExporter {
             } else {
                 pr.relationship.label
             }
-            val relFontSize = theme.edgeLabelFontSize.value
+            val mainFontSize = theme.scaledSp(10.5f).value
+            val techFontSize = theme.scaledSp(9.5f).value
             val relWrapW = 188f * dens
-            val relStyle = exportTextStyle(theme, relFontSize, densityObj, textMeasurer)
-            val relSpanLines = buildList {
+            val mainStyle = exportTextStyle(theme, mainFontSize, densityObj, textMeasurer)
+            val techStyle = exportTextStyle(theme, techFontSize, densityObj, textMeasurer)
+            val relSpanLines = buildList<Pair<Float, List<FormattedTextSpan>>> {
                 if (indexedLabel.isNotBlank()) {
-                    addAll(
-                        wrapFormattedLabelLines(
-                            label = indexedLabel,
-                            fontSp = relFontSize,
-                            maxWidth = relWrapW,
-                            textMeasurer = textMeasurer,
-                            textStyle = relStyle,
-                            density = densityObj,
-                        ),
-                    )
+                    for (line in wrapFormattedLabelLines(
+                        label = indexedLabel,
+                        fontSp = mainFontSize,
+                        maxWidth = relWrapW,
+                        textMeasurer = textMeasurer,
+                        textStyle = mainStyle,
+                        density = densityObj,
+                    )) {
+                        add(mainFontSize to line)
+                    }
                 }
                 if (!pr.relationship.technology.isNullOrBlank()) {
-                    addAll(
-                        wrapFormattedLabelLines(
-                            label = "[${pr.relationship.technology}]",
-                            fontSp = relFontSize,
-                            maxWidth = relWrapW,
-                            textMeasurer = textMeasurer,
-                            textStyle = relStyle,
-                            density = densityObj,
-                        ),
-                    )
+                    for (line in wrapFormattedLabelLines(
+                        label = "[${pr.relationship.technology}]",
+                        fontSp = techFontSize,
+                        maxWidth = relWrapW,
+                        textMeasurer = textMeasurer,
+                        textStyle = techStyle,
+                        density = densityObj,
+                    )) {
+                        add(techFontSize to line)
+                    }
                 }
             }
             if (lr != null && relSpanLines.isNotEmpty()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.background.copy(alpha = 0.92f).toSvgHex()}"/>""").append('\n')
-                appendRichSpanLines(sb, "  ", lr.centerX, lr.centerY, relSpanLines, textHex, relFontSize)
+                val totalRelTextH = relSpanLines.sumOf { (lf, _) -> (lf * 1.35f).toDouble() }.toFloat()
+                var curRelY = lr.centerY - totalRelTextH / 2f
+                for ((lineFont, spanLine) in relSpanLines) {
+                    val lh = lineFont * 1.35f
+                    val lineCenterY = curRelY + lh / 2f
+                    appendFormattedLineWithImages(
+                        sb = sb,
+                        indent = "  ",
+                        centerX = lr.centerX,
+                        lineCenterY = lineCenterY,
+                        baselineY = lineCenterY + lineFont * 0.35f,
+                        spanLine = spanLine,
+                        colorHex = textHex,
+                        fontSize = lineFont,
+                    )
+                    curRelY += lh
+                }
             }
         }
 

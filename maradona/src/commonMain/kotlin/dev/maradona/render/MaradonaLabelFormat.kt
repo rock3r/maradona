@@ -967,22 +967,32 @@ fun wrapFormattedLabelLines(
                 if (measureSpansWidthPx(singleWordList) <= maxWidthPx) {
                     pushSpanToken(span, word)
                 } else {
-                    var pos = 0
-                    val stepChars = if (textMeasurer != null && textStyle != null) {
-                        val avgGlyphW = (measureSpansWidthPx(singleWordList) / word.length.coerceAtLeast(1)).coerceAtLeast(1f)
-                        kotlin.math.max(1, (maxWidthPx / avgGlyphW).toInt())
-                    } else {
-                        maxChars
+                    if (curLine.isNotEmpty()) {
+                        out += curLine
+                        curLine = ArrayList()
                     }
+                    var pos = 0
                     while (pos < word.length) {
-                        val end = kotlin.math.min(word.length, pos + stepChars)
-                        val chunk = word.substring(pos, end)
-                        pushSpanToken(span, chunk)
-                        if (end < word.length && curLine.isNotEmpty()) {
-                            out += curLine
-                            curLine = ArrayList()
+                        var lo = pos + 1
+                        var hi = word.length
+                        var bestEnd = lo
+                        while (lo <= hi) {
+                            val mid = (lo + hi) ushr 1
+                            val probe = listOf(span.copy(text = word.substring(pos, mid)))
+                            if (measureSpansWidthPx(probe) <= maxWidthPx) {
+                                bestEnd = mid
+                                lo = mid + 1
+                            } else {
+                                hi = mid - 1
+                            }
                         }
-                        pos = end
+                        val chunk = word.substring(pos, bestEnd)
+                        if (bestEnd < word.length) {
+                            out += listOf(span.copy(text = chunk))
+                        } else {
+                            appendToLine(curLine, span, chunk)
+                        }
+                        pos = bestEnd
                     }
                 }
             }
