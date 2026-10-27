@@ -349,13 +349,9 @@ object MaradonaSvgExporter {
                 val layout = ClassLayout.layout(
                     diagram = d,
                     classBoxSize = { c ->
-                        val hdrLines = buildList {
-                            for (ann in c.annotations) {
-                                if (ann.isNotBlank()) add("«$ann»")
-                            }
-                            addAll(rawSvgLines(c.displayTitle))
-                        }
-                        val hdrSize = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
+                        val hdrLines = classHeaderSpanLines(c, theme)
+                        val hdrW = hdrLines.maxOfOrNull { (lf, line) -> line.sumOf { it.text.length } * lf * 0.62f }?.coerceAtLeast(1f) ?: 1f
+                        val hdrTextH = hdrLines.sumOf { (lf, _) -> (lf * 1.4f).toDouble() }.toFloat()
                         val memberWidths = (c.attributes + c.methods).map {
                             defaultTextSize(it.displayText, theme.edgeLabelFontSize.value).width
                         }
@@ -363,8 +359,8 @@ object MaradonaSvgExporter {
                         val showCompartments = !d.hideEmptyMembersBox || c.attributes.isNotEmpty() || c.methods.isNotEmpty()
                         val attrH = if (!showCompartments) 0f else if (c.attributes.isEmpty()) 8f else c.attributes.size * memberLineH + 12f
                         val methH = if (!showCompartments) 0f else if (c.methods.isEmpty()) 8f else c.methods.size * memberLineH + 12f
-                        val hdrH = max(32f, hdrSize.height + 16f)
-                        val totalW = max(110f, max(hdrSize.width, maxMemberW) + 24f)
+                        val hdrH = max(32f, hdrTextH + 16f)
+                        val totalW = max(110f, max(hdrW, maxMemberW) + 24f)
                         ClassBoxMetrics(totalW, hdrH + attrH + methH, hdrH, attrH, methH)
                     },
                     relationLabelSize = { _, r -> r.label?.let { defaultTextSize(it, theme.edgeLabelFontSize.value) } },
@@ -566,9 +562,10 @@ object MaradonaSvgExporter {
                 val dens = options.density.coerceAtLeast(0.01f)
                 val (msgSpecs, blockSpecs) = ZenUmlLayout.collectSpecs(d)
                 val participantSizes = d.participants.associate { p ->
-                    val lines = zenUmlParticipantLines(p)
-                    val sz = defaultTextSize(lines.joinToString("\n"), theme.nodeFontSize.value)
-                    p.id to DiagramSize(max(116f * dens, sz.width + 28f * dens), max(48f * dens, sz.height + 16f * dens))
+                    val pLines = zenUmlParticipantSpanLines(p, theme)
+                    val pW = pLines.maxOfOrNull { (lf, line) -> line.sumOf { it.text.length } * lf * 0.62f }?.coerceAtLeast(1f) ?: 1f
+                    val pH = pLines.sumOf { (lf, _) -> (lf * 1.4f).toDouble() }.toFloat()
+                    p.id to DiagramSize(max(116f * dens, pW + 28f * dens), max(48f * dens, pH + 16f * dens))
                 }
                 val groupHeaderSizes = d.groups.mapIndexed { idx, grp ->
                     idx to defaultTextSize(grp.name, theme.subgraphFontSize.value)
@@ -1232,21 +1229,8 @@ object MaradonaSvgExporter {
             }
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
 
-            val hdrSpanLines = buildList {
-                for (ann in c.annotations) {
-                    if (ann.isNotBlank()) add(listOf(FormattedTextSpan("«$ann»", italic = true)))
-                }
-                val titleLines = parseFormattedLabelLines(c.label).toMutableList()
-                if (!c.genericType.isNullOrBlank()) {
-                    if (titleLines.isEmpty()) {
-                        titleLines.add(listOf(FormattedTextSpan("<${c.genericType}>")))
-                    } else {
-                        titleLines[titleLines.lastIndex] = titleLines.last() + FormattedTextSpan("<${c.genericType}>")
-                    }
-                }
-                addAll(titleLines)
-            }
-            appendRichSpanLines(sb, "    ", r.centerX, r.y + pc.headerHeight / 2f, hdrSpanLines, textHex, theme.nodeFontSize.value)
+            val hdrSpanLines = classHeaderSpanLines(c, theme)
+            appendSizedSpanLines(sb, "    ", r.centerX, r.y + pc.headerHeight / 2f, hdrSpanLines, textHex)
 
             val showCompartments = !diagram.hideEmptyMembersBox || c.attributes.isNotEmpty() || c.methods.isNotEmpty()
             if (showCompartments) {
@@ -1926,10 +1910,10 @@ object MaradonaSvgExporter {
 
         // 5. Participant headers (top and optional mirrored bottom)
         for (pp in layout.participants) {
-            val spanLines = zenUmlParticipantSpanLines(pp.participant)
+            val spanLines = zenUmlParticipantSpanLines(pp.participant, theme)
             for (r in listOfNotNull(pp.topRect, pp.bottomRect)) {
                 sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.nodeFill.toSvgHex()}" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1.6"/>""").append('\n')
-                appendRichSpanLines(sb, "  ", r.centerX, r.centerY, spanLines, theme.nodeText.toSvgHex(), theme.scaledSp(13f).value)
+                appendSizedSpanLines(sb, "  ", r.centerX, r.centerY, spanLines, theme.nodeText.toSvgHex())
             }
         }
 
@@ -1986,24 +1970,32 @@ object MaradonaSvgExporter {
         return sb.toString()
     }
 
-    private fun zenUmlParticipantLines(p: ZenUmlParticipant): List<String> {
-        val stereo = p.rawAnnotation ?: when (p.stereotype) {
-            ZenUmlParticipantStereotype.DEFAULT -> null
-            ZenUmlParticipantStereotype.ACTOR -> "Actor"
-            ZenUmlParticipantStereotype.BOUNDARY -> "Boundary"
-            ZenUmlParticipantStereotype.CONTROL -> "Control"
-            ZenUmlParticipantStereotype.ENTITY -> "Entity"
-            ZenUmlParticipantStereotype.DATABASE -> "Database"
-            ZenUmlParticipantStereotype.COLLECTIONS -> "Collections"
-            ZenUmlParticipantStereotype.QUEUE -> "Queue"
+    private fun classHeaderSpanLines(
+        c: dev.maradona.model.ClassNode,
+        theme: MaradonaTheme,
+    ): List<Pair<Float, List<FormattedTextSpan>>> = buildList {
+        val annFont = theme.captionFontSize.value
+        val titleFont = theme.nodeFontSize.value
+        for (ann in c.annotations) {
+            if (ann.isNotBlank()) add(annFont to listOf(FormattedTextSpan("«$ann»", italic = true)))
         }
-        return buildList {
-            if (!stereo.isNullOrBlank()) add("«$stereo»")
-            addAll(rawSvgLines(p.label))
+        val titleLines = parseFormattedLabelLines(c.label).toMutableList()
+        if (!c.genericType.isNullOrBlank()) {
+            if (titleLines.isEmpty()) {
+                titleLines.add(listOf(FormattedTextSpan("<${c.genericType}>")))
+            } else {
+                titleLines[titleLines.lastIndex] = titleLines.last() + FormattedTextSpan("<${c.genericType}>")
+            }
+        }
+        for (line in titleLines) {
+            add(titleFont to line.map { it.copy(bold = true) })
         }
     }
 
-    private fun zenUmlParticipantSpanLines(p: ZenUmlParticipant): List<List<FormattedTextSpan>> {
+    private fun zenUmlParticipantSpanLines(
+        p: ZenUmlParticipant,
+        theme: MaradonaTheme,
+    ): List<Pair<Float, List<FormattedTextSpan>>> {
         val stereo = p.rawAnnotation ?: when (p.stereotype) {
             ZenUmlParticipantStereotype.DEFAULT -> null
             ZenUmlParticipantStereotype.ACTOR -> "Actor"
@@ -2014,9 +2006,41 @@ object MaradonaSvgExporter {
             ZenUmlParticipantStereotype.COLLECTIONS -> "Collections"
             ZenUmlParticipantStereotype.QUEUE -> "Queue"
         }
+        val stereoFont = theme.scaledSp(10f).value
+        val lblFont = theme.scaledSp(13f).value
         return buildList {
-            if (!stereo.isNullOrBlank()) add(listOf(FormattedTextSpan("«$stereo»", italic = true)))
-            addAll(parseFormattedLabelLines(p.label))
+            if (!stereo.isNullOrBlank()) add(stereoFont to listOf(FormattedTextSpan("«$stereo»", italic = true)))
+            for (line in parseFormattedLabelLines(p.label)) {
+                add(lblFont to line.map { it.copy(bold = true) })
+            }
+        }
+    }
+
+    private fun appendSizedSpanLines(
+        sb: StringBuilder,
+        indent: String,
+        centerX: Float,
+        centerY: Float,
+        sizedLines: List<Pair<Float, List<FormattedTextSpan>>>,
+        colorHex: String,
+    ) {
+        if (sizedLines.isEmpty()) return
+        val totalH = sizedLines.sumOf { (lf, _) -> (lf * 1.35f).toDouble() }.toFloat()
+        var curY = centerY - totalH / 2f
+        for ((lineFont, spanLine) in sizedLines) {
+            val lh = lineFont * 1.35f
+            val lineCenterY = curY + lh / 2f
+            appendFormattedLineWithImages(
+                sb = sb,
+                indent = indent,
+                centerX = centerX,
+                lineCenterY = lineCenterY,
+                baselineY = lineCenterY + lineFont * 0.35f,
+                spanLine = spanLine,
+                colorHex = colorHex,
+                fontSize = lineFont,
+            )
+            curY += lh
         }
     }
 
