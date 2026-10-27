@@ -566,3 +566,35 @@ private fun DrawScope.drawSankeyUnderlay(
         }
     }
 }
+
+internal fun measureSankeyLayoutForExport(
+    diagram: SankeyDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): SankeyDiagramLayout {
+    val inSums = DoubleArray(diagram.nodes.size)
+    val outSums = DoubleArray(diagram.nodes.size)
+    val idxById = HashMap<String, Int>(diagram.nodes.size)
+    for ((i, n) in diagram.nodes.withIndex()) idxById[n.id] = i
+    for (l in diagram.links) {
+        val u = idxById[l.source] ?: continue
+        val v = idxById[l.target] ?: continue
+        outSums[u] += l.value
+        inSums[v] += l.value
+    }
+    val nodeLabelTexts = diagram.nodes.mapIndexed { idx, node ->
+        val v = max(inSums[idx], outSums[idx])
+        SankeyLayout.formatNodeLabel(node.id, v, diagram)
+    }
+    return computePremeasuredSankeyLayout(
+        diagram = diagram,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        nodeLabelTexts = nodeLabelTexts,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

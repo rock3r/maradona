@@ -596,3 +596,24 @@ private fun DrawScope.drawPieUnderlay(
         )
     }
 }
+
+internal fun measurePieLayoutForExport(
+    diagram: PieDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PieDiagramLayout {
+    val validSlices = PieLayout.validSlices(diagram)
+    val fractions = PieLayout.sliceFractions(validSlices)
+    return computePremeasuredPieLayout(
+        diagram = diagram,
+        validSlices = validSlices,
+        fractions = fractions,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

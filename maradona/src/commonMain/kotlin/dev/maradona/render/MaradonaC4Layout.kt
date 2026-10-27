@@ -1047,3 +1047,18 @@ private fun DrawScope.drawRelArrowhead(
     }
     drawPath(p, color = color, style = Fill)
 }
+
+internal fun measureC4LayoutForExport(
+    diagram: C4Diagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): C4DiagramLayout = computePremeasuredC4Layout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

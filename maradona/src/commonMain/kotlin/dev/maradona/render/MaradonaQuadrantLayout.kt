@@ -596,3 +596,39 @@ private fun DrawScope.drawQuadrantUnderlay(
         }
     }
 }
+
+internal fun measureQuadrantLayoutForExport(
+    diagram: QuadrantDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): QuadrantDiagramLayout {
+    val quadrantSpecs = listOf(1, 2, 3, 4).mapNotNull { qNum ->
+        val txt = when (qNum) {
+            1 -> diagram.quadrant1Text
+            2 -> diagram.quadrant2Text
+            3 -> diagram.quadrant3Text
+            else -> diagram.quadrant4Text
+        }
+        txt?.takeIf { it.isNotBlank() }?.let { qNum to it }
+    }
+    val axisSpecs = listOf(
+        0 to diagram.xAxisLeftText,
+        1 to diagram.xAxisRightText,
+        2 to diagram.yAxisBottomText,
+        3 to diagram.yAxisTopText,
+    ).mapNotNull { (slot, txt) ->
+        txt?.takeIf { it.isNotBlank() }?.let { slot to it }
+    }
+    return computePremeasuredQuadrantLayout(
+        diagram = diagram,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        quadrantSpecs = quadrantSpecs,
+        axisSpecs = axisSpecs,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

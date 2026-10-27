@@ -248,11 +248,21 @@ private val FORMATTING_OPEN_TAG_ATTRS_REGEX =
     Regex("""(?i)<(u|ins|s|del|strike|sub|sup)\s(?:[^>"']|"[^"]*"|'[^']*')*>""")
 private val FORMATTING_CLOSE_TAG_WS_REGEX =
     Regex("""(?i)</(u|ins|s|del|strike|sub|sup)\s+>""")
+private val HTML_BR_REGEX = Regex("""(?i)<br\s*/?>""")
+private val HTML_BOLD_OPEN_REGEX = Regex("""(?i)<(?:b|strong)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>""")
+private val HTML_BOLD_CLOSE_REGEX = Regex("""(?i)</(?:b|strong)\s*>""")
+private val HTML_ITALIC_OPEN_REGEX = Regex("""(?i)<(?:i|em)(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?>""")
+private val HTML_ITALIC_CLOSE_REGEX = Regex("""(?i)</(?:i|em)\s*>""")
 
 private fun prepareLabelWithImagesAndIcons(label: String): Pair<String, List<InlineImageSpec>> {
     val images = ArrayList<InlineImageSpec>()
     val prepared = transformOutsideCodeSpans(label) { segment ->
         var s = segment
+            .replace(HTML_BR_REGEX, "\n")
+            .replace(HTML_BOLD_OPEN_REGEX, "**")
+            .replace(HTML_BOLD_CLOSE_REGEX, "**")
+            .replace(HTML_ITALIC_OPEN_REGEX, "*")
+            .replace(HTML_ITALIC_CLOSE_REGEX, "*")
             .replace(FORMATTING_OPEN_TAG_ATTRS_REGEX) { "<${it.groupValues[1].lowercase()}>" }
             .replace(FORMATTING_CLOSE_TAG_WS_REGEX) { "</${it.groupValues[1].lowercase()}>" }
         if ("<img" in s.lowercase()) {
@@ -626,4 +636,276 @@ private fun hasClosingSingleStar(s: String, from: Int): Boolean {
         j++
     }
     return false
+}
+
+/**
+ * A structured text or inline-image span produced by [parseFormattedLabelLines]
+ * for rich SVG export (`<tspan>` and `<image>`).
+ */
+@Immutable
+data class FormattedTextSpan(
+    val text: String,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val strikethrough: Boolean = false,
+    val code: Boolean = false,
+    val subscript: Boolean = false,
+    val superscript: Boolean = false,
+    val inlineImage: InlineImageSpec? = null,
+) {
+    val hasFormatting: Boolean
+        get() = bold || italic || underline || strikethrough || code || subscript || superscript
+}
+
+/**
+ * Parses [label] into lines of [FormattedTextSpan]s preserving bold, italic,
+ * underline, strikethrough, inline code, subscript/superscript, expanded icon
+ * glyphs (`fa:`, `mdi:`, `::icon()`), and inline `<img .../>` / `![alt](url)` specs.
+ */
+fun parseFormattedLabelLines(label: String): List<List<FormattedTextSpan>> {
+    val (prepared, images) = prepareLabelWithImagesAndIcons(label)
+    val lines = ArrayList<MutableList<FormattedTextSpan>>()
+    var currentLine = ArrayList<FormattedTextSpan>()
+    lines += currentLine
+
+    var i = 0
+    var boldStar = false
+    var boldUnderscore = false
+    var italic = false
+    var underline = false
+    var strike = false
+    var codeDelimiter: String? = null
+    var subscript = false
+    var superscript = false
+    val plain = StringBuilder()
+
+    fun emitText(rawText: String) {
+        val parts = rawText.replace("&\u200Blt;", "<").split('\n')
+        for ((idx, part) in parts.withIndex()) {
+            if (idx > 0) {
+                currentLine = ArrayList()
+                lines += currentLine
+            }
+            if (part.isNotEmpty()) {
+                currentLine += FormattedTextSpan(
+                    text = part,
+                    bold = boldStar || boldUnderscore,
+                    italic = italic,
+                    underline = underline,
+                    strikethrough = strike,
+                    code = codeDelimiter != null,
+                    subscript = subscript,
+                    superscript = superscript,
+                )
+            }
+        }
+    }
+
+    fun flush() {
+        if (plain.isEmpty()) return
+        val s = plain.toString()
+        plain.clear()
+        emitText(s)
+    }
+
+    while (i < prepared.length) {
+        if (prepared.startsWith("\u0000IMG:", i)) {
+            val endMarker = prepared.indexOf('\u0000', i + 5)
+            if (endMarker > i + 5) {
+                flush()
+                val imgIdx = prepared.substring(i + 5, endMarker).toIntOrNull()
+                val spec = imgIdx?.let { images.getOrNull(it) }
+                if (spec != null) {
+                    currentLine += FormattedTextSpan(
+                        text = "[${spec.alt}]",
+                        inlineImage = spec,
+                    )
+                }
+                i = endMarker + 1
+                continue
+            }
+        }
+        val activeCodeCloser = codeDelimiter
+        if (activeCodeCloser != null) {
+            when {
+                activeCodeCloser == "`" && prepared[i] == '`' -> {
+                    flush(); codeDelimiter = null; i += 1
+                }
+                activeCodeCloser == "</code>" && prepared.regionMatches(i, "</code>", 0, 7, ignoreCase = true) -> {
+                    flush(); codeDelimiter = null; i += 7
+                }
+                else -> {
+                    plain.append(prepared[i]); i += 1
+                }
+            }
+            continue
+        }
+        when {
+            prepared[i] == '`' && prepared.indexOf('`', i + 1) > i -> {
+                flush(); codeDelimiter = "`"; i += 1
+            }
+            prepared.regionMatches(i, "<code>", 0, 6, ignoreCase = true) &&
+                prepared.indexOf("</code>", i + 6, ignoreCase = true) >= 0 -> {
+                flush(); codeDelimiter = "</code>"; i += 6
+            }
+            prepared.startsWith("**", i) && (boldStar || prepared.indexOf("**", i + 2) >= 0) -> {
+                flush(); boldStar = !boldStar; i += 2
+            }
+            prepared.startsWith("__", i) && (
+                (boldUnderscore && isClosingDoubleUnderscore(prepared, i)) ||
+                    (!boldUnderscore && isOpeningDoubleUnderscore(prepared, i))
+                ) -> {
+                flush(); boldUnderscore = !boldUnderscore; i += 2
+            }
+            prepared.startsWith("~~", i) && (strike || prepared.indexOf("~~", i + 2) >= 0) -> {
+                flush(); strike = !strike; i += 2
+            }
+            prepared.regionMatches(i, "<u>", 0, 3, ignoreCase = true) -> {
+                flush(); underline = true; i += 3
+            }
+            prepared.regionMatches(i, "</u>", 0, 4, ignoreCase = true) -> {
+                flush(); underline = false; i += 4
+            }
+            prepared.regionMatches(i, "<ins>", 0, 5, ignoreCase = true) -> {
+                flush(); underline = true; i += 5
+            }
+            prepared.regionMatches(i, "</ins>", 0, 6, ignoreCase = true) -> {
+                flush(); underline = false; i += 6
+            }
+            prepared.regionMatches(i, "<s>", 0, 3, ignoreCase = true) -> {
+                flush(); strike = true; i += 3
+            }
+            prepared.regionMatches(i, "</s>", 0, 4, ignoreCase = true) -> {
+                flush(); strike = false; i += 4
+            }
+            prepared.regionMatches(i, "<del>", 0, 5, ignoreCase = true) -> {
+                flush(); strike = true; i += 5
+            }
+            prepared.regionMatches(i, "</del>", 0, 6, ignoreCase = true) -> {
+                flush(); strike = false; i += 6
+            }
+            prepared.regionMatches(i, "<strike>", 0, 8, ignoreCase = true) -> {
+                flush(); strike = true; i += 8
+            }
+            prepared.regionMatches(i, "</strike>", 0, 9, ignoreCase = true) -> {
+                flush(); strike = false; i += 9
+            }
+            prepared.regionMatches(i, "<sub>", 0, 5, ignoreCase = true) -> {
+                flush(); subscript = true; i += 5
+            }
+            prepared.regionMatches(i, "</sub>", 0, 6, ignoreCase = true) -> {
+                flush(); subscript = false; i += 6
+            }
+            prepared.regionMatches(i, "<sup>", 0, 5, ignoreCase = true) -> {
+                flush(); superscript = true; i += 5
+            }
+            prepared.regionMatches(i, "</sup>", 0, 6, ignoreCase = true) -> {
+                flush(); superscript = false; i += 6
+            }
+            prepared[i] == '*' && !prepared.startsWith("**", i) && (italic || hasClosingSingleStar(prepared, i + 1)) -> {
+                flush(); italic = !italic; i += 1
+            }
+            else -> {
+                plain.append(prepared[i]); i += 1
+            }
+        }
+    }
+    flush()
+    return lines
+}
+
+/**
+ * Wraps [label] into lines of [FormattedTextSpan]s within [maxWidth] while
+ * preserving span formatting and inline image specifications.
+ */
+fun wrapFormattedLabelLines(
+    label: String,
+    fontSp: Float,
+    maxWidth: Float,
+): List<List<FormattedTextSpan>> {
+    val maxChars = kotlin.math.max(8, (maxWidth / (fontSp * 0.62f)).toInt())
+    val parsedLines = parseFormattedLabelLines(label)
+    val out = ArrayList<List<FormattedTextSpan>>()
+
+    for (line in parsedLines) {
+        val totalLen = line.sumOf { span ->
+            if (span.inlineImage != null) {
+                kotlin.math.max(2, (span.inlineImage.widthPx / (fontSp * 0.62f)).toInt())
+            } else {
+                span.text.length
+            }
+        }
+        if (totalLen <= maxChars) {
+            out += line
+            continue
+        }
+        // Word-wrap across spans while preserving each word's FormattedTextSpan attributes
+        var curLine = ArrayList<FormattedTextSpan>()
+        var curLen = 0
+
+        fun pushSpanToken(template: FormattedTextSpan, tokenText: String, tokenCost: Int) {
+            if (curLine.isNotEmpty() && curLen + tokenCost > maxChars) {
+                out += curLine
+                curLine = ArrayList()
+                curLen = 0
+            }
+            val trimmedToken = if (curLine.isEmpty()) tokenText.trimStart(' ') else tokenText
+            if (trimmedToken.isEmpty() && template.inlineImage == null) return
+            val last = curLine.lastOrNull()
+            if (last != null &&
+                last.inlineImage == null &&
+                template.inlineImage == null &&
+                last.bold == template.bold &&
+                last.italic == template.italic &&
+                last.underline == template.underline &&
+                last.strikethrough == template.strikethrough &&
+                last.code == template.code &&
+                last.subscript == template.subscript &&
+                last.superscript == template.superscript
+            ) {
+                curLine[curLine.lastIndex] = last.copy(text = last.text + trimmedToken)
+            } else {
+                curLine += template.copy(text = trimmedToken)
+            }
+            curLen += if (template.inlineImage != null) tokenCost else trimmedToken.length
+        }
+
+        for (span in line) {
+            if (span.inlineImage != null) {
+                val cost = kotlin.math.max(2, (span.inlineImage.widthPx / (fontSp * 0.62f)).toInt())
+                pushSpanToken(span, span.text, cost)
+                continue
+            }
+            val words = Regex("""\S+|\s+""").findAll(span.text).map { it.value }.toList()
+            for (word in words) {
+                if (word.isBlank()) {
+                    if (curLine.isNotEmpty() && curLen + 1 <= maxChars) {
+                        pushSpanToken(span, " ", 1)
+                    }
+                    continue
+                }
+                if (word.length <= maxChars) {
+                    pushSpanToken(span, word, word.length)
+                } else {
+                    var pos = 0
+                    while (pos < word.length) {
+                        val end = kotlin.math.min(word.length, pos + maxChars)
+                        val chunk = word.substring(pos, end)
+                        pushSpanToken(span, chunk, chunk.length)
+                        if (end < word.length && curLine.isNotEmpty()) {
+                            out += curLine
+                            curLine = ArrayList()
+                            curLen = 0
+                        }
+                        pos = end
+                    }
+                }
+            }
+        }
+        if (curLine.isNotEmpty()) {
+            out += curLine
+        }
+    }
+    return if (out.isEmpty()) listOf(emptyList()) else out
 }

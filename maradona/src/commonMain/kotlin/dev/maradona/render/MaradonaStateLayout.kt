@@ -1028,3 +1028,29 @@ private fun DrawScope.drawStateArrowHead(
     }
     drawPath(path = path, color = color)
 }
+
+internal fun measureStateLayoutForExport(
+    diagram: StateDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): StateDiagramLayout {
+    val compositeIds = diagram.states
+        .filter { s ->
+            s.kind == StateKind.Composite ||
+                diagram.states.any { it.parentId == s.id } ||
+                diagram.notes.any { it.parentId == s.id }
+        }
+        .map { it.id }
+        .toSet()
+    return computePremeasuredStateLayout(
+        diagram = diagram,
+        compositeIds = compositeIds,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).naturalLayout
+}
+

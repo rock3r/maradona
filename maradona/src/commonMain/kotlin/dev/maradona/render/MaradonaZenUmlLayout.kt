@@ -1213,3 +1213,27 @@ private fun DrawScope.drawMessageArrowhead(
         drawPath(p, color = color, style = Stroke(width = 1.6f * density))
     }
 }
+
+internal fun measureZenUmlLayoutForExport(
+    diagram: ZenUmlDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): ZenUmlDiagramLayout {
+    val specs = ZenUmlLayout.collectSpecs(diagram)
+    val effectiveParticipants = diagram.participants.ifEmpty {
+        listOf(ZenUmlParticipant(id = "_STARTER_", label = "Starter"))
+    }
+    return computePremeasuredZenUmlLayout(
+        diagram = diagram,
+        effectiveParticipants = effectiveParticipants,
+        msgSpecs = specs.first,
+        blockSpecs = specs.second,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

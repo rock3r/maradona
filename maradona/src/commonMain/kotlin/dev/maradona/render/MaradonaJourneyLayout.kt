@@ -726,3 +726,20 @@ private fun DrawScope.drawJourneyUnderlay(
         }
     }
 }
+
+internal fun measureJourneyLayoutForExport(
+    diagram: JourneyDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): JourneyDiagramLayout = computePremeasuredJourneyLayout(
+    diagram = diagram,
+    allActors = JourneyLayout.allActors(diagram),
+    sectionRuns = JourneyLayout.buildSectionRuns(diagram),
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

@@ -600,3 +600,18 @@ private fun DrawScope.drawMindmapUnderlay(
         }
     }
 }
+
+internal fun measureMindmapLayoutForExport(
+    diagram: MindmapDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): MindmapDiagramLayout = computePremeasuredMindmapLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

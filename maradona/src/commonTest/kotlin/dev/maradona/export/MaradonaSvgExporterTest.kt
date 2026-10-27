@@ -706,4 +706,52 @@ class MaradonaSvgExporterTest {
         assertTrue(svg.contains("data-id=\"cluster_5\""))
         assertTrue(svg.contains("data-id=\"N_5_19\""))
     }
+
+    @Test
+    fun preservesRichTextSpansIconsImagesAndInteractionCallbacksInSvg() {
+        val mmd = """
+            flowchart LR
+                subgraph sg1["<b>Tier 1</b> &amp; <code>edge</code>"]
+                    A["**Bold** *Italic* <u>Under</u> ~~Strike~~ `mono` H<sub>2</sub>O x<sup>2</sup>"]
+                    B["fa:fa-check Status <img src='https://example.com/badge.png' width='36' height='20' alt='Badge'/>"]
+                    C@{ shape: rect, label: "Gateway", icon: "fa:fa-server", img: "https://example.com/gw.svg", w: 32, h: 32 }
+                end
+                A -->|"<b>Fast</b> <i>path</i>"| B
+                B --> C
+                click A call handleSelect("A") "Invoke callback A"
+                click B "https://example.com/status" "Open status" _self
+        """.trimIndent()
+
+        val svg = MaradonaSvgExporter.exportToSvg(mmd)
+        // Rich text <tspan> attributes
+        assertTrue(svg.contains("""<tspan font-weight="bold">Bold</tspan>"""), "Expected bold <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan font-style="italic">Italic</tspan>"""), "Expected italic <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan text-decoration="underline">Under</tspan>"""), "Expected underline <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan text-decoration="line-through">Strike</tspan>"""), "Expected strikethrough <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan font-family="monospace">mono</tspan>"""), "Expected monospace code <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan baseline-shift="sub" font-size="80%">2</tspan>"""), "Expected subscript <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan baseline-shift="super" font-size="80%">2</tspan>"""), "Expected superscript <tspan> in SVG")
+        // Subgraph and edge rich text
+        assertTrue(svg.contains("""<tspan font-weight="bold">Tier 1</tspan>"""), "Expected bold <tspan> in subgraph header")
+        assertTrue(svg.contains("""<tspan font-weight="bold">Fast</tspan>"""), "Expected bold <tspan> in edge label")
+        assertTrue(svg.contains("""<tspan font-style="italic">path</tspan>"""), "Expected italic <tspan> in edge label")
+        // Icons and inline images
+        assertTrue(svg.contains("✓ Status"), "Expected fa:fa-check icon glyph in SVG")
+        assertTrue(
+            svg.contains("""<image class="inline-image" href="https://example.com/badge.png"""") &&
+                svg.contains("""width="36" height="20"""") &&
+                svg.contains("""<title>Badge</title></image>"""),
+            "Expected inline <img> to export as SVG <image> with dimensions and <title>",
+        )
+        assertTrue(
+            svg.contains("""<image class="inline-image" href="https://example.com/gw.svg"""") &&
+                svg.contains("""width="32" height="32""""),
+            "Expected Mermaid v2 @{ img, w, h } metadata to export as SVG <image>",
+        )
+        assertTrue(svg.contains("🖥 Gateway"), "Expected Mermaid v2 @{ icon } metadata to export resolved icon glyph")
+        // Callback and link interactions
+        assertTrue(svg.contains("""data-id="A" data-callback="handleSelect(&quot;A&quot;)""""), "Expected click callback attribute on node A")
+        assertTrue(svg.contains("""<title>Invoke callback A</title>"""), "Expected tooltip on callback node A")
+        assertTrue(svg.contains("""<a href="https://example.com/status" target="_self">"""), "Expected link + target on node B")
+    }
 }

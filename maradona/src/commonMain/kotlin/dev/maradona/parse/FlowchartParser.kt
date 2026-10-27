@@ -552,6 +552,10 @@ internal object NodeRefReader {
     private fun parseMetadataBlock(body: String): Pair<String?, NodeShape?> {
         var label: String? = null
         var shape: NodeShape? = null
+        var icon: String? = null
+        var imgUrl: String? = null
+        var imgW: String? = null
+        var imgH: String? = null
         var inQuote = false
         var quoteChar = '"'
         val parts = mutableListOf<String>()
@@ -577,9 +581,29 @@ internal object NodeRefReader {
             when (k) {
                 "label" -> label = cleanLabel(v)
                 "shape" -> shape = mapShapeAlias(v)
+                "icon" -> icon = v.trim().takeIf { it.isNotEmpty() }
+                "img" -> imgUrl = v.trim().takeIf { it.isNotEmpty() }
+                "w", "width" -> imgW = v.trim().removeSuffix("px").trim().takeIf { it.isNotEmpty() }
+                "h", "height" -> imgH = v.trim().removeSuffix("px").trim().takeIf { it.isNotEmpty() }
             }
         }
-        return label to shape
+        val combinedLabel = buildString {
+            if (imgUrl != null) {
+                val wAttr = imgW ?: "28"
+                val hAttr = imgH ?: wAttr
+                val altAttr = (label ?: "image").replace("\"", "&quot;")
+                append("""<img src="$imgUrl" width="$wAttr" height="$hAttr" alt="$altAttr"/>""")
+                if (!label.isNullOrBlank() || !icon.isNullOrBlank()) append('\n')
+            }
+            if (!icon.isNullOrBlank()) {
+                append("::icon($icon)")
+                if (!label.isNullOrBlank()) append(' ')
+            }
+            if (!label.isNullOrBlank()) {
+                append(label)
+            }
+        }.takeIf { it.isNotEmpty() }
+        return combinedLabel to shape
     }
 
     private fun mapShapeAlias(alias: String): NodeShape? = when (alias.trim().lowercase()) {

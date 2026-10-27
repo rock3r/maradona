@@ -922,3 +922,26 @@ private fun DrawScope.drawOpenArrow(
         style = Stroke(width = 1.6f * unit, cap = StrokeCap.Round, join = StrokeJoin.Round),
     )
 }
+
+internal fun measureRequirementLayoutForExport(
+    diagram: RequirementDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): RequirementDiagramLayout {
+    val allItems = diagram.items
+    val idxByName = HashMap<String, Int>(allItems.size).apply {
+        for ((i, it) in allItems.withIndex()) put(it.name, i)
+    }
+    return computePremeasuredRequirementLayout(
+        diagram = diagram,
+        allItems = allItems,
+        idxByName = idxByName,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).naturalLayout
+}
+

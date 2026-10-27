@@ -1182,3 +1182,21 @@ private fun collectBlocks(statements: List<SequenceStatement>): List<SequenceSta
     walk(statements)
     return out
 }
+
+internal fun measureSequenceLayoutForExport(
+    diagram: SequenceDiagram,
+    theme: MaradonaTheme,
+    options: SequenceLayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): SequenceDiagramLayout = computePremeasuredSequenceLayout(
+    diagram = diagram,
+    flatMessages = collectMessages(diagram.statements),
+    flatNotes = collectNotes(diagram.statements),
+    flatBlocks = collectBlocks(diagram.statements),
+    theme = theme,
+    options = options,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

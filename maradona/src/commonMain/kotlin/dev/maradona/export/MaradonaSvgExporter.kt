@@ -2,6 +2,8 @@ package dev.maradona.export
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.unit.Density
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.ArchitectureLayout
 import dev.maradona.layout.BlockDiagramLayout
@@ -109,10 +111,37 @@ import dev.maradona.model.ZenUmlParticipant
 import dev.maradona.model.ZenUmlParticipantStereotype
 import dev.maradona.parse.MaradonaDiagramModel
 import dev.maradona.parse.MaradonaParser
+import dev.maradona.render.FormattedTextSpan
 import dev.maradona.render.MaradonaTheme
+import dev.maradona.render.extractInlineImages
+import dev.maradona.render.measureArchitectureLayoutForExport
+import dev.maradona.render.measureBlockLayoutForExport
+import dev.maradona.render.measureC4LayoutForExport
+import dev.maradona.render.measureClassLayoutForExport
+import dev.maradona.render.measureErLayoutForExport
+import dev.maradona.render.measureFlowchartLayoutForExport
+import dev.maradona.render.measureGanttLayoutForExport
+import dev.maradona.render.measureGitGraphLayoutForExport
+import dev.maradona.render.measureJourneyLayoutForExport
+import dev.maradona.render.measureKanbanLayoutForExport
+import dev.maradona.render.measureMindmapLayoutForExport
+import dev.maradona.render.measurePacketLayoutForExport
+import dev.maradona.render.measurePieLayoutForExport
+import dev.maradona.render.measureQuadrantLayoutForExport
+import dev.maradona.render.measureRadarLayoutForExport
+import dev.maradona.render.measureRequirementLayoutForExport
+import dev.maradona.render.measureSankeyLayoutForExport
+import dev.maradona.render.measureSequenceLayoutForExport
+import dev.maradona.render.measureStateLayoutForExport
+import dev.maradona.render.measureTimelineLayoutForExport
+import dev.maradona.render.measureTreemapLayoutForExport
+import dev.maradona.render.measureXyChartLayoutForExport
+import dev.maradona.render.measureZenUmlLayoutForExport
 import dev.maradona.render.parseCssColor
+import dev.maradona.render.parseFormattedLabelLines
 import dev.maradona.render.plainTextLabel
 import dev.maradona.render.resolveMermaidIconGlyph
+import dev.maradona.render.wrapFormattedLabelLines
 import kotlin.math.atan2
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -131,13 +160,130 @@ object MaradonaSvgExporter {
 
     /**
      * Parses [source] and exports a supported Mermaid diagram to a standalone SVG string.
+     *
+     * When [textMeasurer] is supplied, node and label geometry is computed through the exact
+     * same Compose [TextMeasurer] pipeline used by [dev.maradona.render.MaradonaDiagram] at
+     * [density]. When [textMeasurer] is `null`, span-, icon-, and image-aware pure-Kotlin
+     * sizing is used so headless export works without a Compose runtime.
      */
     fun exportToSvg(
         source: String,
         theme: MaradonaTheme = MaradonaTheme.light(),
         options: LayoutOptions = LayoutOptions(),
+        textMeasurer: TextMeasurer? = null,
+        density: Density = Density(options.density.coerceAtLeast(0.01f), 1f),
     ): String {
-        return when (val model = MaradonaParser.parse(source)) {
+        val model = MaradonaParser.parse(source)
+        if (textMeasurer != null) {
+            val dens = density.density.coerceAtLeast(0.01f)
+            return when (model) {
+                is MaradonaDiagramModel.FlowchartModel -> {
+                    val imageUrls = model.chart.nodes.asSequence()
+                        .flatMap { extractInlineImages(it.label).asSequence() }
+                        .map { it.url }
+                        .toSet()
+                    val layout = measureFlowchartLayoutForExport(
+                        chart = model.chart,
+                        theme = theme,
+                        layoutOptions = options,
+                        densityObj = density,
+                        textMeasurer = textMeasurer,
+                        resolvedImageUrls = imageUrls,
+                    )
+                    exportFlowchartToSvg(model.chart, layout, theme)
+                }
+                is MaradonaDiagramModel.SequenceModel -> {
+                    val seqOpts = dev.maradona.layout.SequenceLayoutOptions(density = dens)
+                    val layout = measureSequenceLayoutForExport(model.diagram, theme, seqOpts, density, textMeasurer)
+                    exportSequenceToSvg(model.diagram, layout, theme, dens)
+                }
+                is MaradonaDiagramModel.ClassModel -> {
+                    val layout = measureClassLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportClassToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.StateModel -> {
+                    val layout = measureStateLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportStateToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.ErModel -> {
+                    val layout = measureErLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportErToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.RequirementModel -> {
+                    val layout = measureRequirementLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportRequirementToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.C4Model -> {
+                    val layout = measureC4LayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportC4ToSvg(model.diagram, layout, theme, dens)
+                }
+                is MaradonaDiagramModel.ArchitectureModel -> {
+                    val layout = measureArchitectureLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportArchitectureToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.ZenUmlModel -> {
+                    val layout = measureZenUmlLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportZenUmlToSvg(model.diagram, layout, theme, dens)
+                }
+                is MaradonaDiagramModel.MindmapModel -> {
+                    val layout = measureMindmapLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportMindmapToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.GanttModel -> {
+                    val layout = measureGanttLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportGanttToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.PieModel -> {
+                    val layout = measurePieLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportPieToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.GitGraphModel -> {
+                    val layout = measureGitGraphLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportGitGraphToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.TimelineModel -> {
+                    val layout = measureTimelineLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportTimelineToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.JourneyModel -> {
+                    val layout = measureJourneyLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportJourneyToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.QuadrantModel -> {
+                    val layout = measureQuadrantLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportQuadrantToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.XyChartModel -> {
+                    val layout = measureXyChartLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportXyChartToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.KanbanModel -> {
+                    val layout = measureKanbanLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportKanbanToSvg(model.diagram, layout, theme, dens)
+                }
+                is MaradonaDiagramModel.SankeyModel -> {
+                    val layout = measureSankeyLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportSankeyToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.PacketModel -> {
+                    val layout = measurePacketLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportPacketToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.RadarModel -> {
+                    val layout = measureRadarLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportRadarToSvg(model.diagram, layout, theme)
+                }
+                is MaradonaDiagramModel.BlockModel -> {
+                    val layout = measureBlockLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportBlockToSvg(model.diagram, layout, theme, dens)
+                }
+                is MaradonaDiagramModel.TreemapModel -> {
+                    val layout = measureTreemapLayoutForExport(model.diagram, theme, options, density, textMeasurer)
+                    exportTreemapToSvg(model.diagram, layout, theme)
+                }
+            }
+        }
+        return when (model) {
             is MaradonaDiagramModel.FlowchartModel -> {
                 val layout = FlowchartLayout.layout(
                     chart = model.chart,
@@ -627,15 +773,17 @@ object MaradonaSvgExporter {
             sb.append(
                 """    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.subgraphFill.toSvgHex()}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1"/>""",
             ).append('\n')
-            val sgLines = plainTextLabel(psg.subgraph.label).split('\n')
+            val sgSpanLines = parseFormattedLabelLines(psg.subgraph.label)
             val sgFont = theme.subgraphFontSize.value
             val sgLineH = sgFont * 1.3f
             val sgFirstLineOffset = 6f + sgFont * 0.85f
-            for ((idx, line) in sgLines.withIndex()) {
+            for ((idx, spanLine) in sgSpanLines.withIndex()) {
                 val ly = r.y + sgFirstLineOffset + idx * sgLineH
+                val innerXml = renderSpansToSvgContent(spanLine)
                 sb.append(
-                    """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${theme.subgraphText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(sgFont)}" font-weight="600">${escapeXml(line)}</text>""",
+                    """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${theme.subgraphText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(sgFont)}" font-weight="600">$innerXml</text>""",
                 ).append('\n')
+                appendInlineImagesForLine(sb, "    ", r.centerX, ly - sgFont * 0.35f, spanLine, sgFont)
             }
             sb.append("""  </g>""").append('\n')
         }
@@ -667,19 +815,19 @@ object MaradonaSvgExporter {
                 sb.append(
                     """  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""",
                 ).append('\n')
-                appendMultilineText(
+                appendRichSpanLines(
                     sb = sb,
                     indent = "  ",
                     centerX = lr.centerX,
                     centerY = lr.centerY,
-                    lines = plainTextLabel(lbl).split('\n'),
+                    spanLines = parseFormattedLabelLines(lbl),
                     colorHex = theme.edgeLabelText.toSvgHex(),
                     fontSize = theme.edgeLabelFontSize.value,
                 )
             }
         }
 
-        // 3. Nodes (with optional <a> links and <title> tooltips)
+        // 3. Nodes (with optional <a> links, data-callback, <title> tooltips, rich <tspan> text, and <image>)
         for (pn in layout.nodes) {
             val node = pn.node
             val r = pn.rect
@@ -688,25 +836,27 @@ object MaradonaSvgExporter {
             val textColor = (parseCssColor(node.style?.textColor) ?: theme.nodeText).toSvgHex()
             val strokeW = node.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 1f
             val url = node.action?.url?.takeIf { it.isNotBlank() }
+            val callback = node.action?.callback?.takeIf { it.isNotBlank() }
             val tooltip = node.action?.tooltip?.takeIf { it.isNotBlank() }
+            val cbAttr = callback?.let { """ data-callback="${escapeXml(it)}"""" } ?: ""
 
             if (url != null) {
                 val targetAttr = node.action.target?.let { """ target="${escapeXml(it)}"""" } ?: ""
                 sb.append("""  <a href="${escapeXml(url)}"$targetAttr>""").append('\n')
             }
-            sb.append("""  <g class="node" data-id="${escapeXml(node.id)}">""").append('\n')
+            sb.append("""  <g class="node" data-id="${escapeXml(node.id)}"$cbAttr>""").append('\n')
             if (tooltip != null) {
                 sb.append("""    <title>${escapeXml(tooltip)}</title>""").append('\n')
             }
             appendSvgNodeShape(sb, node.shape, r, fill, stroke, strokeW)
             val fontSize = theme.nodeFontSize.value
-            val lines = wrapSvgLines(plainTextLabel(node.label), fontSize, NodeSizing.WRAPPING_WIDTH)
-            appendMultilineText(
+            val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH)
+            appendRichSpanLines(
                 sb = sb,
                 indent = "    ",
                 centerX = r.centerX,
                 centerY = r.centerY,
-                lines = lines,
+                spanLines = spanLines,
                 colorHex = textColor,
                 fontSize = fontSize,
             )
@@ -743,7 +893,7 @@ object MaradonaSvgExporter {
             val lbl = b.box.label
             if (!lbl.isNullOrBlank()) {
                 val lr = b.labelRect ?: DiagramRect(r.x, r.y, r.width, 22f)
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
             }
         }
 
@@ -785,14 +935,14 @@ object MaradonaSvgExporter {
             sb.append("""  <polygon points="$tabPts" fill="${theme.nodeFill.toSvgHex()}" stroke="$borderHex" stroke-width="1"/>""").append('\n')
             appendMultilineText(sb, "  ", tr.centerX, tr.centerY, listOf(plainTextLabel(blk.tag)), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             if (!blk.label.isNullOrBlank() && blk.labelRect != null) {
-                appendMultilineText(sb, "  ", blk.labelRect.centerX, blk.labelRect.centerY, plainTextLabel("[${blk.label}]").split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", blk.labelRect.centerX, blk.labelRect.centerY, rawSvgLines("[${blk.label}]"), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
             for (div in blk.dividers) {
                 sb.append(
                     """  <line x1="${fmt(r.x)}" y1="${fmt(div.y)}" x2="${fmt(r.right)}" y2="${fmt(div.y)}" stroke="$borderHex" stroke-width="1.5" stroke-dasharray="4,3"/>""",
                 ).append('\n')
                 if (!div.label.isNullOrBlank() && div.labelRect != null) {
-                    appendMultilineText(sb, "  ", div.labelRect.centerX, div.labelRect.centerY, plainTextLabel("[${div.label}]").split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                    appendMultilineText(sb, "  ", div.labelRect.centerX, div.labelRect.centerY, rawSvgLines("[${div.label}]"), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
                 }
             }
         }
@@ -820,14 +970,14 @@ object MaradonaSvgExporter {
                 sb.append("""    <line x1="${fmt(cx - span)}" y1="${fmt(armY)}" x2="${fmt(cx + span)}" y2="${fmt(armY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx - span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx + span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
-                val actorLines = plainTextLabel(p.label).split('\n')
+                val actorLines = rawSvgLines(p.label)
                 val actorFont = theme.nodeFontSize.value
                 val actorLineH = actorFont * 1.35f
                 val actorCenterY = r.bottom - 4f * dens - actorFont * 0.35f - ((actorLines.size - 1) * actorLineH) / 2f
                 appendMultilineText(sb, "    ", r.centerX, actorCenterY, actorLines, textHex, actorFont)
             } else {
                 sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
-                appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(p.label).split('\n'), textHex, theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(p.label), textHex, theme.nodeFontSize.value)
             }
             sb.append("""  </g>""").append('\n')
             if (linkUrl != null) sb.append("""  </a>""").append('\n')
@@ -843,7 +993,7 @@ object MaradonaSvgExporter {
             sb.append(
                 """  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""",
             ).append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(n.note.text).split('\n'), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(n.note.text), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
 
         // 7. Messages and arrowheads
@@ -885,7 +1035,7 @@ object MaradonaSvgExporter {
             }
             if (m.statement.text.isNotBlank()) {
                 val msgLabel = if (m.sequenceNumber != null) "${m.sequenceNumber}. ${m.statement.text}" else m.statement.text
-                appendMultilineText(sb, "  ", m.labelRect.centerX, m.labelRect.centerY, plainTextLabel(msgLabel).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "  ", m.labelRect.centerX, m.labelRect.centerY, rawSvgLines(msgLabel), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             }
         }
 
@@ -913,7 +1063,7 @@ object MaradonaSvgExporter {
             ).append('\n')
             if (ns.namespace.label.isNotBlank()) {
                 val hr = ns.headerRect
-                appendMultilineText(sb, "  ", hr.centerX, hr.centerY, plainTextLabel(ns.namespace.label).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", hr.centerX, hr.centerY, rawSvgLines(ns.namespace.label), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
             }
         }
 
@@ -941,17 +1091,17 @@ object MaradonaSvgExporter {
             val lbl = r.relation.label
             if (lr != null && !lbl.isNullOrBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
             val fc = r.relation.fromCardinality
             val fcr = r.fromCardinalityRect
             if (!fc.isNullOrBlank() && fcr != null) {
-                appendMultilineText(sb, "  ", fcr.centerX, fcr.centerY, plainTextLabel(fc).split('\n'), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
+                appendMultilineText(sb, "  ", fcr.centerX, fcr.centerY, rawSvgLines(fc), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
             }
             val tc = r.relation.toCardinality
             val tcr = r.toCardinalityRect
             if (!tc.isNullOrBlank() && tcr != null) {
-                appendMultilineText(sb, "  ", tcr.centerX, tcr.centerY, plainTextLabel(tc).split('\n'), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
+                appendMultilineText(sb, "  ", tcr.centerX, tcr.centerY, rawSvgLines(tc), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
             }
         }
 
@@ -964,13 +1114,15 @@ object MaradonaSvgExporter {
             val textHex = (parseCssColor(c.style?.textColor) ?: theme.nodeText).toSvgHex()
             val strokeW = c.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 1f
             val url = c.action?.url?.takeIf { it.isNotBlank() }
+            val callback = c.action?.callback?.takeIf { it.isNotBlank() }
             val tooltip = c.action?.tooltip?.takeIf { it.isNotBlank() }
+            val cbAttr = callback?.let { """ data-callback="${escapeXml(it)}"""" } ?: ""
 
             if (url != null) {
                 val targetAttr = c.action.target?.let { """ target="${escapeXml(it)}"""" } ?: ""
                 sb.append("""  <a href="${escapeXml(url)}"$targetAttr>""").append('\n')
             }
-            sb.append("""  <g class="class-node" data-id="${escapeXml(c.id)}">""").append('\n')
+            sb.append("""  <g class="class-node" data-id="${escapeXml(c.id)}"$cbAttr>""").append('\n')
             if (tooltip != null) {
                 sb.append("""    <title>${escapeXml(tooltip)}</title>""").append('\n')
             }
@@ -980,7 +1132,7 @@ object MaradonaSvgExporter {
                 for (ann in c.annotations) {
                     if (ann.isNotBlank()) add("«${plainTextLabel(ann)}»")
                 }
-                addAll(plainTextLabel(c.displayTitle).split('\n'))
+                addAll(rawSvgLines(c.displayTitle))
             }
             appendMultilineText(sb, "    ", r.centerX, r.y + pc.headerHeight / 2f, hdrLines, textHex, theme.nodeFontSize.value)
 
@@ -1025,7 +1177,7 @@ object MaradonaSvgExporter {
             sb.append(
                 """  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""",
             ).append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(n.note.text).split('\n'), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(n.note.text), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
 
         sb.append("</svg>")
@@ -1063,7 +1215,7 @@ object MaradonaSvgExporter {
             sb.append("""  <g class="composite-state" data-id="${escapeXml(ps.state.id)}">""").append('\n')
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="8" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
             sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(r.y + ps.headerHeight)}" x2="${fmt(r.right)}" y2="${fmt(r.y + ps.headerHeight)}" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "    ", r.centerX, r.y + ps.headerHeight / 2f, plainTextLabel(ps.state.label).split('\n'), textHex, theme.subgraphFontSize.value)
+            appendMultilineText(sb, "    ", r.centerX, r.y + ps.headerHeight / 2f, rawSvgLines(ps.state.label), textHex, theme.subgraphFontSize.value)
             for ((a, b) in ps.regionDividers) {
                 sb.append("""    <line class="region-divider" x1="${fmt(a.x)}" y1="${fmt(a.y)}" x2="${fmt(b.x)}" y2="${fmt(b.y)}" stroke="$strokeHex" stroke-width="1" stroke-dasharray="5,4"/>""").append('\n')
             }
@@ -1090,7 +1242,7 @@ object MaradonaSvgExporter {
             val lbl = tr.transition.label
             if (lr != null && !lbl.isNullOrBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1127,11 +1279,11 @@ object MaradonaSvgExporter {
                     if (s.descriptions.isNotEmpty()) {
                         val divY = r.y + ps.headerHeight
                         sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(divY)}" x2="${fmt(r.right)}" y2="${fmt(divY)}" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
-                        appendMultilineText(sb, "    ", r.centerX, r.y + ps.headerHeight / 2f, plainTextLabel(s.label).split('\n'), textHex, theme.nodeFontSize.value)
-                        val descLines = s.descriptions.flatMap { plainTextLabel(it).split('\n') }
+                        appendMultilineText(sb, "    ", r.centerX, r.y + ps.headerHeight / 2f, rawSvgLines(s.label), textHex, theme.nodeFontSize.value)
+                        val descLines = s.descriptions.flatMap { rawSvgLines(it) }
                         appendMultilineText(sb, "    ", r.centerX, divY + (r.height - ps.headerHeight) / 2f, descLines, textHex, theme.edgeLabelFontSize.value)
                     } else {
-                        appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(s.label).split('\n'), textHex, theme.nodeFontSize.value)
+                        appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(s.label), textHex, theme.nodeFontSize.value)
                     }
                 }
             }
@@ -1144,7 +1296,7 @@ object MaradonaSvgExporter {
             sb.append(
                 """  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""",
             ).append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(n.note.text).split('\n'), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(n.note.text), theme.noteText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
 
         sb.append("</svg>")
@@ -1171,7 +1323,7 @@ object MaradonaSvgExporter {
             val textHex = (parseCssColor(sg.subgraph.style?.textColor) ?: theme.subgraphText).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
             if (sg.subgraph.label.isNotBlank()) {
-                appendMultilineText(sb, "  ", r.centerX, r.y + sg.headerHeight / 2f, plainTextLabel(sg.subgraph.label).split('\n'), textHex, theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", r.centerX, r.y + sg.headerHeight / 2f, rawSvgLines(sg.subgraph.label), textHex, theme.subgraphFontSize.value)
             }
         }
 
@@ -1189,7 +1341,7 @@ object MaradonaSvgExporter {
             val lbl = pr.relationship.label
             if (lr != null && !lbl.isNullOrBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1208,7 +1360,7 @@ object MaradonaSvgExporter {
                 val hdrH = pe.headerHeight
                 sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(hdrH)}" fill="${theme.subgraphFill.copy(alpha = 0.55f).toSvgHex()}"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(r.y + hdrH)}" x2="${fmt(r.right)}" y2="${fmt(r.y + hdrH)}" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
-                appendMultilineText(sb, "    ", r.centerX, r.y + hdrH / 2f, plainTextLabel(e.label).split('\n'), textHex, theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", r.centerX, r.y + hdrH / 2f, rawSvgLines(e.label), textHex, theme.nodeFontSize.value)
 
                 var rowY = r.y + hdrH
                 val attrFont = theme.edgeLabelFontSize.value
@@ -1232,7 +1384,7 @@ object MaradonaSvgExporter {
                     }
                 }
             } else {
-                appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(e.label).split('\n'), textHex, theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(e.label), textHex, theme.nodeFontSize.value)
             }
             sb.append("""  </g>""").append('\n')
         }
@@ -1272,12 +1424,12 @@ object MaradonaSvgExporter {
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$bodyFillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
             val hdrH = pi.headerHeight.coerceAtMost(r.height)
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(hdrH)}" fill="$headerFillHex"/>""").append('\n')
-            val hdrLines = listOf(pi.item.stereotype) + plainTextLabel(pi.item.name).split('\n')
+            val hdrLines = listOf(pi.item.stereotype) + rawSvgLines(pi.item.name)
             if (pi.bodyLineHeights.isNotEmpty() && pi.headerHeight < r.height) {
                 val divY = r.y + pi.headerHeight
                 sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(divY)}" x2="${fmt(r.right)}" y2="${fmt(divY)}" stroke="$strokeHex" stroke-width="1.1"/>""").append('\n')
                 appendMultilineText(sb, "    ", r.centerX, r.y + hdrH / 2f, hdrLines, textHex, theme.nodeFontSize.value)
-                val bodyLines = pi.item.bodyLines.flatMap { plainTextLabel(it).split('\n') }
+                val bodyLines = pi.item.bodyLines.flatMap { rawSvgLines(it) }
                 appendMultilineText(sb, "    ", r.centerX, divY + (r.height - hdrH) / 2f, bodyLines, textHex, theme.edgeLabelFontSize.value)
             } else {
                 appendMultilineText(sb, "    ", r.centerX, r.centerY, hdrLines, textHex, theme.nodeFontSize.value)
@@ -1302,7 +1454,7 @@ object MaradonaSvgExporter {
             val lr = pr.labelRect
             if (lr != null && pr.relation.label.isNotBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(pr.relation.label).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(pr.relation.label), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1416,7 +1568,7 @@ object MaradonaSvgExporter {
                 pr.relationship.label
             }
             val relLines = buildList {
-                if (indexedLabel.isNotBlank()) addAll(plainTextLabel(indexedLabel).split('\n'))
+                if (indexedLabel.isNotBlank()) addAll(rawSvgLines(indexedLabel))
                 if (!pr.relationship.technology.isNullOrBlank()) add("[${plainTextLabel(pr.relationship.technology)}]")
             }
             if (lr != null && relLines.isNotEmpty()) {
@@ -1460,9 +1612,9 @@ object MaradonaSvgExporter {
             val lr = pg.labelRect
             val grpFont = theme.subgraphFontSize.value
             if (lr != null) {
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), grpFont)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(grpTitle), theme.subgraphText.toSvgHex(), grpFont)
             } else {
-                appendMultilineText(sb, "  ", r.centerX, r.y + 6f + grpFont * 0.65f, plainTextLabel(grpTitle).split('\n'), theme.subgraphText.toSvgHex(), grpFont)
+                appendMultilineText(sb, "  ", r.centerX, r.y + 6f + grpFont * 0.65f, rawSvgLines(grpTitle), theme.subgraphText.toSvgHex(), grpFont)
             }
         }
 
@@ -1483,7 +1635,7 @@ object MaradonaSvgExporter {
             val lbl = pe.edge.title
             if (lr != null && !lbl.isNullOrBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1496,13 +1648,13 @@ object MaradonaSvgExporter {
             sb.append("""  <g class="arch-service" data-id="${escapeXml(ps.service.id)}">""").append('\n')
             sb.append("""    <rect x="${fmt(ir.x)}" y="${fmt(ir.y)}" width="${fmt(ir.width)}" height="${fmt(ir.height)}" rx="8" fill="${theme.accentBorder.toSvgHex()}" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1.2"/>""").append('\n')
             if (iconGlyph.isNotBlank()) {
-                appendMultilineText(sb, "    ", ir.centerX, ir.centerY, plainTextLabel(iconGlyph).split('\n'), theme.accentText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", ir.centerX, ir.centerY, rawSvgLines(iconGlyph), theme.accentText.toSvgHex(), theme.nodeFontSize.value)
             }
             val lr = ps.labelRect
             if (lr != null) {
-                appendMultilineText(sb, "    ", lr.centerX, lr.centerY, plainTextLabel(titleText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", lr.centerX, lr.centerY, rawSvgLines(titleText), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             } else if (iconGlyph.isBlank()) {
-                appendMultilineText(sb, "    ", ir.centerX, ir.centerY, plainTextLabel(titleText).split('\n'), theme.accentText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", ir.centerX, ir.centerY, rawSvgLines(titleText), theme.accentText.toSvgHex(), theme.nodeFontSize.value)
             }
             sb.append("""  </g>""").append('\n')
         }
@@ -1537,7 +1689,7 @@ object MaradonaSvgExporter {
             sb.append(
                 """  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.subgraphFill.copy(alpha = 0.55f).toSvgHex()}" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="1.2"/>""",
             ).append('\n')
-            appendMultilineText(sb, "  ", pg.headerRect.centerX, pg.headerRect.centerY, plainTextLabel(pg.group.name).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+            appendMultilineText(sb, "  ", pg.headerRect.centerX, pg.headerRect.centerY, rawSvgLines(pg.group.name), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
         }
 
         // 2. Lifelines
@@ -1558,11 +1710,11 @@ object MaradonaSvgExporter {
             sb.append("""  <polygon points="$tabPts" fill="${theme.subgraphFill.toSvgHex()}" stroke="$borderHex" stroke-width="1"/>""").append('\n')
             appendMultilineText(sb, "  ", tr.centerX, tr.centerY, listOf(plainTextLabel(blk.keyword)), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             if (!blk.condition.isNullOrBlank() && blk.conditionRect != null) {
-                appendMultilineText(sb, "  ", blk.conditionRect.centerX, blk.conditionRect.centerY, plainTextLabel("[${blk.condition}]").split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", blk.conditionRect.centerX, blk.conditionRect.centerY, rawSvgLines("[${blk.condition}]"), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
             for (div in blk.dividers) {
                 sb.append("""  <line x1="${fmt(r.x)}" y1="${fmt(div.y)}" x2="${fmt(r.right)}" y2="${fmt(div.y)}" stroke="$borderHex" stroke-width="1.2" stroke-dasharray="4,4"/>""").append('\n')
-                appendMultilineText(sb, "  ", div.labelRect.centerX, div.labelRect.centerY, plainTextLabel(div.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", div.labelRect.centerX, div.labelRect.centerY, rawSvgLines(div.label), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1587,8 +1739,8 @@ object MaradonaSvgExporter {
             val cr = pm.commentRect
             if (!ct.isNullOrBlank() && cr != null) {
                 sb.append("""  <rect x="${fmt(cr.x)}" y="${fmt(cr.y)}" width="${fmt(cr.width)}" height="${fmt(cr.height)}" rx="4" fill="${theme.noteFill.toSvgHex()}" stroke="${theme.noteBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
-                val commentLines = wrapSvgLines(plainTextLabel(ct), theme.captionFontSize.value, zenUmlCommentWrapWidth(cr.width, dens))
-                appendMultilineText(sb, "  ", cr.centerX, cr.centerY, commentLines, theme.noteText.toSvgHex(), theme.captionFontSize.value)
+                val commentLines = wrapFormattedLabelLines(ct, theme.captionFontSize.value, zenUmlCommentWrapWidth(cr.width, dens))
+                appendRichSpanLines(sb, "  ", cr.centerX, cr.centerY, commentLines, theme.noteText.toSvgHex(), theme.captionFontSize.value)
             }
             if (pm.displayText.isBlank() && cr != null) continue
 
@@ -1618,7 +1770,7 @@ object MaradonaSvgExporter {
                 if (lr.width > 0f && lr.height > 0f) {
                     sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.background.copy(alpha = 0.88f).toSvgHex()}"/>""").append('\n')
                 }
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(pm.displayText).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(pm.displayText), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1639,7 +1791,7 @@ object MaradonaSvgExporter {
         }
         return buildList {
             if (!stereo.isNullOrBlank()) add("«$stereo»")
-            addAll(plainTextLabel(p.label).split('\n'))
+            addAll(rawSvgLines(p.label))
         }
     }
 
@@ -1683,7 +1835,7 @@ object MaradonaSvgExporter {
             sb.append("""  <g class="mindmap-node" data-id="${escapeXml(n.id)}">""").append('\n')
             appendSvgNodeShape(sb, shape, r, fillHex, strokeHex, strokeW)
             val display = if (!n.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(n.icon)} ${n.label}" else n.label
-            appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(display).split('\n'), textHex, theme.nodeFontSize.value)
+            appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(display), textHex, theme.nodeFontSize.value)
             sb.append("""  </g>""").append('\n')
         }
         sb.append("</svg>")
@@ -1706,7 +1858,7 @@ object MaradonaSvgExporter {
             val fillHex = theme.seriesFill(s.sectionIndex.coerceAtLeast(0)).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="${theme.subgraphBorder.toSvgHex()}" stroke-width="0.75"/>""").append('\n')
             if (s.name.isNotBlank()) {
-                appendMultilineText(sb, "  ", s.labelRect.centerX, s.labelRect.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", s.labelRect.centerX, s.labelRect.centerY, rawSvgLines(s.name), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
             }
         }
 
@@ -1741,14 +1893,19 @@ object MaradonaSvgExporter {
                 else -> defaultFill to defaultStroke
             }
             val url = t.action?.url?.takeIf { it.isNotBlank() }
+            val callback = t.action?.callback?.takeIf { it.isNotBlank() }
             val tooltip = t.action?.tooltip?.takeIf { it.isNotBlank() }
-            if (url != null) sb.append("""  <a href="${escapeXml(url)}">""").append('\n')
-            sb.append("""  <g class="gantt-task" data-id="${escapeXml(t.id)}">""").append('\n')
+            val cbAttr = callback?.let { """ data-callback="${escapeXml(it)}"""" } ?: ""
+            if (url != null) {
+                val targetAttr = t.action.target?.let { """ target="${escapeXml(it)}"""" } ?: ""
+                sb.append("""  <a href="${escapeXml(url)}"$targetAttr>""").append('\n')
+            }
+            sb.append("""  <g class="gantt-task" data-id="${escapeXml(t.id)}"$cbAttr>""").append('\n')
             if (tooltip != null) sb.append("""    <title>${escapeXml(tooltip)}</title>""").append('\n')
             val shape = if (t.isMilestone) NodeShape.Diamond else NodeShape.RoundedRect
             appendSvgNodeShape(sb, shape, pt.barRect, fill.toSvgHex(), border.toSvgHex(), 1.3f)
             if (t.label.isNotBlank()) {
-                appendMultilineText(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, plainTextLabel(t.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, rawSvgLines(t.label), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             }
             sb.append("""  </g>""").append('\n')
             if (url != null) sb.append("""  </a>""").append('\n')
@@ -1759,7 +1916,7 @@ object MaradonaSvgExporter {
             sb.append("""  <line x1="${fmt(vm.x)}" y1="${fmt(vm.topY)}" x2="${fmt(vm.x)}" y2="${fmt(vm.bottomY)}" stroke="${theme.accentBorder.toSvgHex()}" stroke-width="1.5" stroke-dasharray="4,3"/>""").append('\n')
             val lr = vm.labelRect
             sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.accentFill.toSvgHex()}" stroke="${theme.accentBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(vm.task.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(vm.task.label), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
 
         sb.append("</svg>")
@@ -1817,7 +1974,7 @@ object MaradonaSvgExporter {
             val sr = li.swatchRect
             val colorHex = theme.seriesColor(li.index).toSvgHex()
             sb.append("""  <rect x="${fmt(sr.x)}" y="${fmt(sr.y)}" width="${fmt(sr.width)}" height="${fmt(sr.height)}" fill="$colorHex" stroke="$colorHex" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(li.displayText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, rawSvgLines(li.displayText), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
         }
         sb.append("</svg>")
         return sb.toString()
@@ -1840,7 +1997,7 @@ object MaradonaSvgExporter {
             sb.append("""  <line x1="${fmt(b.lineStart.x)}" y1="${fmt(b.lineStart.y)}" x2="${fmt(b.lineEnd.x)}" y2="${fmt(b.lineEnd.y)}" stroke="$strokeHex" stroke-width="1.4" stroke-dasharray="5,4"/>""").append('\n')
             b.labelRect?.let { lr ->
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(b.branch.name).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(b.branch.name), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -1929,7 +2086,7 @@ object MaradonaSvgExporter {
             val fillHex = theme.seriesFill(s.sectionIndex).toSvgHex()
             val strokeHex = theme.seriesColor(s.sectionIndex).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(s.name), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
         }
         sb.append("""  <line x1="${fmt(layout.spineStart.x)}" y1="${fmt(layout.spineStart.y)}" x2="${fmt(layout.spineEnd.x)}" y2="${fmt(layout.spineEnd.y)}" stroke="${theme.edge.toSvgHex()}" stroke-width="2"/>""").append('\n')
         for (pp in layout.periods) {
@@ -1942,11 +2099,11 @@ object MaradonaSvgExporter {
             }
             val r = pp.rect
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(pp.period.title).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(pp.period.title), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             for (ev in pp.events) {
                 val er = ev.rect
                 sb.append("""  <rect x="${fmt(er.x)}" y="${fmt(er.y)}" width="${fmt(er.width)}" height="${fmt(er.height)}" rx="5" fill="${theme.nodeFill.toSvgHex()}" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
-                appendMultilineText(sb, "  ", er.centerX, er.centerY, plainTextLabel(ev.text).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", er.centerX, er.centerY, rawSvgLines(ev.text), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
         sb.append("</svg>")
@@ -1965,12 +2122,12 @@ object MaradonaSvgExporter {
         val bgHex = theme.background.toSvgHex()
         for (al in layout.actorLegend) {
             sb.append("""  <circle cx="${fmt(al.circleCenter.x)}" cy="${fmt(al.circleCenter.y)}" r="${fmt(al.circleRadius)}" fill="${theme.seriesFill(al.actorIndex).toSvgHex()}" stroke="${theme.seriesColor(al.actorIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
-            appendMultilineText(sb, "  ", al.labelRect.centerX, al.labelRect.centerY, plainTextLabel(al.actor).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", al.labelRect.centerX, al.labelRect.centerY, rawSvgLines(al.actor), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
         for (s in layout.sections) {
             val r = s.rect
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="${theme.seriesFill(s.sectionIndex).toSvgHex()}" stroke="${theme.seriesColor(s.sectionIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(s.name).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(s.name), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
         }
         val spineHex = theme.nodeBorder.toSvgHex()
         sb.append("""  <line x1="${fmt(layout.spineStart.x)}" y1="${fmt(layout.spineStart.y)}" x2="${fmt(layout.spineEnd.x)}" y2="${fmt(layout.spineEnd.y)}" stroke="$spineHex" stroke-width="2.4"/>""").append('\n')
@@ -1986,7 +2143,7 @@ object MaradonaSvgExporter {
             val strokeHex = theme.seriesColor(pt.sectionIndex).toSvgHex()
             sb.append("""  <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.4"/>""").append('\n')
             val taskText = "${pt.task.label} (${pt.task.score})"
-            appendMultilineText(sb, "  ", r.centerX, r.centerY, plainTextLabel(taskText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            appendMultilineText(sb, "  ", r.centerX, r.centerY, rawSvgLines(taskText), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             for (dot in pt.actorDots) {
                 sb.append("""  <circle cx="${fmt(dot.center.x)}" cy="${fmt(dot.center.y)}" r="${fmt(dot.radius)}" fill="${theme.seriesFill(dot.actorIndex).toSvgHex()}" stroke="${theme.seriesColor(dot.actorIndex).toSvgHex()}" stroke-width="1.2"/>""").append('\n')
             }
@@ -2023,7 +2180,7 @@ object MaradonaSvgExporter {
             val lbl = q.text
             val lr = q.labelRect
             if (!lbl.isNullOrBlank() && lr != null) {
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.subgraphText.toSvgHex(), theme.subgraphFontSize.value)
             }
         }
         // 2. Axis labels (including rotated Y-axis labels)
@@ -2033,7 +2190,7 @@ object MaradonaSvgExporter {
                 indent = "  ",
                 centerX = al.rect.centerX,
                 centerY = al.rect.centerY,
-                lines = plainTextLabel(al.text).split('\n'),
+                lines = rawSvgLines(al.text),
                 colorHex = theme.edgeLabelText.toSvgHex(),
                 fontSize = theme.edgeLabelFontSize.value,
                 rotationDeg = al.rotationDeg,
@@ -2044,7 +2201,7 @@ object MaradonaSvgExporter {
             val fillHex = (parseCssColor(pt.point.style?.color) ?: theme.accentFill).toSvgHex()
             val strokeHex = (parseCssColor(pt.point.style?.strokeColor) ?: theme.accentBorder).toSvgHex()
             sb.append("""  <circle class="quadrant-point" cx="${fmt(pt.center.x)}" cy="${fmt(pt.center.y)}" r="${fmt(pt.radius)}" fill="$fillHex" stroke="$strokeHex" stroke-width="${fmt(pt.strokeWidth)}"/>""").append('\n')
-            appendMultilineText(sb, "  ", pt.labelRect.centerX, pt.labelRect.centerY, plainTextLabel(pt.point.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", pt.labelRect.centerX, pt.labelRect.centerY, rawSvgLines(pt.point.label), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
         sb.append("</svg>")
         return sb.toString()
@@ -2066,7 +2223,7 @@ object MaradonaSvgExporter {
         for (tk in layout.xTicks + layout.yTicks) {
             sb.append("""  <line x1="${fmt(tk.gridStart.x)}" y1="${fmt(tk.gridStart.y)}" x2="${fmt(tk.gridEnd.x)}" y2="${fmt(tk.gridEnd.y)}" stroke="$gridHex" stroke-width="0.75" stroke-dasharray="3,3"/>""").append('\n')
             sb.append("""  <line x1="${fmt(tk.lineStart.x)}" y1="${fmt(tk.lineStart.y)}" x2="${fmt(tk.lineEnd.x)}" y2="${fmt(tk.lineEnd.y)}" stroke="$borderHex" stroke-width="1.2"/>""").append('\n')
-            appendMultilineText(sb, "  ", tk.labelRect.centerX, tk.labelRect.centerY, plainTextLabel(tk.label).split('\n'), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
+            appendMultilineText(sb, "  ", tk.labelRect.centerX, tk.labelRect.centerY, rawSvgLines(tk.label), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
         }
         sb.append("""  <line x1="${fmt(layout.xAxisLineStart.x)}" y1="${fmt(layout.xAxisLineStart.y)}" x2="${fmt(layout.xAxisLineEnd.x)}" y2="${fmt(layout.xAxisLineEnd.y)}" stroke="$borderHex" stroke-width="1.5"/>""").append('\n')
         sb.append("""  <line x1="${fmt(layout.yAxisLineStart.x)}" y1="${fmt(layout.yAxisLineStart.y)}" x2="${fmt(layout.yAxisLineEnd.x)}" y2="${fmt(layout.yAxisLineEnd.y)}" stroke="$borderHex" stroke-width="1.5"/>""").append('\n')
@@ -2076,7 +2233,7 @@ object MaradonaSvgExporter {
                 indent = "  ",
                 centerX = at.rect.centerX,
                 centerY = at.rect.centerY,
-                lines = plainTextLabel(at.text).split('\n'),
+                lines = rawSvgLines(at.text),
                 colorHex = theme.nodeText.toSvgHex(),
                 fontSize = theme.edgeLabelFontSize.value,
                 rotationDeg = at.rotationDeg,
@@ -2101,7 +2258,7 @@ object MaradonaSvgExporter {
             val dl = b.dataLabel
             val dlr = b.dataLabelRect
             if (!dl.isNullOrBlank() && dlr != null) {
-                appendMultilineText(sb, "  ", dlr.centerX, dlr.centerY, plainTextLabel(dl).split('\n'), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                appendMultilineText(sb, "  ", dlr.centerX, dlr.centerY, rawSvgLines(dl), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
             }
         }
 
@@ -2117,7 +2274,7 @@ object MaradonaSvgExporter {
                 val lbl = pt.label
                 val lr = pt.labelRect
                 if (!lbl.isNullOrBlank() && lr != null) {
-                    appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
+                    appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.nodeText.toSvgHex(), theme.captionFontSize.value)
                 }
             }
         }
@@ -2128,7 +2285,7 @@ object MaradonaSvgExporter {
             val colorHex = resolveXySeriesColor(li.seriesIndex, li.series.color).toSvgHex()
             sb.append("""  <rect x="${fmt(mr.x)}" y="${fmt(mr.y)}" width="${fmt(mr.width)}" height="${fmt(mr.height)}" fill="$colorHex"/>""").append('\n')
             val legendText = li.series.title ?: li.series.id
-            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(legendText).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, rawSvgLines(legendText), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
 
         sb.append("</svg>")
@@ -2158,7 +2315,7 @@ object MaradonaSvgExporter {
             } else {
                 col.column.label
             }
-            appendMultilineText(sb, "  ", col.headerRect.centerX, col.headerRect.centerY, plainTextLabel(colHdr).split('\n'), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
+            appendMultilineText(sb, "  ", col.headerRect.centerX, col.headerRect.centerY, rawSvgLines(colHdr), theme.nodeText.toSvgHex(), theme.subgraphFontSize.value)
 
             for (pt in col.tasks) {
                 val t = pt.task
@@ -2184,8 +2341,8 @@ object MaradonaSvgExporter {
 
                 val display = if (!t.icon.isNullOrBlank()) "${resolveMermaidIconGlyph(t.icon)} ${t.label}" else t.label
                 val taskFont = theme.edgeLabelFontSize.value
-                val lines = wrapSvgLines(plainTextLabel(display), taskFont, pt.labelRect.width.coerceAtLeast(60f * dens))
-                appendMultilineText(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, lines, theme.nodeText.toSvgHex(), taskFont)
+                val spanLines = wrapFormattedLabelLines(display, taskFont, pt.labelRect.width.coerceAtLeast(60f * dens))
+                appendRichSpanLines(sb, "    ", pt.labelRect.centerX, pt.labelRect.centerY, spanLines, theme.nodeText.toSvgHex(), taskFont)
 
                 val tktRect = pt.ticketRect
                 if (tktRect != null && !t.ticket.isNullOrBlank()) {
@@ -2256,7 +2413,7 @@ object MaradonaSvgExporter {
             val fillHex = (nodeColors[pn.nodeIndex] ?: theme.seriesColor(pn.nodeIndex)).toSvgHex()
             sb.append("""  <rect class="sankey-node" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$fillHex" stroke="${theme.nodeBorder.toSvgHex()}" stroke-width="1"/>""").append('\n')
             if (pn.labelText.isNotBlank()) {
-                appendMultilineText(sb, "  ", pn.labelRect.centerX, pn.labelRect.centerY, plainTextLabel(pn.labelText).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+                appendMultilineText(sb, "  ", pn.labelRect.centerX, pn.labelRect.centerY, rawSvgLines(pn.labelText), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
             }
         }
         sb.append("</svg>")
@@ -2339,7 +2496,7 @@ object MaradonaSvgExporter {
         }
         for (pa in layout.axes) {
             sb.append("""  <line x1="${fmt(cx)}" y1="${fmt(cy)}" x2="${fmt(pa.lineEnd.x)}" y2="${fmt(pa.lineEnd.y)}" stroke="$gridHex" stroke-width="1"/>""").append('\n')
-            appendMultilineText(sb, "  ", pa.labelRect.centerX, pa.labelRect.centerY, plainTextLabel(pa.axis.label).split('\n'), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
+            appendMultilineText(sb, "  ", pa.labelRect.centerX, pa.labelRect.centerY, rawSvgLines(pa.axis.label), theme.nodeText.toSvgHex(), theme.nodeFontSize.value)
         }
         val fillAlpha = diagram.config.curveOpacity.coerceIn(0f, 1f)
         val rawStrokeW = diagram.config.curveStrokeWidth.coerceAtLeast(0f)
@@ -2364,7 +2521,7 @@ object MaradonaSvgExporter {
             val cColor = resolveRadarColor(li.curveIndex)
             val sr = li.swatchRect
             sb.append("""  <rect x="${fmt(sr.x)}" y="${fmt(sr.y)}" width="${fmt(sr.width)}" height="${fmt(sr.height)}" fill="${cColor.copy(alpha = max(0.35f, fillAlpha)).toSvgHex()}" stroke="${cColor.toSvgHex()}" stroke-width="1.2"/>""").append('\n')
-            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, plainTextLabel(li.label).split('\n'), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
+            appendMultilineText(sb, "  ", li.labelRect.centerX, li.labelRect.centerY, rawSvgLines(li.label), theme.nodeText.toSvgHex(), theme.edgeLabelFontSize.value)
         }
         sb.append("</svg>")
         return sb.toString()
@@ -2394,7 +2551,7 @@ object MaradonaSvgExporter {
             sb.append("""  <rect class="block-container" x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1.2"/>""").append('\n')
             if (pb.item.label.isNotBlank()) {
                 val lr = pb.labelRect ?: DiagramRect(r.x, r.y, r.width, 22f)
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(pb.item.label).split('\n'), textHex, theme.subgraphFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(pb.item.label), textHex, theme.subgraphFontSize.value)
             }
         }
 
@@ -2418,7 +2575,7 @@ object MaradonaSvgExporter {
                 appendSvgNodeShape(sb, mapBlockNodeShape(pb.item.shape), r, fillHex, strokeHex, strokeW)
             }
             if (pb.item.label.isNotBlank()) {
-                appendMultilineText(sb, "    ", r.centerX, r.centerY, plainTextLabel(pb.item.label).split('\n'), textHex, theme.nodeFontSize.value)
+                appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(pb.item.label), textHex, theme.nodeFontSize.value)
             }
             sb.append("""  </g>""").append('\n')
         }
@@ -2437,7 +2594,7 @@ object MaradonaSvgExporter {
             val lbl = pe.edge.label
             if (lr != null && !lbl.isNullOrBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="3" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, plainTextLabel(lbl).split('\n'), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(lbl), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
             }
         }
 
@@ -2547,9 +2704,9 @@ object MaradonaSvgExporter {
         }
         return buildList {
             addAll(wrapSvgLines(el.typeHeaderText, fontSize, maxWidth))
-            addAll(wrapSvgLines(plainTextLabel(displayLabel), fontSize, maxWidth))
+            addAll(wrapSvgLines(displayLabel, fontSize, maxWidth))
             if (!el.description.isNullOrBlank()) {
-                addAll(wrapSvgLines(plainTextLabel(el.description), fontSize, maxWidth))
+                addAll(wrapSvgLines(el.description, fontSize, maxWidth))
             }
         }
     }
@@ -2572,7 +2729,7 @@ object MaradonaSvgExporter {
                 indent = "  ",
                 centerX = titleRect.centerX,
                 centerY = titleRect.centerY,
-                lines = plainTextLabel(titleText).split('\n'),
+                lines = rawSvgLines(titleText),
                 colorHex = theme.nodeText.toSvgHex(),
                 fontSize = theme.titleFontSize.value,
             )
@@ -2787,23 +2944,67 @@ object MaradonaSvgExporter {
 
     private fun defaultFlowNodeSize(node: FlowNode, theme: MaradonaTheme): DiagramSize {
         val fontSize = theme.nodeFontSize.value
-        val lines = wrapSvgLines(plainTextLabel(node.label), fontSize, NodeSizing.WRAPPING_WIDTH)
-        val maxCols = lines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
-        val textW = min(NodeSizing.WRAPPING_WIDTH, maxCols * fontSize * 0.62f)
-        val textH = lines.size * fontSize * 1.5f
+        val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH)
+        var maxLineW = 0f
+        var totalH = 0f
+        for (line in spanLines) {
+            var lineW = 0f
+            var lineH = fontSize * 1.5f
+            for (span in line) {
+                val img = span.inlineImage
+                if (img != null) {
+                    lineW += img.widthPx + 4f
+                    lineH = max(lineH, img.heightPx + 4f)
+                } else {
+                    val mult = when {
+                        span.code -> 0.65f
+                        span.bold -> 0.66f
+                        else -> 0.62f
+                    }
+                    lineW += span.text.length * fontSize * mult
+                }
+            }
+            maxLineW = max(maxLineW, lineW)
+            totalH += lineH
+        }
+        val textW = min(NodeSizing.WRAPPING_WIDTH, maxLineW.coerceAtLeast(fontSize * 0.62f))
+        val textH = totalH.coerceAtLeast(fontSize * 1.5f)
         val labelBox = NodeSizing.labelBox(node.shape, textW, textH)
         return NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
     }
 
     private fun defaultTextSize(text: String, fontSp: Float): DiagramSize {
-        val plain = plainTextLabel(text)
-        val lines = plain.split('\n')
-        val maxCols = lines.maxOfOrNull { it.length }?.coerceAtLeast(1) ?: 1
+        val spanLines = parseFormattedLabelLines(text)
+        var maxLineW = 0f
+        var totalH = 0f
+        for (line in spanLines) {
+            var lineW = 0f
+            var lineH = fontSp * 1.4f
+            for (span in line) {
+                val img = span.inlineImage
+                if (img != null) {
+                    lineW += img.widthPx + 4f
+                    lineH = max(lineH, img.heightPx + 4f)
+                } else {
+                    val mult = when {
+                        span.code -> 0.65f
+                        span.bold -> 0.66f
+                        else -> 0.62f
+                    }
+                    lineW += span.text.length * fontSp * mult
+                }
+            }
+            maxLineW = max(maxLineW, lineW)
+            totalH += lineH
+        }
         return DiagramSize(
-            width = max(24f, maxCols * fontSp * 0.62f + 8f),
-            height = max(18f, lines.size * fontSp * 1.4f + 4f),
+            width = max(24f, maxLineW + 8f),
+            height = max(18f, totalH + 4f),
         )
     }
+
+    private fun rawSvgLines(label: String): List<String> =
+        label.replace(Regex("""(?i)<br\s*/?>"""), "\n").split('\n')
 
     private fun appendSvgNodeShape(
         sb: StringBuilder,
@@ -2908,6 +3109,103 @@ object MaradonaSvgExporter {
         }
     }
 
+    private fun renderSpansToSvgContent(spans: List<FormattedTextSpan>): String {
+        val textSpans = spans.filter { it.inlineImage == null && it.text.isNotEmpty() }
+        if (textSpans.isEmpty()) return ""
+        if (textSpans.size == 1 && !textSpans[0].hasFormatting) {
+            return escapeXml(textSpans[0].text)
+        }
+        val sb = StringBuilder()
+        for (span in textSpans) {
+            if (!span.hasFormatting) {
+                sb.append(escapeXml(span.text))
+            } else {
+                val attrs = StringBuilder()
+                if (span.bold) attrs.append(""" font-weight="bold"""")
+                if (span.italic) attrs.append(""" font-style="italic"""")
+                if (span.code) attrs.append(""" font-family="monospace"""")
+                val decs = buildList {
+                    if (span.underline) add("underline")
+                    if (span.strikethrough) add("line-through")
+                }
+                if (decs.isNotEmpty()) {
+                    attrs.append(""" text-decoration="${decs.joinToString(" ")}"""")
+                }
+                when {
+                    span.subscript -> attrs.append(""" baseline-shift="sub" font-size="80%"""")
+                    span.superscript -> attrs.append(""" baseline-shift="super" font-size="80%"""")
+                }
+                sb.append("""<tspan$attrs>${escapeXml(span.text)}</tspan>""")
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun appendInlineImagesForLine(
+        sb: StringBuilder,
+        indent: String,
+        centerX: Float,
+        lineCenterY: Float,
+        spans: List<FormattedTextSpan>,
+        fontSize: Float,
+    ) {
+        val images = spans.mapNotNull { it.inlineImage }
+        if (images.isEmpty()) return
+        val totalImgW = images.sumOf { it.widthPx.toDouble() }.toFloat() + (images.size - 1) * 4f
+        var curX = centerX - totalImgW / 2f
+        for (img in images) {
+            val imgY = lineCenterY - img.heightPx / 2f
+            sb.append(
+                """$indent<image class="inline-image" href="${escapeXml(img.url)}" x="${fmt(curX)}" y="${fmt(imgY)}" width="${fmt(img.widthPx)}" height="${fmt(img.heightPx)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXml(img.alt)}</title></image>""",
+            ).append('\n')
+            curX += img.widthPx + 4f
+        }
+    }
+
+    private fun appendRichSpanLines(
+        sb: StringBuilder,
+        indent: String,
+        centerX: Float,
+        centerY: Float,
+        spanLines: List<List<FormattedTextSpan>>,
+        colorHex: String,
+        fontSize: Float,
+        rotationDeg: Float = 0f,
+    ) {
+        if (spanLines.isEmpty()) return
+        val lineHeights = spanLines.map { line ->
+            val maxImgH = line.mapNotNull { it.inlineImage?.heightPx }.maxOrNull() ?: 0f
+            val hasText = line.any { it.inlineImage == null && it.text.isNotEmpty() }
+            if (maxImgH > 0f && hasText) {
+                max(fontSize * 1.35f, maxImgH + 4f)
+            } else if (maxImgH > 0f) {
+                maxImgH + 4f
+            } else {
+                fontSize * 1.35f
+            }
+        }
+        val totalH = lineHeights.sum()
+        var curTopY = centerY - totalH / 2f
+        val rotateAttr = if (rotationDeg != 0f) {
+            """ transform="rotate(${fmt(rotationDeg)} ${fmt(centerX)} ${fmt(centerY)})""""
+        } else {
+            ""
+        }
+        for ((idx, spanLine) in spanLines.withIndex()) {
+            val lh = lineHeights[idx]
+            val lineCenterY = curTopY + lh / 2f
+            val ly = lineCenterY + fontSize * 0.35f
+            val innerXml = renderSpansToSvgContent(spanLine)
+            if (innerXml.isNotEmpty() || spanLine.none { it.inlineImage != null }) {
+                sb.append(
+                    """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>$innerXml</text>""",
+                ).append('\n')
+            }
+            appendInlineImagesForLine(sb, indent, centerX, lineCenterY, spanLine, fontSize)
+            curTopY += lh
+        }
+    }
+
     private fun appendMultilineText(
         sb: StringBuilder,
         indent: String,
@@ -2918,19 +3216,17 @@ object MaradonaSvgExporter {
         fontSize: Float,
         rotationDeg: Float = 0f,
     ) {
-        val lineH = fontSize * 1.35f
-        val startY = centerY - ((lines.size - 1) * lineH) / 2f + fontSize * 0.35f
-        val rotateAttr = if (rotationDeg != 0f) {
-            """ transform="rotate(${fmt(rotationDeg)} ${fmt(centerX)} ${fmt(centerY)})""""
-        } else {
-            ""
-        }
-        for ((idx, textLine) in lines.withIndex()) {
-            val ly = startY + idx * lineH
-            sb.append(
-                """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>${escapeXml(textLine)}</text>""",
-            ).append('\n')
-        }
+        val spanLines = lines.flatMap { parseFormattedLabelLines(it) }
+        appendRichSpanLines(
+            sb = sb,
+            indent = indent,
+            centerX = centerX,
+            centerY = centerY,
+            spanLines = spanLines,
+            colorHex = colorHex,
+            fontSize = fontSize,
+            rotationDeg = rotationDeg,
+        )
     }
 
     private fun Color.toSvgHex(): String {

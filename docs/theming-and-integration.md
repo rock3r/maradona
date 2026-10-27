@@ -161,20 +161,42 @@ CompositionLocalProvider(LocalMaradonaImageResolver provides imageResolver) {
 
 ---
 
-## 4. Standalone SVG Export (`MaradonaSvgExporter`)
+## 4. Standalone & Compose-Measured SVG Export (`MaradonaSvgExporter`)
 
-`MaradonaSvgExporter.exportToSvg` (`dev.maradona.export.MaradonaSvgExporter`) exports any of the 23 Mermaid diagram families to a standalone SVG string in pure Kotlin, without requiring a Compose UI window or scene:
+`MaradonaSvgExporter.exportToSvg` (`dev.maradona.export.MaradonaSvgExporter`) exports any of the 23 Mermaid diagram families to a standalone SVG string, preserving:
+
+- **Rich text formatting (`<tspan>`):** bold (`font-weight="bold"`), italic (`font-style="italic"`), underline (`text-decoration="underline"`), strikethrough (`text-decoration="line-through"`), inline code (`font-family="monospace"`), and subscript/superscript (`baseline-shift="sub"` / `"super"`).
+- **Icons & inline images:** resolved Unicode icon badges (`fa:`, `mdi:`, `::icon(...)`, and Mermaid v2 `@{ icon }`) and `<image class="inline-image" href="..." width="..." height="..." preserveAspectRatio="xMidYMid meet"><title>...</title></image>` elements (`<img .../>`, `![alt](url)`, and `@{ img, w, h }`).
+- **Interactions:** `<a href="..." target="...">` wrappers, `data-callback` attributes for callback-based `click` directives, `data-links` for multi-link Sequence participants, and `<title>` tooltips.
+
+### Exact Compose-Measured Geometry vs. Headless Pure-Kotlin Sizing
+
+1. **With a Compose `TextMeasurer` (`textMeasurer = rememberTextMeasurer()`, `density = LocalDensity.current`):** `MaradonaSvgExporter.exportToSvg` runs the **exact same `TextMeasurer`-backed layout pipeline** (`measure<Family>LayoutForExport`) as `MaradonaDiagram`, producing pixel-identical layout dimensions to the live Compose render across all 23 families.
+2. **Headless (`textMeasurer = null`, default):** When called outside a Compose runtime (for example in a CLI or server job), `MaradonaSvgExporter.exportToSvg` uses span-, icon-, and image-aware character-width sizing so export works without a display or font context. Because headless mode cannot query platform font glyph tables, exact text widths may differ slightly from platform-shaped fonts unless `textMeasurer` is supplied.
 
 ```kotlin
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import dev.maradona.export.MaradonaSvgExporter
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.render.MaradonaTheme
 
-val svg: String = MaradonaSvgExporter.exportToSvg(
+// 1. Inside Compose: exact shared TextMeasurer layout geometry
+val textMeasurer = rememberTextMeasurer()
+val density = LocalDensity.current
+val exactSvg: String = MaradonaSvgExporter.exportToSvg(
+    source = mermaidSource,
+    theme = MaradonaTheme.light(),
+    textMeasurer = textMeasurer,
+    density = density,
+)
+
+// 2. Headless (no Compose runtime required)
+val headlessSvg: String = MaradonaSvgExporter.exportToSvg(
     source = """
         flowchart TD
-          A[Mermaid Source] --> B[MaradonaSvgExporter]
-          B --> C([Standalone SVG])
+          A["<b>Mermaid</b> Source"] --> B["<code>MaradonaSvgExporter</code>"]
+          B --> C(["fa:fa-check Standalone SVG"])
     """.trimIndent(),
     theme = MaradonaTheme.light(),
     options = LayoutOptions(density = 1f),

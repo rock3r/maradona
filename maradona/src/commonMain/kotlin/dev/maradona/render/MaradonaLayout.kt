@@ -636,3 +636,20 @@ private fun connectionDescriptions(chart: Flowchart): Map<String, String> {
     }
     return out.mapValues { it.value.joinToString("; ") }
 }
+
+internal fun measureFlowchartLayoutForExport(
+    chart: Flowchart,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+    resolvedImageUrls: Set<String> = emptySet(),
+): DiagramLayout = computePremeasuredFlowchartLayout(
+    chart = chart,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+    resolvedImageUrls = resolvedImageUrls,
+).naturalLayout
+
