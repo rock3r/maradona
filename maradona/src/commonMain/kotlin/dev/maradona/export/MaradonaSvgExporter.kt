@@ -3,7 +3,9 @@ package dev.maradona.export
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ArchitectureDiagramLayout
 import dev.maradona.layout.ArchitectureLayout
 import dev.maradona.layout.BlockDiagramLayout
@@ -202,7 +204,7 @@ object MaradonaSvgExporter {
                         textMeasurer = textMeasurer,
                         resolvedImageUrls = imageUrls,
                     )
-                    exportFlowchartToSvg(model.chart, layout, svgTheme, textScale)
+                    exportFlowchartToSvg(model.chart, layout, svgTheme, textScale, textMeasurer, density)
                 }
                 is MaradonaDiagramModel.SequenceModel -> {
                     val seqOpts = dev.maradona.layout.SequenceLayoutOptions(density = dens)
@@ -772,6 +774,8 @@ object MaradonaSvgExporter {
         layout: DiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
         imageScale: Float = 1f,
+        textMeasurer: TextMeasurer? = null,
+        density: Density = Density(imageScale.coerceAtLeast(0.01f), 1f),
     ): String {
         val imgScale = imageScale.coerceAtLeast(0.01f)
         val w = ceil(layout.width).toInt().coerceAtLeast(1)
@@ -871,7 +875,22 @@ object MaradonaSvgExporter {
             }
             appendSvgNodeShape(sb, node.shape, r, fill, stroke, strokeW)
             val fontSize = theme.nodeFontSize.value
-            val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH * imgScale)
+            val nodeTextStyle = if (textMeasurer != null) {
+                TextStyle(
+                    fontFamily = theme.fontFamily,
+                    fontSize = (fontSize / (density.density * density.fontScale).coerceAtLeast(0.01f)).sp,
+                )
+            } else {
+                null
+            }
+            val spanLines = wrapFormattedLabelLines(
+                label = node.label,
+                fontSp = fontSize,
+                maxWidth = NodeSizing.WRAPPING_WIDTH * imgScale,
+                textMeasurer = textMeasurer,
+                textStyle = nodeTextStyle,
+                density = density,
+            )
             appendRichSpanLines(
                 sb = sb,
                 indent = "    ",

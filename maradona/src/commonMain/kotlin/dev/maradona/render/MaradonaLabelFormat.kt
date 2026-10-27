@@ -14,12 +14,16 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -818,41 +822,71 @@ fun parseFormattedLabelLines(label: String): List<List<FormattedTextSpan>> {
 /**
  * Wraps [label] into lines of [FormattedTextSpan]s within [maxWidth] while
  * preserving span formatting and inline image specifications.
+ *
+ * When [textMeasurer] and [textStyle] are provided, candidate line widths are
+ * measured using Compose's actual font shaping at [density] rather than the
+ * headless character-width heuristic.
  */
 fun wrapFormattedLabelLines(
     label: String,
     fontSp: Float,
     maxWidth: Float,
+    textMeasurer: TextMeasurer? = null,
+    textStyle: TextStyle? = null,
+    density: Density = Density(1f, 1f),
 ): List<List<FormattedTextSpan>> {
-    val maxChars = kotlin.math.max(8, (maxWidth / (fontSp * 0.62f)).toInt())
+    val maxWidthPx = maxWidth.coerceAtLeast(fontSp * 2f)
+    val maxChars = kotlin.math.max(8, (maxWidthPx / (fontSp * 0.62f)).toInt())
     val parsedLines = parseFormattedLabelLines(label)
     val out = ArrayList<List<FormattedTextSpan>>()
 
-    for (line in parsedLines) {
-        val totalLen = line.sumOf { span ->
-            if (span.inlineImage != null) {
-                kotlin.math.max(2, (span.inlineImage.widthPx / (fontSp * 0.62f)).toInt())
+    fun measureSpansWidthPx(spans: List<FormattedTextSpan>): Float {
+        if (spans.isEmpty()) return 0f
+        if (textMeasurer != null && textStyle != null) {
+            var widthPx = 0f
+            val textOnly = buildString {
+                for (sp in spans) {
+                    if (sp.inlineImage != null) {
+                        widthPx += sp.inlineImage.widthPx * density.density + 4f * density.density
+                    } else {
+                        append(sp.text)
+                    }
+                }
+            }
+            if (textOnly.isNotEmpty()) {
+                val res = textMeasurer.measure(
+                    text = AnnotatedString(textOnly),
+                    style = textStyle,
+                    constraints = Constraints(),
+                    density = density,
+                )
+                widthPx += res.size.width.toFloat()
+            }
+            return widthPx
+        }
+        var est = 0f
+        for (sp in spans) {
+            if (sp.inlineImage != null) {
+                est += sp.inlineImage.widthPx + 4f
             } else {
-                span.text.length
+                est += sp.text.length * fontSp * 0.62f
             }
         }
-        if (totalLen <= maxChars) {
+        return est
+    }
+
+    for (line in parsedLines) {
+        if (measureSpansWidthPx(line) <= maxWidthPx) {
             out += line
             continue
         }
         // Word-wrap across spans while preserving each word's FormattedTextSpan attributes
         var curLine = ArrayList<FormattedTextSpan>()
-        var curLen = 0
 
-        fun pushSpanToken(template: FormattedTextSpan, tokenText: String, tokenCost: Int) {
-            if (curLine.isNotEmpty() && curLen + tokenCost > maxChars) {
-                out += curLine
-                curLine = ArrayList()
-                curLen = 0
-            }
-            val trimmedToken = if (curLine.isEmpty()) tokenText.trimStart(' ') else tokenText
+        fun appendToLine( list: MutableList<FormattedTextSpan>, template: FormattedTextSpan, tokenText: String) {
+            val trimmedToken = if (list.isEmpty()) tokenText.trimStart(' ') else tokenText
             if (trimmedToken.isEmpty() && template.inlineImage == null) return
-            val last = curLine.lastOrNull()
+            val last = list.lastOrNull()
             if (last != null &&
                 last.inlineImage == null &&
                 template.inlineImage == null &&
@@ -864,39 +898,59 @@ fun wrapFormattedLabelLines(
                 last.subscript == template.subscript &&
                 last.superscript == template.superscript
             ) {
-                curLine[curLine.lastIndex] = last.copy(text = last.text + trimmedToken)
+                list[list.lastIndex] = last.copy(text = last.text + trimmedToken)
             } else {
-                curLine += template.copy(text = trimmedToken)
+                list += template.copy(text = trimmedToken)
             }
-            curLen += if (template.inlineImage != null) tokenCost else trimmedToken.length
+        }
+
+        fun pushSpanToken(template: FormattedTextSpan, tokenText: String) {
+            val candidate = ArrayList(curLine)
+            appendToLine(candidate, template, tokenText)
+            if (curLine.isNotEmpty() && measureSpansWidthPx(candidate) > maxWidthPx) {
+                out += curLine
+                curLine = ArrayList()
+                appendToLine(curLine, template, tokenText)
+            } else {
+                curLine = candidate
+            }
         }
 
         for (span in line) {
             if (span.inlineImage != null) {
-                val cost = kotlin.math.max(2, (span.inlineImage.widthPx / (fontSp * 0.62f)).toInt())
-                pushSpanToken(span, span.text, cost)
+                pushSpanToken(span, span.text)
                 continue
             }
             val words = Regex("""\S+|\s+""").findAll(span.text).map { it.value }.toList()
             for (word in words) {
                 if (word.isBlank()) {
-                    if (curLine.isNotEmpty() && curLen + 1 <= maxChars) {
-                        pushSpanToken(span, " ", 1)
+                    if (curLine.isNotEmpty()) {
+                        val candidate = ArrayList(curLine)
+                        appendToLine(candidate, span, " ")
+                        if (measureSpansWidthPx(candidate) <= maxWidthPx) {
+                            curLine = candidate
+                        }
                     }
                     continue
                 }
-                if (word.length <= maxChars) {
-                    pushSpanToken(span, word, word.length)
+                val singleWordList = ArrayList<FormattedTextSpan>().apply { appendToLine(this, span, word) }
+                if (measureSpansWidthPx(singleWordList) <= maxWidthPx) {
+                    pushSpanToken(span, word)
                 } else {
                     var pos = 0
+                    val stepChars = if (textMeasurer != null && textStyle != null) {
+                        val avgGlyphW = (measureSpansWidthPx(singleWordList) / word.length.coerceAtLeast(1)).coerceAtLeast(1f)
+                        kotlin.math.max(1, (maxWidthPx / avgGlyphW).toInt())
+                    } else {
+                        maxChars
+                    }
                     while (pos < word.length) {
-                        val end = kotlin.math.min(word.length, pos + maxChars)
+                        val end = kotlin.math.min(word.length, pos + stepChars)
                         val chunk = word.substring(pos, end)
-                        pushSpanToken(span, chunk, chunk.length)
+                        pushSpanToken(span, chunk)
                         if (end < word.length && curLine.isNotEmpty()) {
                             out += curLine
                             curLine = ArrayList()
-                            curLen = 0
                         }
                         pos = end
                     }

@@ -587,22 +587,26 @@ internal object NodeRefReader {
                 "h", "height" -> imgH = v.trim().removeSuffix("px").trim().takeIf { it.isNotEmpty() }
             }
         }
-        val combinedLabel = buildString {
-            if (imgUrl != null) {
-                val wAttr = imgW ?: "28"
-                val hAttr = imgH ?: wAttr
-                val altAttr = (label ?: "image").replace("\"", "&quot;")
-                append("""<img src="$imgUrl" width="$wAttr" height="$hAttr" alt="$altAttr"/>""")
-                if (!label.isNullOrBlank() || !icon.isNullOrBlank()) append('\n')
+        val combinedLabel = if (imgUrl == null && icon.isNullOrBlank()) {
+            label
+        } else {
+            buildString {
+                if (imgUrl != null) {
+                    val wAttr = imgW ?: "28"
+                    val hAttr = imgH ?: wAttr
+                    val altAttr = (label?.takeIf { it.isNotEmpty() } ?: "image").replace("\"", "&quot;")
+                    append("""<img src="$imgUrl" width="$wAttr" height="$hAttr" alt="$altAttr"/>""")
+                    if (!label.isNullOrBlank() || !icon.isNullOrBlank()) append('\n')
+                }
+                if (!icon.isNullOrBlank()) {
+                    append("::icon($icon)")
+                    if (!label.isNullOrBlank()) append(' ')
+                }
+                if (!label.isNullOrBlank()) {
+                    append(label)
+                }
             }
-            if (!icon.isNullOrBlank()) {
-                append("::icon($icon)")
-                if (!label.isNullOrBlank()) append(' ')
-            }
-            if (!label.isNullOrBlank()) {
-                append(label)
-            }
-        }.takeIf { it.isNotEmpty() }
+        }
         return combinedLabel to shape
     }
 
