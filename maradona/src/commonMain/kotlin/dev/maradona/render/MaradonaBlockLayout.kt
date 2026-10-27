@@ -850,58 +850,61 @@ private fun buildBlockArrowPath(
 private fun DrawScope.drawBlockEdge(
     pe: PositionedBlockEdge,
     theme: MaradonaTheme,
+    viewport: DiagramRect?,
 ) {
     val pts = pe.points
-    if (pts.size < 2) return
-    val edge = pe.edge
-    val strokeW = when (edge.pattern) {
-        BlockEdgePattern.Thick -> 2.8f * density
-        else -> 1.6f * density
-    }
-    val dash = if (edge.pattern == BlockEdgePattern.Dotted) {
-        PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
-    } else {
-        null
-    }
-
-    val startPt = pts.first()
-    val endPt = pts.last()
-    val path = Path().apply {
-        moveTo(startPt.x, startPt.y)
-        for (i in 1 until pts.size) {
-            lineTo(pts[i].x, pts[i].y)
+    val edgeMargin = 20f * density
+    if (pts.size >= 2 && polylineIntersectsViewport(pts, viewport, edgeMargin)) {
+        val edge = pe.edge
+        val strokeW = when (edge.pattern) {
+            BlockEdgePattern.Thick -> 2.8f * density
+            else -> 1.6f * density
         }
-    }
-    drawPath(
-        path = path,
-        color = theme.edge,
-        style = Stroke(
-            width = strokeW,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
-            pathEffect = dash,
-        ),
-    )
+        val dash = if (edge.pattern == BlockEdgePattern.Dotted) {
+            PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
+        } else {
+            null
+        }
 
-    if (edge.endHead != BlockArrowHead.None) {
-        drawBlockEdgeHead(
-            tip = endPt,
-            from = pts[pts.size - 2],
-            head = edge.endHead,
+        val startPt = pts.first()
+        val endPt = pts.last()
+        val path = Path().apply {
+            moveTo(startPt.x, startPt.y)
+            for (i in 1 until pts.size) {
+                lineTo(pts[i].x, pts[i].y)
+            }
+        }
+        drawPath(
+            path = path,
             color = theme.edge,
+            style = Stroke(
+                width = strokeW,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+                pathEffect = dash,
+            ),
         )
-    }
-    if (edge.startHead != BlockArrowHead.None) {
-        drawBlockEdgeHead(
-            tip = startPt,
-            from = pts[1],
-            head = edge.startHead,
-            color = theme.edge,
-        )
+
+        if (edge.endHead != BlockArrowHead.None) {
+            drawBlockEdgeHead(
+                tip = endPt,
+                from = pts[pts.size - 2],
+                head = edge.endHead,
+                color = theme.edge,
+            )
+        }
+        if (edge.startHead != BlockArrowHead.None) {
+            drawBlockEdgeHead(
+                tip = startPt,
+                from = pts[1],
+                head = edge.startHead,
+                color = theme.edge,
+            )
+        }
     }
 
     val lr = pe.labelRect
-    if (lr != null) {
+    if (lr != null && rectIntersectsViewport(lr, viewport, 8f * density)) {
         drawRoundRect(
             color = theme.edgeLabelBackground.copy(alpha = 0.92f),
             topLeft = Offset(lr.x, lr.y),
