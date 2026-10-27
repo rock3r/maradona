@@ -580,11 +580,8 @@ private fun DrawScope.drawBlockUnderlay(
     }
 
     // 2. Draw connecting edges and arrowheads.
-    val edgeMargin = 20f * density
     for (pe in layout.edges) {
-        if (polylineIntersectsViewport(pe.points, viewport, edgeMargin)) {
-            drawBlockEdge(pe, theme)
-        }
+        drawBlockEdge(pe, theme, viewport)
     }
 }
 
