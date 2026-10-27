@@ -808,5 +808,22 @@ class MaradonaSvgExporterTest {
         val rectWidth = Regex("""<g class="node" data-id="A">\s*<rect x="[^"]+" y="[^"]+" width="([0-9.]+)"""")
             .find(wideImgFlowSvg)?.groupValues?.get(1)?.toFloat() ?: 0f
         assertTrue(rectWidth >= 160f, "Expected headless node rect width ($rectWidth) to fit 160px image")
+
+        val gitGraphSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            gitGraph
+                commit id: "__init__" tag: "__release__"
+            """.trimIndent(),
+        )
+        assertTrue(gitGraphSvg.contains(">__init__</text>"), "Expected GitGraph commit ID to preserve literal underscores")
+        assertTrue(gitGraphSvg.contains(">__release__</text>"), "Expected GitGraph commit tag to preserve literal underscores")
+
+        val classGenericSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            classDiagram
+                class Box~b~
+            """.trimIndent(),
+        )
+        assertTrue(classGenericSvg.contains("&lt;b&gt;"), "Expected Class generic type ~b~ to render literal <b>")
     }
 }
