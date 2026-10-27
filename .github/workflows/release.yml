@@ -104,6 +104,7 @@ jobs:
       - name: Run desktop, Android host & APK build checks
         run: |
           ./gradlew \
+            verifyApiDesign \
             :maradona:desktopTest \
             :maradona-material3:desktopTest \
             :maradona-jewel:desktopTest \

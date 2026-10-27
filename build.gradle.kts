@@ -95,6 +95,172 @@ val expectedComponents: List<ExpectedComponentSpec> = buildList {
 
 val mavenLocalRepoRoot: String = "${System.getProperty("user.home")}/.m2/repository"
 
+val verifyApiDesign = tasks.register("verifyApiDesign") {
+    description =
+        "Verifies binary/source compatibility baselines, Desktop/Android ABI parity, " +
+            "module boundary hygiene, and KDoc coverage across published Maradona modules."
+    group = "verification"
+
+    dependsOn(publishedLibraryProjects.map { "$it:checkKotlinAbi" })
+
+    val projectRoot = rootProject.layout.projectDirectory.asFile
+
+    doLast {
+        val errors = mutableListOf<String>()
+
+        val requiredAbiFiles = listOf(
+            "maradona/api/desktop/maradona.api",
+            "maradona/api/android/maradona.api",
+            "maradona/api/maradona.klib.api",
+            "maradona-material3/api/desktop/maradona-material3.api",
+            "maradona-material3/api/android/maradona-material3.api",
+            "maradona-material3/api/maradona-material3.klib.api",
+            "maradona-jewel/api/maradona-jewel.api",
+        )
+        for (relPath in requiredAbiFiles) {
+            val f = projectRoot.resolve(relPath)
+            if (!f.isFile || f.length() <= 0L) {
+                errors += "Missing or empty ABI baseline dump: $relPath"
+            }
+        }
+
+        // Verify Desktop and Android JVM ABI dumps are byte-for-byte identical for shared KMP modules
+        for (module in listOf("maradona", "maradona-material3")) {
+            val desktopApi = projectRoot.resolve("$module/api/desktop/$module.api")
+            val androidApi = projectRoot.resolve("$module/api/android/$module.api")
+            if (desktopApi.isFile && androidApi.isFile) {
+                val dText = desktopApi.readText()
+                val aText = androidApi.readText()
+                if (dText != aText) {
+                    errors += "$module: Desktop ABI ($module/api/desktop/$module.api) differs from Android ABI ($module/api/android/$module.api)"
+                }
+            }
+        }
+
+        // Verify no internal implementation details leak into any public ABI dump
+        val forbiddenInternalTokens = listOf(
+            "dev/maradona/layout/dagre/",
+            "dev.maradona.layout.dagre",
+            "ViewportCullingSupport",
+            "FormattedTextSpan",
+            "parseFormattedLabelLines",
+            "wrapFormattedLabelLines",
+            "LayoutForExport",
+            "PremeasuredFlowchartResult",
+            "PremeasuredSequenceResult",
+        )
+        for (relPath in requiredAbiFiles) {
+            val f = projectRoot.resolve(relPath)
+            if (!f.isFile) continue
+            f.useLines { lines ->
+                lines.forEachIndexed { idx, line ->
+                    if (line.contains("\$stableprop")) return@forEachIndexed
+                    for (token in forbiddenInternalTokens) {
+                        if (line.contains(token)) {
+                            errors += "$relPath:${idx + 1}: leaks internal implementation symbol '$token'"
+                        }
+                    }
+                }
+            }
+        }
+
+        // Verify module boundary hygiene (no Jewel/AWT/Swing in :maradona or :maradona-material3;
+        // no Material3 in :maradona)
+        val nonDesktopAbiFiles = listOf(
+            "maradona/api/desktop/maradona.api",
+            "maradona/api/android/maradona.api",
+            "maradona/api/maradona.klib.api",
+            "maradona-material3/api/desktop/maradona-material3.api",
+            "maradona-material3/api/android/maradona-material3.api",
+            "maradona-material3/api/maradona-material3.klib.api",
+        )
+        for (relPath in nonDesktopAbiFiles) {
+            val f = projectRoot.resolve(relPath)
+            if (!f.isFile) continue
+            val content = f.readText()
+            for (forbidden in listOf("org/jetbrains/jewel", "org.jetbrains.jewel", "java/awt/", "javax/swing/")) {
+                if (content.contains(forbidden)) {
+                    errors += "$relPath: must not expose desktop/Jewel type '$forbidden'"
+                }
+            }
+            if (relPath.startsWith("maradona/api/") &&
+                (content.contains("androidx/compose/material3") || content.contains("androidx.compose.material3"))
+            ) {
+                errors += "$relPath: core :maradona module must not expose Material 3 types"
+            }
+        }
+
+        // Verify package namespace boundaries in JVM ABI dumps
+        val packageRules = listOf(
+            "maradona/api/desktop/maradona.api" to Regex("""^public .* class dev/maradona/(export|layout|model|parse|render)/"""),
+            "maradona-material3/api/desktop/maradona-material3.api" to Regex("""^public .* class dev/maradona/theme/material3/"""),
+            "maradona-jewel/api/maradona-jewel.api" to Regex("""^public .* class dev/maradona/theme/jewel/"""),
+        )
+        for ((relPath, allowedClassRegex) in packageRules) {
+            val f = projectRoot.resolve(relPath)
+            if (!f.isFile) continue
+            f.useLines { lines ->
+                lines.forEachIndexed { idx, line ->
+                    if (line.startsWith("public ") && " class " in line && !allowedClassRegex.containsMatchIn(line)) {
+                        errors += "$relPath:${idx + 1}: public class outside module package boundary: $line"
+                    }
+                }
+            }
+        }
+
+        // Verify KDoc presence on all primary public entry-point source files
+        val publicEntryPointSources = listOf(
+            "maradona/src/commonMain/kotlin/dev/maradona/render/MaradonaDiagram.kt" to listOf("fun MaradonaDiagram("),
+            "maradona/src/commonMain/kotlin/dev/maradona/render/MaradonaTheme.kt" to listOf("class MaradonaTheme(", "val LocalMaradonaTheme"),
+            "maradona/src/commonMain/kotlin/dev/maradona/parse/MaradonaParser.kt" to listOf("object MaradonaParser", "sealed interface MaradonaDiagramModel"),
+            "maradona/src/commonMain/kotlin/dev/maradona/export/MaradonaSvgExporter.kt" to listOf("object MaradonaSvgExporter", "fun exportToSvg("),
+            "maradona-material3/src/commonMain/kotlin/dev/maradona/theme/material3/Material3MaradonaTheme.kt" to listOf(
+                "fun MaradonaTheme.Companion.fromMaterial3(",
+                "fun rememberMaterial3MaradonaTheme(",
+                "fun ProvideMaterial3MaradonaTheme(",
+            ),
+            "maradona-jewel/src/desktopMain/kotlin/dev/maradona/theme/jewel/JewelMaradonaTheme.kt" to listOf(
+                "fun MaradonaTheme.Companion.fromJewel(",
+                "fun rememberJewelMaradonaTheme(",
+                "fun ProvideJewelMaradonaTheme(",
+            ),
+        )
+        val attachedKdocRegex = Regex(
+            """/\*\*(?:(?!\*/).)*\*/\s*(?:@[A-Za-z0-9_.]+\s*(?:\([^)]*\)\s*)?)*(?:(?:public|data|value|inline|sealed|suspend)\s+)*$""",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        )
+        for ((relPath, declarations) in publicEntryPointSources) {
+            val f = projectRoot.resolve(relPath)
+            if (!f.isFile) {
+                errors += "Missing expected public entry-point source file: $relPath"
+                continue
+            }
+            val src = f.readText()
+            if (!src.contains("/**")) {
+                errors += "$relPath: missing KDoc comments on public entry points"
+            }
+            for (decl in declarations) {
+                val idx = src.indexOf(decl)
+                if (idx < 0) {
+                    errors += "$relPath: missing expected public declaration '$decl'"
+                } else {
+                    val preceding = src.substring(0, idx)
+                    if (!attachedKdocRegex.containsMatchIn(preceding)) {
+                        errors += "$relPath: declaration '$decl' is missing directly attached preceding KDoc comment"
+                    }
+                }
+            }
+        }
+
+        if (errors.isNotEmpty()) {
+            throw GradleException(
+                "verifyApiDesign failed:\n" + errors.joinToString("\n") { "  - $it" },
+            )
+        }
+        println("verifyApiDesign: all ABI baselines, package boundaries, and KDoc entry-point checks passed.")
+    }
+}
+
 tasks.register("verifyMavenLocalPublication") {
     description =
         "Publishes Maradona library modules to mavenLocal and verifies that every " +
@@ -102,6 +268,7 @@ tasks.register("verifyMavenLocalPublication") {
             "bundled LICENSE/NOTICE files satisfy Sonatype Central requirements."
     group = "verification"
 
+    dependsOn(verifyApiDesign)
     dependsOn(publishedLibraryProjects.map { "$it:publishToMavenLocal" })
 
     val groupPath = publishGroupId.replace('.', '/')

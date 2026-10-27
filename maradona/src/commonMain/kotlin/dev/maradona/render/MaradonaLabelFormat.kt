@@ -647,7 +647,7 @@ private fun hasClosingSingleStar(s: String, from: Int): Boolean {
  * for rich SVG export (`<tspan>` and `<image>`).
  */
 @Immutable
-data class FormattedTextSpan(
+internal data class FormattedTextSpan(
     val text: String,
     val bold: Boolean = false,
     val italic: Boolean = false,
@@ -667,7 +667,7 @@ data class FormattedTextSpan(
  * underline, strikethrough, inline code, subscript/superscript, expanded icon
  * glyphs (`fa:`, `mdi:`, `::icon()`), and inline `<img .../>` / `![alt](url)` specs.
  */
-fun parseFormattedLabelLines(
+internal fun parseFormattedLabelLines(
     label: String,
     includeInlineImages: Boolean = false,
 ): List<List<FormattedTextSpan>> {
@@ -834,7 +834,7 @@ fun parseFormattedLabelLines(
  * measured using Compose's actual font shaping at [density] rather than the
  * headless character-width heuristic.
  */
-fun wrapFormattedLabelLines(
+internal fun wrapFormattedLabelLines(
     label: String,
     fontSp: Float,
     maxWidth: Float,
