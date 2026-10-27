@@ -1,7 +1,10 @@
 package dev.maradona.sample
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,32 +18,44 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -530,9 +545,11 @@ private class SampleState(
     val themePreset: SampleThemePreset,
     val selectedExample: String?,
     val source: String,
+    val viewportResetNonce: Int,
     val onThemePresetChange: (SampleThemePreset) -> Unit,
     val onExampleSelect: (String, String) -> Unit,
     val onSourceChange: (String) -> Unit,
+    val onResetViewport: () -> Unit,
 )
 
 /** Live Mermaid editor + diagram, shared by the desktop, Android, and iOS samples. */
@@ -558,6 +575,7 @@ fun MaradonaSampleApp(
     val requestedSource = sampleExamples.getValue(resolvedInitialExample)
     var selectedExample by remember(initialExample) { mutableStateOf<String?>(resolvedInitialExample) }
     var source by remember(initialExample) { mutableStateOf(requestedSource) }
+    var viewportResetNonce by remember(initialExample) { mutableIntStateOf(0) }
 
     LaunchedEffect(themePreset) {
         onThemePresetChanged?.invoke(themePreset)
@@ -567,14 +585,19 @@ fun MaradonaSampleApp(
         themePreset = themePreset,
         selectedExample = selectedExample,
         source = source,
+        viewportResetNonce = viewportResetNonce,
         onThemePresetChange = { themePreset = it },
         onExampleSelect = { name, text ->
             selectedExample = name
             source = text
+            viewportResetNonce++
         },
         onSourceChange = { newText ->
             source = newText
             selectedExample = sampleExamples.entries.firstOrNull { it.value == newText }?.key
+        },
+        onResetViewport = {
+            viewportResetNonce++
         },
     )
 
@@ -688,12 +711,87 @@ private fun OracleMode(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Diagram(state: SampleState, modifier: Modifier = Modifier) {
-    MaradonaDiagram(
-        source = state.source,
-        modifier = modifier,
-    )
+    Box(modifier = modifier) {
+        MaradonaDiagram(
+            source = state.source,
+            resetViewKey = state.viewportResetNonce,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp),
+        ) {
+            @Suppress("DEPRECATION")
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("Reset zoom and pan to fit") } },
+                state = rememberTooltipState(),
+            ) {
+                Surface(
+                    onClick = state.onResetViewport,
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .testTag("reset-viewport-btn")
+                        .semantics {
+                            contentDescription = "Reset zoom and pan to fit"
+                        },
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        FitToScreenIcon(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FitToScreenIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = (w * 0.11f).coerceAtLeast(1.5f)
+        val inset = w * 0.12f
+        val arm = w * 0.25f
+
+        // Top-left corner bracket
+        drawLine(color, Offset(inset, inset), Offset(inset + arm, inset), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(inset, inset), Offset(inset, inset + arm), strokeWidth = stroke, cap = StrokeCap.Round)
+
+        // Top-right corner bracket
+        drawLine(color, Offset(w - inset, inset), Offset(w - inset - arm, inset), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(w - inset, inset), Offset(w - inset, inset + arm), strokeWidth = stroke, cap = StrokeCap.Round)
+
+        // Bottom-left corner bracket
+        drawLine(color, Offset(inset, h - inset), Offset(inset + arm, h - inset), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(inset, h - inset), Offset(inset, h - inset - arm), strokeWidth = stroke, cap = StrokeCap.Round)
+
+        // Bottom-right corner bracket
+        drawLine(color, Offset(w - inset, h - inset), Offset(w - inset - arm, h - inset), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(color, Offset(w - inset, h - inset), Offset(w - inset, h - inset - arm), strokeWidth = stroke, cap = StrokeCap.Round)
+
+        // Center target rectangle
+        val boxW = w * 0.30f
+        val boxH = h * 0.30f
+        drawRoundRect(
+            color = color.copy(alpha = 0.85f),
+            topLeft = Offset((w - boxW) / 2f, (h - boxH) / 2f),
+            size = Size(boxW, boxH),
+            cornerRadius = CornerRadius(stroke * 0.6f, stroke * 0.6f),
+        )
+    }
 }
 
 @Composable
@@ -765,11 +863,13 @@ private fun EditorPanel(state: SampleState, modifier: Modifier = Modifier, compa
             TextField(
                 value = state.source,
                 onValueChange = state.onSourceChange,
-                modifier = if (compact) {
-                    Modifier.fillMaxWidth().height(110.dp)
-                } else {
-                    Modifier.weight(1f).fillMaxHeight()
-                },
+                modifier = (
+                    if (compact) {
+                        Modifier.fillMaxWidth().height(110.dp)
+                    } else {
+                        Modifier.weight(1f).fillMaxHeight()
+                    }
+                    ).testTag("source-text-field"),
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
                 label = { Text("Mermaid diagram") },
             )

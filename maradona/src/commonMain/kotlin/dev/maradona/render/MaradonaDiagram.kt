@@ -131,8 +131,16 @@ fun MaradonaDiagram(
      * how the diagram happens to fit its viewport.
      */
     initialScale: Float? = null,
-    /** Fraction of the scrollable range to start at, per axis (0.5 = centered). Only meaningful when the zoomed diagram overflows the viewport. */
+    /**
+     * Fraction of the scrollable range to start at, per axis (0.5 = centered). Only meaningful when the zoomed diagram overflows the viewport.
+     */
     initialPan: Offset? = null,
+    /**
+     * Optional caller-controlled key that resets pan and zoom back to [initialZoom] / [initialPan]
+     * whenever its value changes (for example, an incrementing counter from a "Reset to fit" button
+     * or example selector).
+     */
+    resetViewKey: Any? = null,
     /** Reports the diagram's natural (unzoomed) layout size once measured. */
     onNaturalSize: (IntSize) -> Unit = {},
     /** Reports diagnostic counts for viewport-lazy composition and underlay culling. */
@@ -235,7 +243,7 @@ fun MaradonaDiagram(
     var measureResetNonce by remember { mutableIntStateOf(0) }
     var viewportSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val viewResetKey = remember(model, initialZoom, initialScale, initialPan) { Any() }
+    val viewResetKey = remember(model, initialZoom, initialScale, initialPan, resetViewKey) { Any() }
     var lastViewResetKey by remember { mutableStateOf<Any?>(viewResetKey) }
     if (lastViewResetKey !== viewResetKey) {
         lastViewResetKey = viewResetKey
@@ -332,7 +340,7 @@ fun MaradonaDiagram(
             .background(theme.background)
             .clipToBounds()
             .onSizeChanged { viewportSize = it }
-            .pointerInput(zoomEnabled, model) {
+            .pointerInput(zoomEnabled, model, resetViewKey) {
                 if (!zoomEnabled) return@pointerInput
                 while (true) {
                     detectTransformGestures { centroid, gPan, gZoom, _ ->
@@ -342,7 +350,7 @@ fun MaradonaDiagram(
                     commitGesture()
                 }
             }
-            .pointerInput(zoomEnabled, model) {
+            .pointerInput(zoomEnabled, model, resetViewKey) {
                 if (!zoomEnabled) return@pointerInput
                 // Mouse-wheel zoom (Cmd/Ctrl held): desktop affordance; touch platforms
                 // essentially never emit Scroll events, and unmodified scrolls pass through.
@@ -363,7 +371,7 @@ fun MaradonaDiagram(
                     }
                 }
             }
-            .pointerInput(zoomEnabled, model) {
+            .pointerInput(zoomEnabled, model, resetViewKey) {
                 if (!zoomEnabled) return@pointerInput
                 detectTapGestures(onDoubleTap = {
                     userZoom = 1f
@@ -375,14 +383,14 @@ fun MaradonaDiagram(
     ) {
         // Wheel events are discrete; commit once the wheel goes quiet. Keep the
         // window short: until commit, the transient layer transform looks soft.
-        LaunchedEffect(wheelNonce, model) {
+        LaunchedEffect(wheelNonce, model, resetViewKey) {
             if (wheelNonce > 0) {
                 delay(90)
                 commitGesture()
             }
         }
 
-        LaunchedEffect(naturalSize, model) {
+        LaunchedEffect(naturalSize, viewResetKey) {
             if (initialViewApplied || naturalSize.width <= 0 || naturalSize.height <= 0) return@LaunchedEffect
             if (initialScale != null) {
                 // Absolute scale: the oracle needs exactly 0.1x/1x/5x, and the
@@ -463,12 +471,17 @@ fun MaradonaDiagram(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        val effectiveDrawnW = if (drawnSize.width > 0 && currentInitialScale == null) {
+                        val drawnMatchesCurrentScale =
+                            drawnSize.width > 0 &&
+                                drawnSize.height > 0 &&
+                                currentInitialScale == null &&
+                                abs(settledScale - currentScale) < 1e-4f
+                        val effectiveDrawnW = if (drawnMatchesCurrentScale) {
                             drawnSize.width.toFloat()
                         } else {
                             naturalSize.width * currentScale
                         }
-                        val effectiveDrawnH = if (drawnSize.height > 0 && currentInitialScale == null) {
+                        val effectiveDrawnH = if (drawnMatchesCurrentScale) {
                             drawnSize.height.toFloat()
                         } else {
                             naturalSize.height * currentScale

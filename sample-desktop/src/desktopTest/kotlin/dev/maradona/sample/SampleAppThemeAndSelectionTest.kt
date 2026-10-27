@@ -1,15 +1,26 @@
 package dev.maradona.sample
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Density
+import dev.maradona.render.DiagramZoom
 import dev.maradona.render.LocalMaradonaTheme
+import dev.maradona.render.MaradonaDiagram
 import dev.maradona.theme.jewel.ProvideJewelMaradonaTheme
 import dev.maradona.theme.material3.ProvideMaterial3MaradonaTheme
 import java.io.ByteArrayInputStream
@@ -214,6 +225,193 @@ class SampleAppThemeAndSelectionTest {
             assertFalse(assertNotNull(findNodeByTag(scene, "example-btn-Shapes")).config.getOrNull(SemanticsProperties.Selected) ?: true)
         } finally {
             scene.close()
+        }
+    }
+
+    @Test
+    fun viewportResetButtonAndExampleSwitchResetPanAndZoomWithoutVibration() {
+        val scene = ImageComposeScene(width = 1280, height = 800, density = Density(1.5f)) {
+            MaradonaSampleApp()
+        }
+        try {
+            var clock = 1L
+            fun advanceFrames(count: Int) {
+                repeat(count) { scene.render(clock++ * 16_000_000L) }
+            }
+            fun capturePng(): ByteArray =
+                scene.render(clock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+
+            // 1. Verify top-right reset-viewport-btn exists, is positioned in the top-right of the diagram canvas,
+            //    and exposes accessible contentDescription and click action.
+            advanceFrames(4)
+            val initialBasicPng = capturePng()
+
+            val resetViewportBtn = assertNotNull(findNodeByTag(scene, "reset-viewport-btn"))
+            assertEquals(
+                listOf("Reset zoom and pan to fit"),
+                resetViewportBtn.config.getOrNull(SemanticsProperties.ContentDescription),
+            )
+            assertNotNull(resetViewportBtn.config.getOrNull(SemanticsActions.OnClick))
+            val btnBounds = resetViewportBtn.boundsInRoot
+            assertTrue(btnBounds.right > 1200f && btnBounds.top < 80f, "Expected reset button at top-right of canvas, got $btnBounds")
+
+            // Helper to pan + zoom the diagram canvas away from the fitted state
+            fun panAndZoomCanvas() {
+                // Drag pan on the diagram canvas (x: 900 -> 680, y: 400 -> 240)
+                scene.sendPointerEvent(PointerEventType.Press, Offset(900f, 400f), timeMillis = clock * 16L)
+                advanceFrames(1)
+                scene.sendPointerEvent(PointerEventType.Move, Offset(680f, 240f), timeMillis = clock * 16L)
+                advanceFrames(1)
+                scene.sendPointerEvent(PointerEventType.Release, Offset(680f, 240f), timeMillis = clock * 16L)
+                advanceFrames(1)
+                // Cmd+scroll zoom in on the diagram canvas
+                scene.sendPointerEvent(
+                    eventType = PointerEventType.Scroll,
+                    position = Offset(900f, 400f),
+                    scrollDelta = Offset(0f, -6f),
+                    timeMillis = clock * 16L,
+                    keyboardModifiers = PointerKeyboardModifiers(isMetaPressed = true),
+                )
+                // Advance past the 90ms wheel commit window
+                advanceFrames(10)
+            }
+
+            // 2. Pan and zoom the canvas, verify the rendered frame changed, then click reset-viewport-btn
+            panAndZoomCanvas()
+            val displacedPng = capturePng()
+            assertFalse(
+                initialBasicPng.contentEquals(displacedPng),
+                "Expected pan + zoom to displace the diagram away from its initial fitted render",
+            )
+            File("build/screenshots/sample-app-panned-zoomed.png").apply {
+                parentFile.mkdirs()
+                writeBytes(displacedPng)
+            }
+
+            val resetClick = assertNotNull(findNodeByTag(scene, "reset-viewport-btn")?.config?.getOrNull(SemanticsActions.OnClick)?.action)
+            resetClick.invoke()
+            advanceFrames(3)
+            val afterManualResetPng = capturePng()
+            File("build/screenshots/sample-app-after-manual-reset.png").apply {
+                parentFile.mkdirs()
+                writeBytes(afterManualResetPng)
+            }
+            assertTrue(
+                initialBasicPng.contentEquals(afterManualResetPng),
+                "Expected clicking reset-viewport-btn to restore the exact initial fitted diagram view",
+            )
+            // Verify multi-frame stability (no vibration) across 5 subsequent frames
+            repeat(5) { frameIdx ->
+                val nextPng = capturePng()
+                assertTrue(
+                    afterManualResetPng.contentEquals(nextPng),
+                    "Frame $frameIdx vibrated after manual viewport reset",
+                )
+            }
+
+            // 3. Pan and zoom again, then re-click the already-selected "Basic" example button -> must also reset to fit
+            panAndZoomCanvas()
+            assertFalse(initialBasicPng.contentEquals(capturePng()))
+            val basicClick = assertNotNull(findNodeByTag(scene, "example-btn-Basic")?.config?.getOrNull(SemanticsActions.OnClick)?.action)
+            basicClick.invoke()
+            advanceFrames(3)
+            val afterReclickBasicPng = capturePng()
+            assertTrue(
+                initialBasicPng.contentEquals(afterReclickBasicPng),
+                "Expected re-clicking the active example button to reset pan and zoom to fit",
+            )
+
+            // 4. Pan and zoom again, then switch to another diagram family ("Mindmap") -> must reset to fit and settle without vibration
+            panAndZoomCanvas()
+            val mindmapClick = assertNotNull(findNodeByTag(scene, "example-btn-Mindmap")?.config?.getOrNull(SemanticsActions.OnClick)?.action)
+            mindmapClick.invoke()
+            advanceFrames(3)
+            val mindmapFittedPng = capturePng()
+            repeat(5) { frameIdx ->
+                val nextPng = capturePng()
+                assertTrue(
+                    mindmapFittedPng.contentEquals(nextPng),
+                    "Mindmap vibrated on frame $frameIdx after switching from a panned/zoomed diagram",
+                )
+            }
+
+            // Pan and zoom Mindmap, then click reset-viewport-btn -> must return to mindmapFittedPng without vibration
+            panAndZoomCanvas()
+            val mindmapDisplacedPng = capturePng()
+            assertFalse(mindmapFittedPng.contentEquals(mindmapDisplacedPng))
+            assertNotNull(findNodeByTag(scene, "reset-viewport-btn")?.config?.getOrNull(SemanticsActions.OnClick)?.action).invoke()
+            advanceFrames(3)
+            val mindmapResetPng = capturePng()
+            assertTrue(
+                mindmapFittedPng.contentEquals(mindmapResetPng),
+                "Expected reset-viewport-btn on Mindmap to restore exact fitted Mindmap view",
+            )
+            repeat(5) { frameIdx ->
+                assertTrue(
+                    mindmapResetPng.contentEquals(capturePng()),
+                    "Mindmap vibrated on frame $frameIdx after manual reset-to-fit",
+                )
+            }
+
+            // 5. Pan and zoom Mindmap again, then edit the source text in TextField to switch diagram type ->
+            //    must reset pan/zoom to fit and settle without vibration, and reset-viewport-btn must also work afterward
+            panAndZoomCanvas()
+            val textFieldNode = assertNotNull(findNodeByTag(scene, "source-text-field"))
+            val setTextAction = assertNotNull(textFieldNode.config.getOrNull(SemanticsActions.SetText)?.action)
+            setTextAction.invoke(AnnotatedString(sampleExamples.getValue("ZenUML")))
+            advanceFrames(3)
+            val zenumlFittedPng = capturePng()
+            repeat(5) { frameIdx ->
+                assertTrue(
+                    zenumlFittedPng.contentEquals(capturePng()),
+                    "ZenUML vibrated on frame $frameIdx after source text change from panned/zoomed state",
+                )
+            }
+            panAndZoomCanvas()
+            assertFalse(zenumlFittedPng.contentEquals(capturePng()))
+            assertNotNull(findNodeByTag(scene, "reset-viewport-btn")?.config?.getOrNull(SemanticsActions.OnClick)?.action).invoke()
+            advanceFrames(3)
+            assertTrue(
+                zenumlFittedPng.contentEquals(capturePng()),
+                "Expected reset-viewport-btn after source edit to restore exact fitted ZenUML view",
+            )
+        } finally {
+            scene.close()
+        }
+
+        // 6. Verify resetViewKey also reapplies initialZoom = DiagramZoom.Natural and initialPan on an oversized diagram
+        var resetKey by mutableIntStateOf(0)
+        val naturalScene = ImageComposeScene(width = 320, height = 240, density = Density(2f)) {
+            MaradonaDiagram(
+                source = sampleExamples.getValue("Shapes"),
+                initialZoom = DiagramZoom.Natural,
+                initialPan = Offset(0.2f, 0.8f),
+                resetViewKey = resetKey,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        try {
+            var natClock = 1L
+            repeat(4) { naturalScene.render(natClock++ * 16_000_000L) }
+            val initialNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+
+            naturalScene.sendPointerEvent(PointerEventType.Press, Offset(160f, 120f), timeMillis = natClock * 16L)
+            naturalScene.render(natClock++ * 16_000_000L)
+            naturalScene.sendPointerEvent(PointerEventType.Move, Offset(40f, 40f), timeMillis = natClock * 16L)
+            naturalScene.render(natClock++ * 16_000_000L)
+            naturalScene.sendPointerEvent(PointerEventType.Release, Offset(40f, 40f), timeMillis = natClock * 16L)
+            val pannedNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            assertFalse(initialNaturalPng.contentEquals(pannedNaturalPng))
+
+            resetKey++
+            repeat(4) { naturalScene.render(natClock++ * 16_000_000L) }
+            val restoredNaturalPng = naturalScene.render(natClock++ * 16_000_000L).encodeToData(EncodedImageFormat.PNG)!!.bytes
+            assertTrue(
+                initialNaturalPng.contentEquals(restoredNaturalPng),
+                "Expected resetViewKey to reapply initialZoom = DiagramZoom.Natural and initialPan",
+            )
+        } finally {
+            naturalScene.close()
         }
     }
 }
