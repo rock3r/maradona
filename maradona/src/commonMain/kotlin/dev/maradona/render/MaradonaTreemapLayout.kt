@@ -577,3 +577,18 @@ private fun DrawScope.drawTreemapUnderlay(
         }
     }
 }
+
+internal fun measureTreemapLayoutForExport(
+    diagram: TreemapDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): TreemapDiagramLayout = computePremeasuredTreemapLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

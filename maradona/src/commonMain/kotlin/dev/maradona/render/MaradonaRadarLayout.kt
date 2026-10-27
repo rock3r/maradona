@@ -707,3 +707,18 @@ private fun buildRadarCurvePath(
     path.close()
     return path
 }
+
+internal fun measureRadarLayoutForExport(
+    diagram: RadarDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): RadarDiagramLayout = computePremeasuredRadarLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

@@ -1041,3 +1041,18 @@ private fun DrawScope.drawErCardinalityMarker(
         }
     }
 }
+
+internal fun measureErLayoutForExport(
+    diagram: ErDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): ErDiagramLayout = computePremeasuredErLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).naturalLayout
+

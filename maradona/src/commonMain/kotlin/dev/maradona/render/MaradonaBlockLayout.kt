@@ -964,3 +964,19 @@ private fun DrawScope.drawBlockEdgeHead(
         BlockArrowHead.None -> Unit
     }
 }
+
+internal fun measureBlockLayoutForExport(
+    diagram: BlockDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): BlockDiagramLayout = computePremeasuredBlockLayout(
+    diagram = diagram,
+    allNonSpaceBlocks = collectNonSpaceBlocks(diagram.children),
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

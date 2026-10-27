@@ -399,7 +399,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(erSvg.contains("class=\"er-entity\" data-id=\"CUSTOMER\""), "Expected CUSTOMER entity")
-        assertTrue(erSvg.contains("string id PK &quot;UUID&quot;"), "Expected CUSTOMER attribute row")
+        assertTrue(erSvg.contains("string id") && erSvg.contains(">PK</tspan>") && erSvg.contains("&quot;UUID&quot;"), "Expected CUSTOMER attribute row")
         assertTrue(erSvg.contains("data-marker=\"er-exactly-one\""), "Expected || cardinality marker")
         assertTrue(erSvg.contains("data-marker=\"er-zero-or-more\""), "Expected o{ cardinality marker")
 
@@ -705,5 +705,125 @@ class MaradonaSvgExporterTest {
         assertTrue(svg.contains("data-id=\"cluster_0\""))
         assertTrue(svg.contains("data-id=\"cluster_5\""))
         assertTrue(svg.contains("data-id=\"N_5_19\""))
+    }
+
+    @Test
+    fun preservesRichTextSpansIconsImagesAndInteractionCallbacksInSvg() {
+        val mmd = """
+            flowchart LR
+                subgraph sg1["<b>Tier 1</b> &amp; <code>edge</code>"]
+                    A["**Bold** *Italic* <u>Under</u> ~~Strike~~ `mono` H<sub>2</sub>O x<sup>2</sup>"]
+                    B["fa:fa-check Status <img src='https://example.com/badge.png' width='36' height='20' alt='Badge'/>"]
+                    C@{ shape: rect, label: "Gateway", icon: "fa:fa-server", img: "https://example.com/gw.svg", w: 32, h: 32 }
+                end
+                A -->|"<b>Fast</b> <i>path</i>"| B
+                B --> C
+                click A call handleSelect("A") "Invoke callback A"
+                click B "https://example.com/status" "Open status" _self
+        """.trimIndent()
+
+        val svg = MaradonaSvgExporter.exportToSvg(mmd)
+        // Rich text <tspan> attributes
+        assertTrue(svg.contains("""<tspan font-weight="bold">Bold</tspan>"""), "Expected bold <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan font-style="italic">Italic</tspan>"""), "Expected italic <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan text-decoration="underline">Under</tspan>"""), "Expected underline <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan text-decoration="line-through">Strike</tspan>"""), "Expected strikethrough <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan font-family="monospace">mono</tspan>"""), "Expected monospace code <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan baseline-shift="sub" font-size="80%">2</tspan>"""), "Expected subscript <tspan> in SVG")
+        assertTrue(svg.contains("""<tspan baseline-shift="super" font-size="80%">2</tspan>"""), "Expected superscript <tspan> in SVG")
+        // Subgraph and edge rich text
+        assertTrue(svg.contains("""<tspan font-weight="bold">Tier 1</tspan>"""), "Expected bold <tspan> in subgraph header")
+        assertTrue(svg.contains("""<tspan font-weight="bold">Fast</tspan>"""), "Expected bold <tspan> in edge label")
+        assertTrue(svg.contains("""<tspan font-style="italic">path</tspan>"""), "Expected italic <tspan> in edge label")
+        // Icons and inline images
+        assertTrue(svg.contains("✓ Status"), "Expected fa:fa-check icon glyph in SVG")
+        assertTrue(
+            svg.contains("""<image class="inline-image" href="https://example.com/badge.png"""") &&
+                svg.contains("""width="36" height="20"""") &&
+                svg.contains("""<title>Badge</title></image>"""),
+            "Expected inline <img> to export as SVG <image> with dimensions and <title>",
+        )
+        assertTrue(
+            svg.contains("""<image class="inline-image" href="https://example.com/gw.svg"""") &&
+                svg.contains("""width="32" height="32""""),
+            "Expected Mermaid v2 @{ img, w, h } metadata to export as SVG <image>",
+        )
+        assertTrue(svg.contains("🖥 Gateway"), "Expected Mermaid v2 @{ icon } metadata to export resolved icon glyph")
+        // Callback and link interactions
+        assertTrue(svg.contains("""data-id="A" data-callback="handleSelect(&quot;A&quot;)""""), "Expected click callback attribute on node A")
+        assertTrue(svg.contains("""<title>Invoke callback A</title>"""), "Expected tooltip on callback node A")
+        assertTrue(svg.contains("""<a href="https://example.com/status" target="_self">"""), "Expected link + target on node B")
+    }
+
+    @Test
+    fun preservesCodeSpansInPacketTreemapAndC4LabelsWithoutDoubleParsing() {
+        val packetSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            packet
+                0-31: "<code>fa:fa-check</code>"
+            """.trimIndent(),
+        )
+        assertTrue(packetSvg.contains("fa:fa-check"), "Expected literal code span text in packet SVG")
+        assertTrue(!packetSvg.contains("✓"), "Expected code span in packet SVG not to be re-parsed as icon glyph")
+
+        val treemapSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            treemap-beta
+            "<code>fa:fa-check</code>"
+                "`**raw**`": 50
+            """.trimIndent(),
+        )
+        assertTrue(treemapSvg.contains("fa:fa-check"), "Expected literal code span text in treemap section header")
+        assertTrue(treemapSvg.contains("**raw**"), "Expected literal markdown delimiters inside code span in treemap leaf")
+
+        val c4Svg = MaradonaSvgExporter.exportToSvg(
+            """
+            C4Context
+                Boundary(b0, "<code>fa:fa-check</code>", "Boundary") {
+                    System(sys, "`fa:fa-server`", "Core")
+                }
+            """.trimIndent(),
+        )
+        assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-check</tspan>"""), "Expected code span in C4 boundary header")
+        assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-server</tspan>"""), "Expected code span in C4 card label")
+        assertTrue(!c4Svg.contains("✓"), "Expected C4 boundary code span not to be re-parsed as icon glyph")
+
+        val seqCodeBrSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            sequenceDiagram
+                A->>B: <code>a<br/>b</code>
+            """.trimIndent(),
+        )
+        assertTrue(
+            seqCodeBrSvg.contains("""<tspan font-family="monospace">a&lt;br/&gt;b</tspan>"""),
+            "Expected literal <br/> inside sequence code span to stay on one line",
+        )
+
+        val wideImgFlowSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            flowchart LR
+                A@{ shape: rect, img: "https://example.com/wide.png", w: 160, h: 24 }
+            """.trimIndent(),
+        )
+        val rectWidth = Regex("""<g class="node" data-id="A">\s*<rect x="[^"]+" y="[^"]+" width="([0-9.]+)"""")
+            .find(wideImgFlowSvg)?.groupValues?.get(1)?.toFloat() ?: 0f
+        assertTrue(rectWidth >= 160f, "Expected headless node rect width ($rectWidth) to fit 160px image")
+
+        val gitGraphSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            gitGraph
+                commit id: "__init__" tag: "__release__"
+            """.trimIndent(),
+        )
+        assertTrue(gitGraphSvg.contains(">__init__</text>"), "Expected GitGraph commit ID to preserve literal underscores")
+        assertTrue(gitGraphSvg.contains(">__release__</text>"), "Expected GitGraph commit tag to preserve literal underscores")
+
+        val classGenericSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            classDiagram
+                class Box~b~
+            """.trimIndent(),
+        )
+        assertTrue(classGenericSvg.contains("&lt;b&gt;"), "Expected Class generic type ~b~ to render literal <b>")
     }
 }

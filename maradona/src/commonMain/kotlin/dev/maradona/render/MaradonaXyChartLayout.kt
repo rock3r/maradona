@@ -1012,3 +1012,56 @@ private fun DrawScope.drawXyChartUnderlay(
         }
     }
 }
+
+internal fun measureXyChartLayoutForExport(
+    diagram: XyChartDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): XyChartDiagramLayout {
+    val xAxisPreviewTicks = when (val xa = diagram.xAxis) {
+        is XyAxisSpec.BandAxis -> xa.categories
+        is XyAxisSpec.LinearAxis -> {
+            val (xm0, xm1) = XyChartLayout.effectiveXDomain(xa)
+            XyChartLayout.generateLinearTicks(xm0, xm1, 6).map { XyChartLayout.formatNumber(it) }
+        }
+    }
+    val (ym0, ym1) = XyChartLayout.effectiveYDomain(diagram.yAxis)
+    val yAxisPreviewTicks = XyChartLayout.generateLinearTicks(ym0, ym1, 6).map { XyChartLayout.formatNumber(it) }
+    val legendSeries = if (diagram.showLegend) {
+        diagram.plots.mapIndexedNotNull { idx, s ->
+            if (!s.title.isNullOrBlank()) idx to s else null
+        }
+    } else {
+        emptyList()
+    }
+    val pointAndDataLabels = buildList {
+        for ((sIdx, s) in diagram.plots.withIndex()) {
+            for ((pIdx, pt) in s.points.withIndex()) {
+                when (s.type) {
+                    XyPlotType.Bar -> {
+                        val txt = pt.label ?: if (diagram.showDataLabel) XyChartLayout.formatNumber(pt.value) else null
+                        if (!txt.isNullOrBlank()) add(Triple("dlbl:bar_${sIdx}_$pIdx", sIdx, txt))
+                    }
+                    XyPlotType.Line -> {
+                        val txt = pt.label
+                        if (!txt.isNullOrBlank()) add(Triple("plbl:linept_${sIdx}_$pIdx", sIdx, txt))
+                    }
+                }
+            }
+        }
+    }
+    return computePremeasuredXyChartLayout(
+        diagram = diagram,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        xAxisPreviewTicks = xAxisPreviewTicks,
+        yAxisPreviewTicks = yAxisPreviewTicks,
+        legendSeries = legendSeries,
+        pointAndDataLabels = pointAndDataLabels,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

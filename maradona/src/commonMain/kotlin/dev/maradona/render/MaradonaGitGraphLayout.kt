@@ -755,3 +755,22 @@ private fun DrawScope.drawGitGraphUnderlay(
         }
     }
 }
+
+internal fun measureGitGraphLayoutForExport(
+    diagram: GitGraphDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): GitGraphDiagramLayout {
+    val allBranchNames = (diagram.branches.map { it.name } + diagram.commits.map { it.branch }).distinct()
+    return computePremeasuredGitGraphLayout(
+        diagram = diagram,
+        allBranchNames = allBranchNames,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+

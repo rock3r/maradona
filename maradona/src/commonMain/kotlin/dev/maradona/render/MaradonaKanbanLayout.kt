@@ -722,3 +722,18 @@ private fun DrawScope.drawKanbanUnderlay(
         }
     }
 }
+
+internal fun measureKanbanLayoutForExport(
+    diagram: KanbanDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): KanbanDiagramLayout = computePremeasuredKanbanLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

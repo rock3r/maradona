@@ -1269,3 +1269,18 @@ private fun DrawScope.drawClassRelationEnd(
         }
     }
 }
+
+internal fun measureClassLayoutForExport(
+    diagram: ClassDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): ClassDiagramLayout = computePremeasuredClassLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).naturalLayout
+

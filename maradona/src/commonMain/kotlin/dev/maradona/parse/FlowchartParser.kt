@@ -552,6 +552,10 @@ internal object NodeRefReader {
     private fun parseMetadataBlock(body: String): Pair<String?, NodeShape?> {
         var label: String? = null
         var shape: NodeShape? = null
+        var icon: String? = null
+        var imgUrl: String? = null
+        var imgW: String? = null
+        var imgH: String? = null
         var inQuote = false
         var quoteChar = '"'
         val parts = mutableListOf<String>()
@@ -577,9 +581,33 @@ internal object NodeRefReader {
             when (k) {
                 "label" -> label = cleanLabel(v)
                 "shape" -> shape = mapShapeAlias(v)
+                "icon" -> icon = v.trim().takeIf { it.isNotEmpty() }
+                "img" -> imgUrl = v.trim().takeIf { it.isNotEmpty() }
+                "w", "width" -> imgW = v.trim().removeSuffix("px").trim().takeIf { it.isNotEmpty() }
+                "h", "height" -> imgH = v.trim().removeSuffix("px").trim().takeIf { it.isNotEmpty() }
             }
         }
-        return label to shape
+        val combinedLabel = if (imgUrl == null && icon.isNullOrBlank()) {
+            label
+        } else {
+            buildString {
+                if (imgUrl != null) {
+                    val wAttr = imgW ?: "28"
+                    val hAttr = imgH ?: wAttr
+                    val altAttr = (label?.takeIf { it.isNotEmpty() } ?: "image").replace("\"", "&quot;")
+                    append("""<img src="$imgUrl" width="$wAttr" height="$hAttr" alt="$altAttr"/>""")
+                    if (!label.isNullOrBlank() || !icon.isNullOrBlank()) append('\n')
+                }
+                if (!icon.isNullOrBlank()) {
+                    append("::icon($icon)")
+                    if (!label.isNullOrBlank()) append(' ')
+                }
+                if (!label.isNullOrBlank()) {
+                    append(label)
+                }
+            }
+        }
+        return combinedLabel to shape
     }
 
     private fun mapShapeAlias(alias: String): NodeShape? = when (alias.trim().lowercase()) {
@@ -640,7 +668,7 @@ internal object NodeRefReader {
             val escapedTagGuard = "&\u200Blt;"
             segment
                 .replace(
-                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:u|ins|s|del|strike|sub|sup|code|img)\b)"""),
+                    Regex("""(?i)(?:&lt;|#lt;|&?#0*60;)(?=\s*/?\s*(?:b|strong|i|em|br|u|ins|s|del|strike|sub|sup|code|img)\b)"""),
                     escapedTagGuard,
                 )
                 .replace("&quot;", "\"").replace("#quot;", "\"")

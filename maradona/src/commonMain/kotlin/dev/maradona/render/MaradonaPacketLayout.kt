@@ -530,3 +530,18 @@ private fun computeBlockLabelFontSize(block: PacketBlock, bitWidth: Float): Floa
         else -> 9f
     }
 }
+
+internal fun measurePacketLayoutForExport(
+    diagram: PacketDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PacketDiagramLayout = computePremeasuredPacketLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

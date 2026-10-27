@@ -667,3 +667,19 @@ private fun DrawScope.drawTimelineUnderlay(
         }
     }
 }
+
+internal fun measureTimelineLayoutForExport(
+    diagram: TimelineDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): TimelineDiagramLayout = computePremeasuredTimelineLayout(
+    diagram = diagram,
+    sectionRuns = TimelineLayout.buildSectionRuns(diagram),
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

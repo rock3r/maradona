@@ -898,3 +898,18 @@ private fun DrawScope.drawPortArrowHead(
     }
     drawPath(path = path, color = color, style = Fill)
 }
+
+internal fun measureArchitectureLayoutForExport(
+    diagram: ArchitectureDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): ArchitectureDiagramLayout = computePremeasuredArchitectureLayout(
+    diagram = diagram,
+    theme = theme,
+    layoutOptions = layoutOptions,
+    densityObj = densityObj,
+    textMeasurer = textMeasurer,
+).layout
+

@@ -699,3 +699,24 @@ private fun DrawScope.drawGanttUnderlay(
         )
     }
 }
+
+internal fun measureGanttLayoutForExport(
+    diagram: GanttDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): GanttDiagramLayout {
+    val allSectionNames = (diagram.sections + diagram.tasks.mapNotNull { it.section }).distinct()
+    val candidateTicks = GanttLayout.candidateTicks(diagram)
+    return computePremeasuredGanttLayout(
+        diagram = diagram,
+        allSectionNames = allSectionNames,
+        candidateTicks = candidateTicks,
+        theme = theme,
+        layoutOptions = layoutOptions,
+        densityObj = densityObj,
+        textMeasurer = textMeasurer,
+    ).layout
+}
+
