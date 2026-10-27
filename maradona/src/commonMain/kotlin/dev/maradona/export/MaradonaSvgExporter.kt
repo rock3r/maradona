@@ -176,6 +176,18 @@ object MaradonaSvgExporter {
         val model = MaradonaParser.parse(source)
         if (textMeasurer != null) {
             val dens = density.density.coerceAtLeast(0.01f)
+            val textScale = (dens * density.fontScale.coerceAtLeast(0.01f))
+            val svgTheme = if (kotlin.math.abs(textScale - 1f) < 1e-4f) {
+                theme
+            } else {
+                theme.copy(
+                    nodeFontSize = theme.nodeFontSize * textScale,
+                    edgeLabelFontSize = theme.edgeLabelFontSize * textScale,
+                    subgraphFontSize = theme.subgraphFontSize * textScale,
+                    titleFontSize = theme.titleFontSize * textScale,
+                    captionFontSize = theme.captionFontSize * textScale,
+                )
+            }
             return when (model) {
                 is MaradonaDiagramModel.FlowchartModel -> {
                     val imageUrls = model.chart.nodes.asSequence()
@@ -190,96 +202,96 @@ object MaradonaSvgExporter {
                         textMeasurer = textMeasurer,
                         resolvedImageUrls = imageUrls,
                     )
-                    exportFlowchartToSvg(model.chart, layout, theme)
+                    exportFlowchartToSvg(model.chart, layout, svgTheme, textScale)
                 }
                 is MaradonaDiagramModel.SequenceModel -> {
                     val seqOpts = dev.maradona.layout.SequenceLayoutOptions(density = dens)
                     val layout = measureSequenceLayoutForExport(model.diagram, theme, seqOpts, density, textMeasurer)
-                    exportSequenceToSvg(model.diagram, layout, theme, dens)
+                    exportSequenceToSvg(model.diagram, layout, svgTheme, dens)
                 }
                 is MaradonaDiagramModel.ClassModel -> {
                     val layout = measureClassLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportClassToSvg(model.diagram, layout, theme)
+                    exportClassToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.StateModel -> {
                     val layout = measureStateLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportStateToSvg(model.diagram, layout, theme)
+                    exportStateToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.ErModel -> {
                     val layout = measureErLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportErToSvg(model.diagram, layout, theme)
+                    exportErToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.RequirementModel -> {
                     val layout = measureRequirementLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportRequirementToSvg(model.diagram, layout, theme)
+                    exportRequirementToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.C4Model -> {
                     val layout = measureC4LayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportC4ToSvg(model.diagram, layout, theme, dens)
+                    exportC4ToSvg(model.diagram, layout, svgTheme, dens)
                 }
                 is MaradonaDiagramModel.ArchitectureModel -> {
                     val layout = measureArchitectureLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportArchitectureToSvg(model.diagram, layout, theme)
+                    exportArchitectureToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.ZenUmlModel -> {
                     val layout = measureZenUmlLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportZenUmlToSvg(model.diagram, layout, theme, dens)
+                    exportZenUmlToSvg(model.diagram, layout, svgTheme, dens)
                 }
                 is MaradonaDiagramModel.MindmapModel -> {
                     val layout = measureMindmapLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportMindmapToSvg(model.diagram, layout, theme)
+                    exportMindmapToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.GanttModel -> {
                     val layout = measureGanttLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportGanttToSvg(model.diagram, layout, theme)
+                    exportGanttToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.PieModel -> {
                     val layout = measurePieLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportPieToSvg(model.diagram, layout, theme)
+                    exportPieToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.GitGraphModel -> {
                     val layout = measureGitGraphLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportGitGraphToSvg(model.diagram, layout, theme)
+                    exportGitGraphToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.TimelineModel -> {
                     val layout = measureTimelineLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportTimelineToSvg(model.diagram, layout, theme)
+                    exportTimelineToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.JourneyModel -> {
                     val layout = measureJourneyLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportJourneyToSvg(model.diagram, layout, theme)
+                    exportJourneyToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.QuadrantModel -> {
                     val layout = measureQuadrantLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportQuadrantToSvg(model.diagram, layout, theme)
+                    exportQuadrantToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.XyChartModel -> {
                     val layout = measureXyChartLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportXyChartToSvg(model.diagram, layout, theme)
+                    exportXyChartToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.KanbanModel -> {
                     val layout = measureKanbanLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportKanbanToSvg(model.diagram, layout, theme, dens)
+                    exportKanbanToSvg(model.diagram, layout, svgTheme, dens)
                 }
                 is MaradonaDiagramModel.SankeyModel -> {
                     val layout = measureSankeyLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportSankeyToSvg(model.diagram, layout, theme)
+                    exportSankeyToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.PacketModel -> {
                     val layout = measurePacketLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportPacketToSvg(model.diagram, layout, theme)
+                    exportPacketToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.RadarModel -> {
                     val layout = measureRadarLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportRadarToSvg(model.diagram, layout, theme)
+                    exportRadarToSvg(model.diagram, layout, svgTheme)
                 }
                 is MaradonaDiagramModel.BlockModel -> {
                     val layout = measureBlockLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportBlockToSvg(model.diagram, layout, theme, dens)
+                    exportBlockToSvg(model.diagram, layout, svgTheme, dens)
                 }
                 is MaradonaDiagramModel.TreemapModel -> {
                     val layout = measureTreemapLayoutForExport(model.diagram, theme, options, density, textMeasurer)
-                    exportTreemapToSvg(model.diagram, layout, theme)
+                    exportTreemapToSvg(model.diagram, layout, svgTheme)
                 }
             }
         }
@@ -759,7 +771,9 @@ object MaradonaSvgExporter {
         chart: Flowchart,
         layout: DiagramLayout,
         theme: MaradonaTheme = MaradonaTheme.light(),
+        imageScale: Float = 1f,
     ): String {
+        val imgScale = imageScale.coerceAtLeast(0.01f)
         val w = ceil(layout.width).toInt().coerceAtLeast(1)
         val h = ceil(layout.height).toInt().coerceAtLeast(1)
         val sb = StringBuilder()
@@ -779,11 +793,18 @@ object MaradonaSvgExporter {
             val sgFirstLineOffset = 6f + sgFont * 0.85f
             for ((idx, spanLine) in sgSpanLines.withIndex()) {
                 val ly = r.y + sgFirstLineOffset + idx * sgLineH
-                val innerXml = renderSpansToSvgContent(spanLine)
-                sb.append(
-                    """    <text x="${fmt(r.centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="${theme.subgraphText.toSvgHex()}" font-family="sans-serif" font-size="${fmt(sgFont)}" font-weight="600">$innerXml</text>""",
-                ).append('\n')
-                appendInlineImagesForLine(sb, "    ", r.centerX, ly - sgFont * 0.35f, spanLine, sgFont)
+                appendFormattedLineWithImages(
+                    sb = sb,
+                    indent = "    ",
+                    centerX = r.centerX,
+                    lineCenterY = ly - sgFont * 0.35f,
+                    baselineY = ly,
+                    spanLine = spanLine,
+                    colorHex = theme.subgraphText.toSvgHex(),
+                    fontSize = sgFont,
+                    extraTextAttrs = """ font-weight="600"""",
+                    imageScale = imgScale,
+                )
             }
             sb.append("""  </g>""").append('\n')
         }
@@ -850,7 +871,7 @@ object MaradonaSvgExporter {
             }
             appendSvgNodeShape(sb, node.shape, r, fill, stroke, strokeW)
             val fontSize = theme.nodeFontSize.value
-            val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH)
+            val spanLines = wrapFormattedLabelLines(node.label, fontSize, NodeSizing.WRAPPING_WIDTH * imgScale)
             appendRichSpanLines(
                 sb = sb,
                 indent = "    ",
@@ -859,6 +880,7 @@ object MaradonaSvgExporter {
                 spanLines = spanLines,
                 colorHex = textColor,
                 fontSize = fontSize,
+                imageScale = imgScale,
             )
             sb.append("""  </g>""").append('\n')
             if (url != null) {
@@ -3141,25 +3163,77 @@ object MaradonaSvgExporter {
         return sb.toString()
     }
 
-    private fun appendInlineImagesForLine(
+    private fun appendFormattedLineWithImages(
         sb: StringBuilder,
         indent: String,
         centerX: Float,
         lineCenterY: Float,
-        spans: List<FormattedTextSpan>,
+        baselineY: Float,
+        spanLine: List<FormattedTextSpan>,
+        colorHex: String,
         fontSize: Float,
+        extraTextAttrs: String = "",
+        imageScale: Float = 1f,
     ) {
-        val images = spans.mapNotNull { it.inlineImage }
-        if (images.isEmpty()) return
-        val totalImgW = images.sumOf { it.widthPx.toDouble() }.toFloat() + (images.size - 1) * 4f
-        var curX = centerX - totalImgW / 2f
-        for (img in images) {
-            val imgY = lineCenterY - img.heightPx / 2f
+        if (spanLine.none { it.inlineImage != null }) {
+            val innerXml = renderSpansToSvgContent(spanLine)
             sb.append(
-                """$indent<image class="inline-image" href="${escapeXml(img.url)}" x="${fmt(curX)}" y="${fmt(imgY)}" width="${fmt(img.widthPx)}" height="${fmt(img.heightPx)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXml(img.alt)}</title></image>""",
+                """$indent<text x="${fmt(centerX)}" y="${fmt(baselineY)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
             ).append('\n')
-            curX += img.widthPx + 4f
+            return
         }
+        // Mixed or image-containing line: compute advances in span sequence so images and text
+        // sit side by side in their declared order without overlapping.
+        fun spanAdvance(span: FormattedTextSpan): Float {
+            val img = span.inlineImage
+            if (img != null) return img.widthPx * imageScale + 4f * imageScale
+            val mult = when {
+                span.code -> 0.65f
+                span.bold -> 0.66f
+                else -> 0.62f
+            }
+            return span.text.length * fontSize * mult
+        }
+
+        val totalWidth = spanLine.sumOf { spanAdvance(it).toDouble() }.toFloat()
+        var curX = centerX - totalWidth / 2f
+        val pendingTextSpans = ArrayList<FormattedTextSpan>()
+        var textRunStartX = curX
+
+        fun flushPendingText() {
+            if (pendingTextSpans.isEmpty()) return
+            val innerXml = renderSpansToSvgContent(pendingTextSpans)
+            if (innerXml.isNotEmpty()) {
+                sb.append(
+                    """$indent<text x="${fmt(textRunStartX)}" y="${fmt(baselineY)}" text-anchor="start" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$extraTextAttrs>$innerXml</text>""",
+                ).append('\n')
+            }
+            pendingTextSpans.clear()
+        }
+
+        for (span in spanLine) {
+            val adv = spanAdvance(span)
+            val img = span.inlineImage
+            if (img != null) {
+                flushPendingText()
+                val imgW = img.widthPx * imageScale
+                val imgH = img.heightPx * imageScale
+                val imgX = curX + 2f * imageScale
+                val imgY = lineCenterY - imgH / 2f
+                sb.append(
+                    """$indent<image class="inline-image" href="${escapeXml(img.url)}" x="${fmt(imgX)}" y="${fmt(imgY)}" width="${fmt(imgW)}" height="${fmt(imgH)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXml(img.alt)}</title></image>""",
+                ).append('\n')
+                curX += adv
+                textRunStartX = curX
+            } else {
+                if (pendingTextSpans.isEmpty()) {
+                    textRunStartX = curX
+                }
+                pendingTextSpans += span
+                curX += adv
+            }
+        }
+        flushPendingText()
     }
 
     private fun appendRichSpanLines(
@@ -3171,15 +3245,16 @@ object MaradonaSvgExporter {
         colorHex: String,
         fontSize: Float,
         rotationDeg: Float = 0f,
+        imageScale: Float = 1f,
     ) {
         if (spanLines.isEmpty()) return
         val lineHeights = spanLines.map { line ->
-            val maxImgH = line.mapNotNull { it.inlineImage?.heightPx }.maxOrNull() ?: 0f
+            val maxImgH = (line.mapNotNull { it.inlineImage?.heightPx }.maxOrNull() ?: 0f) * imageScale
             val hasText = line.any { it.inlineImage == null && it.text.isNotEmpty() }
             if (maxImgH > 0f && hasText) {
-                max(fontSize * 1.35f, maxImgH + 4f)
+                max(fontSize * 1.35f, maxImgH + 4f * imageScale)
             } else if (maxImgH > 0f) {
-                maxImgH + 4f
+                maxImgH + 4f * imageScale
             } else {
                 fontSize * 1.35f
             }
@@ -3195,13 +3270,18 @@ object MaradonaSvgExporter {
             val lh = lineHeights[idx]
             val lineCenterY = curTopY + lh / 2f
             val ly = lineCenterY + fontSize * 0.35f
-            val innerXml = renderSpansToSvgContent(spanLine)
-            if (innerXml.isNotEmpty() || spanLine.none { it.inlineImage != null }) {
-                sb.append(
-                    """$indent<text x="${fmt(centerX)}" y="${fmt(ly)}" text-anchor="middle" fill="$colorHex" font-family="sans-serif" font-size="${fmt(fontSize)}"$rotateAttr>$innerXml</text>""",
-                ).append('\n')
-            }
-            appendInlineImagesForLine(sb, indent, centerX, lineCenterY, spanLine, fontSize)
+            appendFormattedLineWithImages(
+                sb = sb,
+                indent = indent,
+                centerX = centerX,
+                lineCenterY = lineCenterY,
+                baselineY = ly,
+                spanLine = spanLine,
+                colorHex = colorHex,
+                fontSize = fontSize,
+                extraTextAttrs = rotateAttr,
+                imageScale = imageScale,
+            )
             curTopY += lh
         }
     }
@@ -3216,7 +3296,11 @@ object MaradonaSvgExporter {
         fontSize: Float,
         rotationDeg: Float = 0f,
     ) {
-        val spanLines = lines.flatMap { parseFormattedLabelLines(it) }
+        val spanLines = if (lines.isEmpty()) {
+            emptyList()
+        } else {
+            parseFormattedLabelLines(lines.joinToString("\n"))
+        }
         appendRichSpanLines(
             sb = sb,
             indent = indent,
