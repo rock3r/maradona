@@ -225,6 +225,10 @@ val verifyApiDesign = tasks.register("verifyApiDesign") {
                 "fun ProvideJewelMaradonaTheme(",
             ),
         )
+        val attachedKdocRegex = Regex(
+            """/\*\*(?:(?!\*/).)*\*/\s*(?:@[A-Za-z0-9_.]+\s*(?:\([^)]*\)\s*)?)*(?:(?:public|data|value|inline|sealed|suspend)\s+)*$""",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        )
         for ((relPath, declarations) in publicEntryPointSources) {
             val f = projectRoot.resolve(relPath)
             if (!f.isFile) {
@@ -240,9 +244,9 @@ val verifyApiDesign = tasks.register("verifyApiDesign") {
                 if (idx < 0) {
                     errors += "$relPath: missing expected public declaration '$decl'"
                 } else {
-                    val preceding = src.substring((idx - 600).coerceAtLeast(0), idx)
-                    if (!preceding.contains("*/")) {
-                        errors += "$relPath: declaration '$decl' is missing preceding KDoc comment"
+                    val preceding = src.substring(0, idx)
+                    if (!attachedKdocRegex.containsMatchIn(preceding)) {
+                        errors += "$relPath: declaration '$decl' is missing directly attached preceding KDoc comment"
                     }
                 }
             }
