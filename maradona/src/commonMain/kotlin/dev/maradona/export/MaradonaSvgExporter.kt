@@ -461,17 +461,21 @@ object MaradonaSvgExporter {
             is MaradonaDiagramModel.RequirementModel -> {
                 val d = model.diagram
                 val dens = options.density.coerceAtLeast(0.01f)
+                val stereoFont = theme.captionFontSize.value
+                val nameFont = theme.scaledSp(13.5f).value
+                val bodyFont = theme.scaledSp(11.5f).value
+                val relFont = theme.captionFontSize.value
                 val layout = RequirementLayout.layout(
                     diagram = d,
                     itemBoxSize = { item ->
-                        val hdrLines = listOf(item.stereotype) + rawSvgLines(item.name)
-                        val hdrSz = defaultTextSize(hdrLines.joinToString("\n"), theme.nodeFontSize.value)
-                        val hdrH = max(44f * dens, hdrSz.height + 16f * dens)
-                        val bodySizes = item.bodyLines.map { defaultTextSize(it, theme.edgeLabelFontSize.value) }
+                        val stereoSz = defaultTextSize(item.stereotype, stereoFont)
+                        val nameSz = defaultTextSize(item.name, nameFont)
+                        val hdrH = max(44f * dens, stereoSz.height + nameSz.height + 16f * dens)
+                        val bodySizes = item.bodyLines.map { defaultTextSize(it, bodyFont) }
                         val bodyHeights = bodySizes.map { max(18f * dens, it.height) }
                         val bodyH = if (bodyHeights.isEmpty()) 0f else bodyHeights.sum() + 14f * dens
                         val maxBodyW = bodySizes.maxOfOrNull { it.width } ?: 0f
-                        val w = maxOf(150f * dens, hdrSz.width + 24f * dens, maxBodyW + 24f * dens)
+                        val w = maxOf(150f * dens, stereoSz.width + 24f * dens, nameSz.width + 24f * dens, maxBodyW + 24f * dens)
                         RequirementBoxMetrics(
                             width = w,
                             height = hdrH + bodyH,
@@ -481,7 +485,7 @@ object MaradonaSvgExporter {
                             bodyLineHeights = bodyHeights,
                         )
                     },
-                    relationLabelSize = { _, rel -> defaultTextSize(rel.label, theme.edgeLabelFontSize.value) },
+                    relationLabelSize = { _, rel -> defaultTextSize(rel.label, relFont) },
                     titleSize = d.title?.let { defaultTextSize(it, theme.titleFontSize.value) },
                     options = options,
                 )
@@ -1517,15 +1521,35 @@ object MaradonaSvgExporter {
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" fill="$bodyFillHex" stroke="$strokeHex" stroke-width="${fmt(strokeW)}"/>""").append('\n')
             val hdrH = pi.headerHeight.coerceAtMost(r.height)
             sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(hdrH)}" fill="$headerFillHex"/>""").append('\n')
-            val hdrLines = listOf(pi.item.stereotype) + rawSvgLines(pi.item.name)
+            val stereoFont = theme.captionFontSize.value
+            val nameFont = theme.scaledSp(13.5f).value
+            val bodyFont = theme.scaledSp(11.5f).value
+            val hdrSpans = buildList<Pair<Float, List<FormattedTextSpan>>> {
+                for (line in parseFormattedLabelLines(pi.item.stereotype)) {
+                    add(stereoFont to line)
+                }
+                for (line in parseFormattedLabelLines(pi.item.name)) {
+                    add(nameFont to line)
+                }
+            }
+            fun appendRequirementHdr(centerY: Float) {
+                val totalHdrH = hdrSpans.sumOf { (lf, _) -> (lf * 1.35f).toDouble() }.toFloat()
+                var curY = centerY - totalHdrH / 2f
+                for ((lf, spanLine) in hdrSpans) {
+                    val lh = lf * 1.35f
+                    val lcY = curY + lh / 2f
+                    appendFormattedLineWithImages(sb, "    ", r.centerX, lcY, lcY + lf * 0.35f, spanLine, textHex, lf)
+                    curY += lh
+                }
+            }
             if (pi.bodyLineHeights.isNotEmpty() && pi.headerHeight < r.height) {
                 val divY = r.y + pi.headerHeight
                 sb.append("""    <line x1="${fmt(r.x)}" y1="${fmt(divY)}" x2="${fmt(r.right)}" y2="${fmt(divY)}" stroke="$strokeHex" stroke-width="1.1"/>""").append('\n')
-                appendMultilineText(sb, "    ", r.centerX, r.y + hdrH / 2f, hdrLines, textHex, theme.nodeFontSize.value)
+                appendRequirementHdr(r.y + hdrH / 2f)
                 val bodyLines = pi.item.bodyLines.flatMap { rawSvgLines(it) }
-                appendMultilineText(sb, "    ", r.centerX, divY + (r.height - hdrH) / 2f, bodyLines, textHex, theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "    ", r.centerX, divY + (r.height - hdrH) / 2f, bodyLines, textHex, bodyFont)
             } else {
-                appendMultilineText(sb, "    ", r.centerX, r.centerY, hdrLines, textHex, theme.nodeFontSize.value)
+                appendRequirementHdr(r.centerY)
             }
             sb.append("""  </g>""").append('\n')
             if (docRefUrl != null) sb.append("""  </a>""").append('\n')
@@ -1547,7 +1571,7 @@ object MaradonaSvgExporter {
             val lr = pr.labelRect
             if (lr != null && pr.relation.label.isNotBlank()) {
                 sb.append("""  <rect x="${fmt(lr.x)}" y="${fmt(lr.y)}" width="${fmt(lr.width)}" height="${fmt(lr.height)}" rx="4" fill="${theme.edgeLabelBackground.toSvgHex()}"/>""").append('\n')
-                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(pr.relation.label), theme.edgeLabelText.toSvgHex(), theme.edgeLabelFontSize.value)
+                appendMultilineText(sb, "  ", lr.centerX, lr.centerY, rawSvgLines(pr.relation.label), theme.edgeLabelText.toSvgHex(), theme.captionFontSize.value)
             }
         }
 
@@ -3200,8 +3224,8 @@ object MaradonaSvgExporter {
             for (span in line) {
                 val img = span.inlineImage
                 if (img != null) {
-                    lineW += img.widthPx + 4f
-                    lineH = max(lineH, img.heightPx + 4f)
+                    lineW += img.widthPx
+                    lineH = max(lineH, img.heightPx)
                 } else {
                     val mult = when {
                         span.code -> 0.65f
@@ -3238,8 +3262,8 @@ object MaradonaSvgExporter {
             for (span in line) {
                 val img = span.inlineImage
                 if (img != null) {
-                    lineW += img.widthPx + 4f
-                    lineH = max(lineH, img.heightPx + 4f)
+                    lineW += img.widthPx
+                    lineH = max(lineH, img.heightPx)
                 } else {
                     val mult = when {
                         span.code -> 0.65f
@@ -3419,7 +3443,7 @@ object MaradonaSvgExporter {
         // sit side by side in their declared order without overlapping.
         fun spanAdvance(span: FormattedTextSpan): Float {
             val img = span.inlineImage
-            if (img != null) return img.widthPx * imageScale + 4f * imageScale
+            if (img != null) return img.widthPx * imageScale
             val mult = when {
                 span.code -> 0.65f
                 span.bold -> 0.66f
@@ -3451,7 +3475,7 @@ object MaradonaSvgExporter {
                 flushPendingText()
                 val imgW = img.widthPx * imageScale
                 val imgH = img.heightPx * imageScale
-                val imgX = curX + 2f * imageScale
+                val imgX = curX
                 val imgY = lineCenterY - imgH / 2f
                 sb.append(
                     """$indent<image class="inline-image" href="${escapeXml(img.url)}" x="${fmt(imgX)}" y="${fmt(imgY)}" width="${fmt(imgW)}" height="${fmt(imgH)}" preserveAspectRatio="xMidYMid meet"><title>${escapeXml(img.alt)}</title></image>""",
@@ -3483,11 +3507,8 @@ object MaradonaSvgExporter {
         if (spanLines.isEmpty()) return
         val lineHeights = spanLines.map { line ->
             val maxImgH = (line.mapNotNull { it.inlineImage?.heightPx }.maxOrNull() ?: 0f) * imageScale
-            val hasText = line.any { it.inlineImage == null && it.text.isNotEmpty() }
-            if (maxImgH > 0f && hasText) {
-                max(fontSize * 1.35f, maxImgH + 4f * imageScale)
-            } else if (maxImgH > 0f) {
-                maxImgH + 4f * imageScale
+            if (maxImgH > 0f) {
+                max(fontSize * 1.35f, maxImgH)
             } else {
                 fontSize * 1.35f
             }

@@ -856,7 +856,7 @@ fun wrapFormattedLabelLines(
             val styledText = buildAnnotatedString {
                 for (sp in spans) {
                     if (sp.inlineImage != null) {
-                        widthPx += sp.inlineImage.widthPx * imgScale + 4f * density.density
+                        widthPx += sp.inlineImage.widthPx * imgScale
                     } else if (sp.text.isNotEmpty()) {
                         val spanStyle = if (sp.bold || sp.italic || sp.code || sp.subscript || sp.superscript) {
                             SpanStyle(
@@ -897,7 +897,7 @@ fun wrapFormattedLabelLines(
         var est = 0f
         for (sp in spans) {
             if (sp.inlineImage != null) {
-                est += sp.inlineImage.widthPx + 4f
+                est += sp.inlineImage.widthPx
             } else {
                 est += sp.text.length * fontSp * 0.62f
             }
