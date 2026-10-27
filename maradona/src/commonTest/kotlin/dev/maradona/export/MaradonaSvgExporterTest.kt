@@ -399,7 +399,7 @@ class MaradonaSvgExporterTest {
             """.trimIndent(),
         )
         assertTrue(erSvg.contains("class=\"er-entity\" data-id=\"CUSTOMER\""), "Expected CUSTOMER entity")
-        assertTrue(erSvg.contains("string id PK &quot;UUID&quot;"), "Expected CUSTOMER attribute row")
+        assertTrue(erSvg.contains("string id") && erSvg.contains(">PK</tspan>") && erSvg.contains("&quot;UUID&quot;"), "Expected CUSTOMER attribute row")
         assertTrue(erSvg.contains("data-marker=\"er-exactly-one\""), "Expected || cardinality marker")
         assertTrue(erSvg.contains("data-marker=\"er-zero-or-more\""), "Expected o{ cardinality marker")
 
