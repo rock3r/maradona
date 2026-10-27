@@ -1014,11 +1014,11 @@ object MaradonaSvgExporter {
                 sb.append("""    <line x1="${fmt(cx - span)}" y1="${fmt(armY)}" x2="${fmt(cx + span)}" y2="${fmt(armY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx - span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
                 sb.append("""    <line x1="${fmt(cx)}" y1="${fmt(hipY)}" x2="${fmt(cx + span * 0.85f)}" y2="${fmt(footY)}" stroke="$strokeHex" stroke-width="1.5"/>""").append('\n')
-                val actorLines = rawSvgLines(p.label)
+                val actorSpanLines = parseFormattedLabelLines(p.label)
                 val actorFont = theme.nodeFontSize.value
                 val actorLineH = actorFont * 1.35f
-                val actorCenterY = r.bottom - 4f * dens - actorFont * 0.35f - ((actorLines.size - 1) * actorLineH) / 2f
-                appendMultilineText(sb, "    ", r.centerX, actorCenterY, actorLines, textHex, actorFont)
+                val actorCenterY = r.bottom - 4f * dens - actorFont * 0.35f - ((actorSpanLines.size - 1) * actorLineH) / 2f
+                appendRichSpanLines(sb, "    ", r.centerX, actorCenterY, actorSpanLines, textHex, actorFont)
             } else {
                 sb.append("""    <rect x="${fmt(r.x)}" y="${fmt(r.y)}" width="${fmt(r.width)}" height="${fmt(r.height)}" rx="6" fill="$fillHex" stroke="$strokeHex" stroke-width="1"/>""").append('\n')
                 appendMultilineText(sb, "    ", r.centerX, r.centerY, rawSvgLines(p.label), textHex, theme.nodeFontSize.value)
@@ -3020,7 +3020,7 @@ object MaradonaSvgExporter {
             maxLineW = max(maxLineW, lineW)
             totalH += lineH
         }
-        val textW = min(NodeSizing.WRAPPING_WIDTH, maxLineW.coerceAtLeast(fontSize * 0.62f))
+        val textW = maxLineW.coerceAtLeast(fontSize * 0.62f)
         val textH = totalH.coerceAtLeast(fontSize * 1.5f)
         val labelBox = NodeSizing.labelBox(node.shape, textW, textH)
         return NodeSizing.nodeBox(node.shape, labelBox.width, labelBox.height)
@@ -3057,7 +3057,7 @@ object MaradonaSvgExporter {
     }
 
     private fun rawSvgLines(label: String): List<String> =
-        label.replace(Regex("""(?i)<br\s*/?>"""), "\n").split('\n')
+        label.split('\n')
 
     private fun appendSvgNodeShape(
         sb: StringBuilder,

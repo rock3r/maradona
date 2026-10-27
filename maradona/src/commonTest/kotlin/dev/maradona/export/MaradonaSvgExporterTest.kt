@@ -787,5 +787,26 @@ class MaradonaSvgExporterTest {
         assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-check</tspan>"""), "Expected code span in C4 boundary header")
         assertTrue(c4Svg.contains("""<tspan font-family="monospace">fa:fa-server</tspan>"""), "Expected code span in C4 card label")
         assertTrue(!c4Svg.contains("✓"), "Expected C4 boundary code span not to be re-parsed as icon glyph")
+
+        val seqCodeBrSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            sequenceDiagram
+                A->>B: <code>a<br/>b</code>
+            """.trimIndent(),
+        )
+        assertTrue(
+            seqCodeBrSvg.contains("""<tspan font-family="monospace">a&lt;br/&gt;b</tspan>"""),
+            "Expected literal <br/> inside sequence code span to stay on one line",
+        )
+
+        val wideImgFlowSvg = MaradonaSvgExporter.exportToSvg(
+            """
+            flowchart LR
+                A@{ shape: rect, img: "https://example.com/wide.png", w: 160, h: 24 }
+            """.trimIndent(),
+        )
+        val rectWidth = Regex("""<g class="node" data-id="A">\s*<rect x="[^"]+" y="[^"]+" width="([0-9.]+)"""")
+            .find(wideImgFlowSvg)?.groupValues?.get(1)?.toFloat() ?: 0f
+        assertTrue(rectWidth >= 160f, "Expected headless node rect width ($rectWidth) to fit 160px image")
     }
 }
