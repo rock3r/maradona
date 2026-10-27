@@ -3,10 +3,13 @@ package dev.maradona.render
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramPoint
 import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
@@ -95,11 +98,31 @@ internal fun measureAnnotatedTextSize(
     maxWidthPx: Int = Constraints.Infinity,
     maxLines: Int = Int.MAX_VALUE,
 ): DiagramSize {
+    val imgAnnotations = text.getStringAnnotations("maradona_inline_img", 0, text.length)
+    val placeholders = if (imgAnnotations.isEmpty()) {
+        emptyList()
+    } else {
+        imgAnnotations.mapNotNull { range ->
+            val parts = range.item.split(',')
+            val w = parts.getOrNull(0)?.toFloatOrNull() ?: return@mapNotNull null
+            val h = parts.getOrNull(1)?.toFloatOrNull() ?: return@mapNotNull null
+            AnnotatedString.Range(
+                item = Placeholder(
+                    width = w.sp,
+                    height = h.sp,
+                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+                ),
+                start = range.start,
+                end = range.end,
+            )
+        }
+    }
     val res = textMeasurer.measure(
         text = text,
         style = style,
         maxLines = maxLines,
         constraints = Constraints(maxWidth = maxWidthPx),
+        placeholders = placeholders,
         density = densityObj,
     )
     return DiagramSize(res.size.width.toFloat(), res.size.height.toFloat())

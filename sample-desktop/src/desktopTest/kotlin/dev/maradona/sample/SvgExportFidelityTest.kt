@@ -130,4 +130,47 @@ class SvgExportFidelityTest {
             scene.close()
         }
     }
+
+    @Test
+    fun measuredSequenceInlineImageAndTimelineLongEventWrapCorrectly() {
+        var seqSvg: String? = null
+        var timelineSvg: String? = null
+        val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            val tm = rememberTextMeasurer()
+            val dens = LocalDensity.current
+            if (seqSvg == null) {
+                seqSvg = MaradonaSvgExporter.exportToSvg(
+                    source = """
+                        sequenceDiagram
+                            participant A as <img src='https://example.com/logo.png' width='160' height='160'/>
+                            participant B
+                            A->>B: ping
+                    """.trimIndent(),
+                    textMeasurer = tm,
+                    density = dens,
+                )
+                timelineSvg = MaradonaSvgExporter.exportToSvg(
+                    source = """
+                        timeline
+                            2026 : Very long timeline event description that wraps across multiple lines at the 220dp constraint
+                    """.trimIndent(),
+                    textMeasurer = tm,
+                    density = dens,
+                )
+            }
+        }
+        try {
+            scene.render(16_000_000L)
+            val seq = assertNotNull(seqSvg)
+            val participantRectW = Regex("""<g class="participant" data-id="A">\s*<rect x="[^"]+" y="[^"]+" width="([0-9.]+)"""")
+                .find(seq)?.groupValues?.get(1)?.toFloat() ?: 0f
+            assertTrue(participantRectW >= 160f, "Expected measured sequence participant rect width ($participantRectW) to fit 160px image")
+
+            val tl = assertNotNull(timelineSvg)
+            val textCount = Regex("""<text\b""").findAll(tl).count()
+            assertTrue(textCount >= 3, "Expected timeline period + wrapped event to emit >= 3 <text> lines, got $textCount")
+        } finally {
+            scene.close()
+        }
+    }
 }

@@ -440,7 +440,9 @@ fun annotatedLabel(
                     if (spec.inlineId in inlineImageIds) {
                         appendInlineContent(spec.inlineId, "[${spec.alt}]")
                     } else {
+                        pushStringAnnotation("maradona_inline_img", "${spec.widthPx},${spec.heightPx}")
                         append("[🖼 ${spec.alt}]")
+                        pop()
                     }
                 }
                 i = endMarker + 1
