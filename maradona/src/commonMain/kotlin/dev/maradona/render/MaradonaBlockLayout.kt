@@ -23,14 +23,21 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.BlockDiagramLayout
 import dev.maradona.layout.BlockLayout
@@ -38,6 +45,7 @@ import dev.maradona.layout.DiagramPoint
 import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.PositionedBlockEdge
 import dev.maradona.layout.PositionedBlockItem
 import dev.maradona.model.BlockArrowDir
@@ -47,6 +55,7 @@ import dev.maradona.model.BlockEdgePattern
 import dev.maradona.model.BlockItem
 import dev.maradona.model.BlockShape
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -56,6 +65,14 @@ import kotlin.math.sin
 
 private class BlockLayoutHolder {
     var layout: BlockDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var nodeLblSizes: Map<String, DiagramSize> = emptyMap()
+    var edgeLblSizesByText: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -71,11 +88,27 @@ fun MaradonaBlockLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (BlockDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { BlockLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { BlockLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
     val allNonSpaceBlocks = remember(diagram) { collectNonSpaceBlocks(diagram.children) }
     val edgeSummaries = remember(diagram, allNonSpaceBlocks) {
         val labelById = allNonSpaceBlocks.associate { it.id to it.label.ifEmpty { it.id } }
@@ -92,6 +125,56 @@ fun MaradonaBlockLayout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredBlockLayout(
+                diagram = diagram,
+                allNonSpaceBlocks = allNonSpaceBlocks,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.nodeLblSizes = pre.nodeLblSizes
+                holder.edgeLblSizesByText = pre.edgeLblSizesByText
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedBlockById = remember(precomputedLayout) {
+        precomputedLayout.blocks.associateBy { it.item.id }
+    }
+    val positionedEdgeByRawIndex = remember(precomputedLayout, diagram) {
+        val map = HashMap<Int, PositionedBlockEdge>()
+        var visibleIdx = 0
+        for ((rawIdx, edge) in diagram.edges.withIndex()) {
+            if (edge.pattern == BlockEdgePattern.Invisible) continue
+            val pe = precomputedLayout.edges.getOrNull(visibleIdx++) ?: continue
+            map[rawIdx] = pe
+        }
+        map
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -105,26 +188,49 @@ fun MaradonaBlockLayout(
                 } else {
                     "Block diagram. ${allNonSpaceBlocks.size} blocks, ${diagram.edges.size} edges."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (item in allNonSpaceBlocks) {
+                            val pb = positionedBlockById[item.id] ?: continue
+                            if (rectIntersectsViewport(pb.rect, vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = item.id, label = item.label.ifEmpty { item.id }))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawBlockUnderlay(it, theme) }
+                holder.layout?.let { drawBlockUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for ((bIdx, item) in allNonSpaceBlocks.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pb = positionedBlockById[item.id]
+                    if (pb != null && !rectIntersectsViewport(pb.rect, activeCullViewport, cullMargin)) continue
+                }
                 val customTextColor = parseCssColor(item.style?.textColor) ?: theme.nodeText
                 val fontWeight = when (item.style?.fontWeightBold) {
                     true -> FontWeight.Bold
@@ -163,6 +269,10 @@ fun MaradonaBlockLayout(
 
             for ((edgeIdx, edge) in diagram.edges.withIndex()) {
                 if (edge.pattern != BlockEdgePattern.Invisible && !edge.label.isNullOrEmpty()) {
+                    if (activeCullViewport != null) {
+                        val lr = positionedEdgeByRawIndex[edgeIdx]?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, cullMargin)) continue
+                    }
                     BasicText(
                         text = annotatedLabel(edge.label),
                         modifier = Modifier.layoutId("edgelbl:$edgeIdx"),
@@ -182,11 +292,16 @@ fun MaradonaBlockLayout(
 
         var titlePlaceable: Placeable? = null
         val nodeLblPlaceables = HashMap<String, Placeable>()
-        val nodeLblSizes = HashMap<String, DiagramSize>()
+        val nodeLblSizes = HashMap<String, DiagramSize>(holder.nodeLblSizes)
         val nodeBoxMeasurables = HashMap<String, Measurable>()
 
         val edgeLblPlaceables = HashMap<Int, Placeable>()
-        val edgeLblSizesByText = HashMap<String, DiagramSize>()
+        val edgeLblSizesByText = HashMap<String, DiagramSize>(holder.edgeLblSizesByText)
+
+        if (activeCullViewport == null) {
+            nodeLblSizes.clear()
+            edgeLblSizesByText.clear()
+        }
 
         for (m in measurables) {
             val id = m.layoutId as? String ?: continue
@@ -218,6 +333,15 @@ fun MaradonaBlockLayout(
             }
         }
 
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.nodeLblSizes = nodeLblSizes
+            holder.edgeLblSizesByText = edgeLblSizesByText
+        }
+
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -234,7 +358,7 @@ fun MaradonaBlockLayout(
             edgeLabelSize = { lbl ->
                 edgeLblSizesByText[lbl] ?: BlockLayout.defaultLabelSize(lbl, renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
@@ -250,6 +374,31 @@ fun MaradonaBlockLayout(
                 ),
             )
         }
+
+        val edgeMargin = 20f * renderDensity
+        val composites = layout.blocks.filter { it.isCompositeContainer }
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.edges.size
+        } else {
+            layout.edges.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeMargin) }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            composites.size
+        } else {
+            composites.count { rectIntersectsViewport(it.rect, activeCullViewport) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = nodeBoxPlaceables.size,
+                totalNodes = layout.blocks.size,
+                composedEdgeLabels = edgeLblPlaceables.size,
+                totalEdgeLabels = layout.edges.count { it.labelRect != null },
+                drawnEdges = drawnEdges,
+                totalEdges = layout.edges.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = composites.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -292,6 +441,111 @@ fun MaradonaBlockLayout(
     }
 }
 
+private data class PremeasuredBlockResult(
+    val layout: BlockDiagramLayout,
+    val titleSize: DiagramSize?,
+    val nodeLblSizes: Map<String, DiagramSize>,
+    val edgeLblSizesByText: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredBlockLayout(
+    diagram: BlockDiagram,
+    allNonSpaceBlocks: List<BlockItem>,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredBlockResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val nodeLblSizes = HashMap<String, DiagramSize>(allNonSpaceBlocks.size)
+    for (item in allNonSpaceBlocks) {
+        if (item.label.isNotEmpty()) {
+            val customTextColor = parseCssColor(item.style?.textColor) ?: theme.nodeText
+            val fontWeight = when (item.style?.fontWeightBold) {
+                true -> FontWeight.Bold
+                false -> FontWeight.Normal
+                null -> if (item.shape == BlockShape.Composite) FontWeight.SemiBold else FontWeight.Medium
+            }
+            nodeLblSizes[item.id] = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(item.label),
+                style = TextStyle(
+                    color = customTextColor,
+                    fontFamily = theme.fontFamily,
+                    fontSize = theme.scaledSp(13f),
+                    fontWeight = fontWeight,
+                    textAlign = TextAlign.Center,
+                ),
+            )
+        }
+    }
+
+    val edgeStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val edgeLblSizesByText = HashMap<String, DiagramSize>()
+    for (edge in diagram.edges) {
+        val lbl = edge.label
+        if (edge.pattern != BlockEdgePattern.Invisible && !lbl.isNullOrEmpty()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(lbl),
+                style = edgeStyle,
+            )
+            val prev = edgeLblSizesByText[lbl]
+            edgeLblSizesByText[lbl] = DiagramSize(
+                maxOf(prev?.width ?: 0f, sz.width),
+                maxOf(prev?.height ?: 0f, sz.height),
+            )
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = BlockLayout.layout(
+        diagram = diagram,
+        nodeLabelSize = { blockId, lbl ->
+            nodeLblSizes[blockId] ?: BlockLayout.defaultLabelSize(lbl, renderDensity)
+        },
+        edgeLabelSize = { lbl ->
+            edgeLblSizesByText[lbl] ?: BlockLayout.defaultLabelSize(lbl, renderDensity)
+        },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredBlockResult(
+        layout = layout,
+        titleSize = titleSize,
+        nodeLblSizes = nodeLblSizes,
+        edgeLblSizesByText = edgeLblSizesByText,
+    )
+}
+
 private fun collectNonSpaceBlocks(items: List<BlockItem>): List<BlockItem> {
     val out = LinkedHashMap<String, BlockItem>()
     fun visit(list: List<BlockItem>) {
@@ -311,22 +565,26 @@ private fun collectNonSpaceBlocks(items: List<BlockItem>): List<BlockItem> {
 private fun DrawScope.drawBlockUnderlay(
     layout: BlockDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     // 1. Draw composite containers first, then leaf blocks so nested children sit on top of their container.
     for (pb in layout.blocks) {
-        if (pb.isCompositeContainer) {
+        if (pb.isCompositeContainer && rectIntersectsViewport(pb.rect, viewport, 8f * density)) {
             drawSingleBlock(pb, theme)
         }
     }
     for (pb in layout.blocks) {
-        if (!pb.isCompositeContainer) {
+        if (!pb.isCompositeContainer && rectIntersectsViewport(pb.rect, viewport, 8f * density)) {
             drawSingleBlock(pb, theme)
         }
     }
 
     // 2. Draw connecting edges and arrowheads.
+    val edgeMargin = 20f * density
     for (pe in layout.edges) {
-        drawBlockEdge(pe, theme)
+        if (polylineIntersectsViewport(pe.points, viewport, edgeMargin)) {
+            drawBlockEdge(pe, theme)
+        }
     }
 }
 

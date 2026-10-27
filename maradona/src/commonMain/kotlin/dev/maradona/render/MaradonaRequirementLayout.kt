@@ -4,7 +4,11 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -21,19 +25,28 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.RequirementBoxMetrics
 import dev.maradona.layout.RequirementDiagramLayout
 import dev.maradona.layout.RequirementLayout
@@ -41,6 +54,8 @@ import dev.maradona.model.Direction
 import dev.maradona.model.ElementItem
 import dev.maradona.model.MaradonaNodeClickEvent
 import dev.maradona.model.RequirementDiagram
+import dev.maradona.model.RequirementDiagramItem
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -49,6 +64,18 @@ import kotlin.math.sin
 
 private class RequirementLayoutHolder {
     var layout: RequirementDiagramLayout? = null
+    var naturalLayout: RequirementDiagramLayout? = null
+    var adaptedTbLayout: RequirementDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var stereoSizes: Map<Int, DiagramSize> = emptyMap()
+    var nameSizes: Map<Int, DiagramSize> = emptyMap()
+    var bodySizes: Map<String, DiagramSize> = emptyMap()
+    var relSizes: Map<Int, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -68,12 +95,132 @@ fun MaradonaRequirementLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 56f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (RequirementDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { RequirementLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { RequirementLayoutHolder() }
     val uriHandler = LocalUriHandler.current
     val allItems = remember(diagram) { diagram.items }
+    val idxByName = remember(allItems) {
+        HashMap<String, Int>(allItems.size).apply {
+            for ((i, it) in allItems.withIndex()) put(it.name, i)
+        }
+    }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    var observedBoundedWidthPx by remember(diagram, theme, layoutOptions) { mutableIntStateOf(Int.MAX_VALUE) }
+    var boundedWidthObserved by remember(diagram, theme, layoutOptions) { mutableStateOf(false) }
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, observedBoundedWidthPx)
+
+    val naturalLayout = run {
+        val cachedNatural = holder.naturalLayout
+        if (
+            cachedNatural != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cachedNatural
+        } else {
+            computePremeasuredRequirementLayout(
+                diagram = diagram,
+                allItems = allItems,
+                idxByName = idxByName,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.naturalLayout = pre.naturalLayout
+                holder.adaptedTbLayout = null
+                holder.titleSize = pre.titleSize
+                holder.stereoSizes = pre.stereoSizes
+                holder.nameSizes = pre.nameSizes
+                holder.bodySizes = pre.bodySizes
+                holder.relSizes = pre.relSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.naturalLayout
+        }
+    }
+
+    fun resolveAdaptedTbLayout(): RequirementDiagramLayout {
+        holder.adaptedTbLayout?.let { return it }
+        val baseOptions = layoutOptions.copy(density = renderDensity, directionOverride = Direction.TB)
+        return RequirementLayout.layout(
+            diagram = diagram,
+            itemBoxSize = { item ->
+                computeRequirementBoxMetrics(
+                    item = item,
+                    idxByName = idxByName,
+                    stereoSizes = holder.stereoSizes,
+                    nameSizes = holder.nameSizes,
+                    bodySizes = holder.bodySizes,
+                    renderDensity = renderDensity,
+                )
+            },
+            relationLabelSize = { relIdx, rel ->
+                val sz = holder.relSizes[relIdx]
+                if (sz != null) {
+                    DiagramSize(sz.width + 10f * renderDensity, sz.height + 4f * renderDensity)
+                } else {
+                    RequirementLayout.defaultRelationLabelSize(rel.label, renderDensity)
+                }
+            },
+            titleSize = holder.titleSize,
+            options = baseOptions,
+        ).also { holder.adaptedTbLayout = it }
+    }
+
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    val effDir = layoutOptions.directionOverride ?: diagram.direction
+    val maxAllowedInComposition = if (availableWidthPx in 1 until Int.MAX_VALUE) {
+        effectiveAvailableWidthPx
+    } else if (effectiveAvailableWidthPx in 1 until breakpointPx) {
+        effectiveAvailableWidthPx
+    } else {
+        Int.MAX_VALUE
+    }
+    val wantVerticalInComposition = autoDirection &&
+        layoutOptions.directionOverride == null &&
+        (effDir == Direction.LR || effDir == Direction.RL) &&
+        maxAllowedInComposition in 1 until Int.MAX_VALUE &&
+        naturalLayout.width > maxAllowedInComposition * 1.15f
+    val precomputedLayout = if (wantVerticalInComposition) {
+        resolveAdaptedTbLayout()
+    } else {
+        naturalLayout
+    }
+    holder.layout = precomputedLayout
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val needsParentWidthProbe = autoDirection &&
+        layoutOptions.directionOverride == null &&
+        (effDir == Direction.LR || effDir == Direction.RL) &&
+        availableWidthPx == Int.MAX_VALUE &&
+        !boundedWidthObserved
+    val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedItemByName = remember(precomputedLayout) {
+        precomputedLayout.items.associateBy { it.item.name }
+    }
 
     Layout(
         modifier = modifier
@@ -88,25 +235,57 @@ fun MaradonaRequirementLayout(
                 } else {
                     "Requirement diagram. ${diagram.requirements.size} requirements, ${diagram.elements.size} elements, ${diagram.relations.size} relationships."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (pi in precomputedLayout.items) {
+                            if (rectIntersectsViewport(pi.rect, vp, 8f * renderDensity)) continue
+                            val item = pi.item
+                            val docRefUrl = (item as? ElementItem)?.docRef?.takeIf { it.isNotBlank() }
+                            if (docRefUrl != null || onNodeClick != null) {
+                                add(
+                                    MaradonaNodeClickEvent(
+                                        nodeId = item.name,
+                                        label = item.name,
+                                        url = docRefUrl,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawRequirementUnderlay(it, theme) }
+                holder.layout?.let { drawRequirementUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, 8f * renderDensity)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
             for ((itemIdx, item) in allItems.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pi = positionedItemByName[item.name]
+                    if (pi != null && !rectIntersectsViewport(pi.rect, activeCullViewport, 8f * renderDensity)) {
+                        continue
+                    }
+                }
                 val textColor = parseCssColor(item.style?.textColor) ?: theme.nodeText
                 val isBold = item.style?.fontWeightBold == true
                 BasicText(
@@ -172,6 +351,12 @@ fun MaradonaRequirementLayout(
                 )
             }
             for ((relIdx, rel) in diagram.relations.withIndex()) {
+                if (activeCullViewport != null) {
+                    val lr = precomputedLayout.relations.getOrNull(relIdx)?.labelRect
+                    if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, 8f * renderDensity)) {
+                        continue
+                    }
+                }
                 BasicText(
                     text = annotatedLabel(rel.label),
                     modifier = Modifier.layoutId("rel:$relIdx"),
@@ -224,92 +409,96 @@ fun MaradonaRequirementLayout(
             }
         }
 
-        val idxByName = HashMap<String, Int>(allItems.size)
-        for ((i, it) in allItems.withIndex()) idxByName[it.name] = i
+        val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        if (!boundedWidthObserved || observedBoundedWidthPx != boundedWidth) {
+            observedBoundedWidthPx = boundedWidth
+            boundedWidthObserved = true
+        }
+        val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
+        val breakpoint = 640.dp.roundToPx()
+        val maxAllowedAtMeasure = if (availableWidthPx in 1 until Int.MAX_VALUE) {
+            effectiveMaxWidth
+        } else if (effectiveMaxWidth in 1 until breakpoint) {
+            effectiveMaxWidth
+        } else {
+            Int.MAX_VALUE
+        }
 
         val padX = 14f * renderDensity
         val padY = 10f * renderDensity
         val lineGap = 4f * renderDensity
 
-        fun computeMetrics(item: dev.maradona.model.RequirementDiagramItem): RequirementBoxMetrics {
-            val itemIdx = idxByName[item.name] ?: return RequirementLayout.defaultBoxMetrics(item, renderDensity)
-            val sPl = stereoPlaceables[itemIdx]
-            val nPl = namePlaceables[itemIdx]
-            val stereoW = sPl?.width?.toFloat() ?: (item.stereotype.length * 6.8f * renderDensity)
-            val stereoH = sPl?.height?.toFloat() ?: (15f * renderDensity)
-            val titleW = nPl?.width?.toFloat() ?: (item.name.length * 8f * renderDensity)
-            val titleH = nPl?.height?.toFloat() ?: (18f * renderDensity)
-            val headerH = padY + stereoH + lineGap + titleH + padY
+        val mergedStereoSizes = HashMap<Int, DiagramSize>(holder.stereoSizes)
+        for ((k, pl) in stereoPlaceables) mergedStereoSizes[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        val mergedNameSizes = HashMap<Int, DiagramSize>(holder.nameSizes)
+        for ((k, pl) in namePlaceables) mergedNameSizes[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        val mergedBodySizes = HashMap<String, DiagramSize>(holder.bodySizes)
+        for ((k, pl) in bodyPlaceables) mergedBodySizes[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        val mergedRelSizes = HashMap<Int, DiagramSize>(holder.relSizes)
+        for ((k, pl) in relPlaceables) mergedRelSizes[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
 
-            val lines = item.bodyLines
-            if (lines.isEmpty()) {
-                val w = maxOf(130f * renderDensity, stereoW + padX * 2f, titleW + padX * 2f)
-                return RequirementBoxMetrics(
-                    width = w,
-                    height = headerH,
-                    headerHeight = headerH,
-                    stereotypeHeight = stereoH,
-                    titleHeight = titleH,
-                    bodyLineHeights = emptyList(),
-                )
-            }
-            var maxBodyW = 0f
-            val bodyHeights = lines.indices.map { lIdx ->
-                val bPl = bodyPlaceables["$itemIdx:$lIdx"]
-                val bw = bPl?.width?.toFloat() ?: (lines[lIdx].length * 6.8f * renderDensity)
-                val bh = bPl?.height?.toFloat() ?: (16f * renderDensity)
-                if (bw > maxBodyW) maxBodyW = bw
-                bh
-            }
-            val bodyTotalH = padY + bodyHeights.sum() + (bodyHeights.size - 1) * lineGap + padY
-            val w = maxOf(150f * renderDensity, stereoW + padX * 2f, titleW + padX * 2f, maxBodyW + padX * 2f)
-            return RequirementBoxMetrics(
-                width = w,
-                height = headerH + bodyTotalH,
-                headerHeight = headerH,
-                stereotypeHeight = stereoH,
-                titleHeight = titleH,
-                bodyLineHeights = bodyHeights,
-            )
+        val resolvedTitleSize = if (!diagram.title.isNullOrBlank()) {
+            titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) } ?: holder.titleSize
+        } else {
+            null
         }
+
+        fun computeMetrics(item: RequirementDiagramItem): RequirementBoxMetrics =
+            computeRequirementBoxMetrics(
+                item = item,
+                idxByName = idxByName,
+                stereoSizes = mergedStereoSizes,
+                nameSizes = mergedNameSizes,
+                bodySizes = mergedBodySizes,
+                renderDensity = renderDensity,
+            )
 
         val baseOptions = layoutOptions.copy(density = renderDensity)
         var layout = RequirementLayout.layout(
             diagram = diagram,
             itemBoxSize = ::computeMetrics,
             relationLabelSize = { relIdx, rel ->
-                val pl = relPlaceables[relIdx]
-                if (pl != null) {
-                    DiagramSize(pl.width.toFloat() + 10f * renderDensity, pl.height.toFloat() + 4f * renderDensity)
+                val sz = mergedRelSizes[relIdx]
+                if (sz != null) {
+                    DiagramSize(sz.width + 10f * renderDensity, sz.height + 4f * renderDensity)
                 } else {
                     RequirementLayout.defaultRelationLabelSize(rel.label, renderDensity)
                 }
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = baseOptions,
         )
-        val effDir = baseOptions.directionOverride ?: diagram.direction
-        if (
-            autoDirection &&
+        if (activeCullViewport == null) {
+            holder.naturalLayout = layout
+            holder.titleSize = resolvedTitleSize
+            holder.stereoSizes = mergedStereoSizes
+            holder.nameSizes = mergedNameSizes
+            holder.bodySizes = mergedBodySizes
+            holder.relSizes = mergedRelSizes
+        }
+
+        val wantVerticalAtMeasure = autoDirection &&
             baseOptions.directionOverride == null &&
             (effDir == Direction.LR || effDir == Direction.RL) &&
-            availableWidthPx in 1 until Int.MAX_VALUE &&
-            layout.width > availableWidthPx * 1.15f
-        ) {
+            maxAllowedAtMeasure in 1 until Int.MAX_VALUE &&
+            layout.width > maxAllowedAtMeasure * 1.15f
+        if (activeCullViewport != null && wantVerticalAtMeasure != wantVerticalInComposition) {
+            layout = precomputedLayout
+        } else if (wantVerticalAtMeasure) {
             layout = RequirementLayout.layout(
                 diagram = diagram,
                 itemBoxSize = ::computeMetrics,
                 relationLabelSize = { relIdx, rel ->
-                    val pl = relPlaceables[relIdx]
-                    if (pl != null) {
-                        DiagramSize(pl.width.toFloat() + 10f * renderDensity, pl.height.toFloat() + 4f * renderDensity)
+                    val sz = mergedRelSizes[relIdx]
+                    if (sz != null) {
+                        DiagramSize(sz.width + 10f * renderDensity, sz.height + 4f * renderDensity)
                     } else {
                         RequirementLayout.defaultRelationLabelSize(rel.label, renderDensity)
                     }
                 },
-                titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+                titleSize = resolvedTitleSize,
                 options = baseOptions.copy(directionOverride = Direction.TB),
-            )
+            ).also { holder.adaptedTbLayout = it }
         }
 
         holder.layout = layout
@@ -326,6 +515,25 @@ fun MaradonaRequirementLayout(
                 ),
             )
         }
+
+        val edgeCullMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.relations.size
+        } else {
+            layout.relations.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeCullMargin) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = allItems.size,
+                composedEdgeLabels = relPlaceables.size,
+                totalEdgeLabels = layout.relations.size,
+                drawnEdges = drawnEdges,
+                totalEdges = layout.relations.size,
+                drawnSubgraphs = 0,
+                totalSubgraphs = 0,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -378,9 +586,194 @@ fun MaradonaRequirementLayout(
     }
 }
 
+private fun computeRequirementBoxMetrics(
+    item: RequirementDiagramItem,
+    idxByName: Map<String, Int>,
+    stereoSizes: Map<Int, DiagramSize>,
+    nameSizes: Map<Int, DiagramSize>,
+    bodySizes: Map<String, DiagramSize>,
+    renderDensity: Float,
+): RequirementBoxMetrics {
+    val itemIdx = idxByName[item.name] ?: return RequirementLayout.defaultBoxMetrics(item, renderDensity)
+    val padX = 14f * renderDensity
+    val padY = 10f * renderDensity
+    val lineGap = 4f * renderDensity
+    val sSz = stereoSizes[itemIdx]
+    val nSz = nameSizes[itemIdx]
+    val stereoW = sSz?.width ?: (item.stereotype.length * 6.8f * renderDensity)
+    val stereoH = sSz?.height ?: (15f * renderDensity)
+    val titleW = nSz?.width ?: (item.name.length * 8f * renderDensity)
+    val titleH = nSz?.height ?: (18f * renderDensity)
+    val headerH = padY + stereoH + lineGap + titleH + padY
+
+    val lines = item.bodyLines
+    if (lines.isEmpty()) {
+        val w = maxOf(130f * renderDensity, stereoW + padX * 2f, titleW + padX * 2f)
+        return RequirementBoxMetrics(
+            width = w,
+            height = headerH,
+            headerHeight = headerH,
+            stereotypeHeight = stereoH,
+            titleHeight = titleH,
+            bodyLineHeights = emptyList(),
+        )
+    }
+    var maxBodyW = 0f
+    val bodyHeights = lines.indices.map { lIdx ->
+        val bSz = bodySizes["$itemIdx:$lIdx"]
+        val bw = bSz?.width ?: (lines[lIdx].length * 6.8f * renderDensity)
+        val bh = bSz?.height ?: (16f * renderDensity)
+        if (bw > maxBodyW) maxBodyW = bw
+        bh
+    }
+    val bodyTotalH = padY + bodyHeights.sum() + (bodyHeights.size - 1) * lineGap + padY
+    val w = maxOf(150f * renderDensity, stereoW + padX * 2f, titleW + padX * 2f, maxBodyW + padX * 2f)
+    return RequirementBoxMetrics(
+        width = w,
+        height = headerH + bodyTotalH,
+        headerHeight = headerH,
+        stereotypeHeight = stereoH,
+        titleHeight = titleH,
+        bodyLineHeights = bodyHeights,
+    )
+}
+
+private data class PremeasuredRequirementResult(
+    val naturalLayout: RequirementDiagramLayout,
+    val titleSize: DiagramSize?,
+    val stereoSizes: Map<Int, DiagramSize>,
+    val nameSizes: Map<Int, DiagramSize>,
+    val bodySizes: Map<String, DiagramSize>,
+    val relSizes: Map<Int, DiagramSize>,
+)
+
+private fun computePremeasuredRequirementLayout(
+    diagram: RequirementDiagram,
+    allItems: List<RequirementDiagramItem>,
+    idxByName: Map<String, Int>,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredRequirementResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val stereoSizes = HashMap<Int, DiagramSize>(allItems.size)
+    val nameSizes = HashMap<Int, DiagramSize>(allItems.size)
+    val bodySizes = HashMap<String, DiagramSize>()
+
+    for ((itemIdx, item) in allItems.withIndex()) {
+        val textColor = parseCssColor(item.style?.textColor) ?: theme.nodeText
+        val isBold = item.style?.fontWeightBold == true
+        stereoSizes[itemIdx] = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(item.stereotype),
+            style = TextStyle(
+                color = textColor.copy(alpha = 0.78f),
+                fontFamily = theme.fontFamily,
+                fontSize = theme.captionFontSize,
+                fontStyle = FontStyle.Italic,
+                fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        nameSizes[itemIdx] = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(item.name),
+            style = TextStyle(
+                color = textColor,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.scaledSp(13.5f),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+        val bodyStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.scaledSp(11.5f),
+            fontWeight = if (isBold) FontWeight.SemiBold else FontWeight.Normal,
+        )
+        for ((lineIdx, bodyLine) in item.bodyLines.withIndex()) {
+            bodySizes["$itemIdx:$lineIdx"] = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(bodyLine),
+                style = bodyStyle,
+            )
+        }
+    }
+
+    val relStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.captionFontSize,
+        fontStyle = FontStyle.Italic,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+    )
+    val relSizes = diagram.relations.mapIndexed { relIdx, rel ->
+        relIdx to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(rel.label),
+            style = relStyle,
+        )
+    }.toMap()
+
+    val baseOptions = layoutOptions.copy(density = renderDensity)
+    val naturalLayout = RequirementLayout.layout(
+        diagram = diagram,
+        itemBoxSize = { item ->
+            computeRequirementBoxMetrics(
+                item = item,
+                idxByName = idxByName,
+                stereoSizes = stereoSizes,
+                nameSizes = nameSizes,
+                bodySizes = bodySizes,
+                renderDensity = renderDensity,
+            )
+        },
+        relationLabelSize = { relIdx, rel ->
+            val sz = relSizes[relIdx]
+            if (sz != null) {
+                DiagramSize(sz.width + 10f * renderDensity, sz.height + 4f * renderDensity)
+            } else {
+                RequirementLayout.defaultRelationLabelSize(rel.label, renderDensity)
+            }
+        },
+        titleSize = titleSize,
+        options = baseOptions,
+    )
+    return PremeasuredRequirementResult(
+        naturalLayout = naturalLayout,
+        titleSize = titleSize,
+        stereoSizes = stereoSizes,
+        nameSizes = nameSizes,
+        bodySizes = bodySizes,
+        relSizes = relSizes,
+    )
+}
+
 private fun DrawScope.drawRequirementUnderlay(
     layout: RequirementDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
     val defaultReqHeaderFill = theme.accentFill
@@ -390,6 +783,7 @@ private fun DrawScope.drawRequirementUnderlay(
     // 1. Requirement & Element boxes.
     for (pi in layout.items) {
         val r = pi.rect
+        if (!rectIntersectsViewport(r, viewport, 8f * unit)) continue
         val st = pi.item.style
         val customFill = parseCssColor(st?.fill)
         val bodyFill = customFill ?: theme.nodeFill
@@ -430,6 +824,7 @@ private fun DrawScope.drawRequirementUnderlay(
     for (pr in layout.relations) {
         val pts = pr.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, 20f * unit)) continue
         val path = Path().apply {
             moveTo(pts[0].x, pts[0].y)
             for (i in 1 until pts.size) {
@@ -454,7 +849,7 @@ private fun DrawScope.drawRequirementUnderlay(
         }
 
         val lr = pr.labelRect
-        if (lr != null) {
+        if (lr != null && rectIntersectsViewport(lr, viewport, 8f * unit)) {
             drawRoundRect(
                 color = theme.edgeLabelBackground,
                 topLeft = Offset(lr.x, lr.y),

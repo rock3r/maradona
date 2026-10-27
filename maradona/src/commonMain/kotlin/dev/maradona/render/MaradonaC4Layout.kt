@@ -24,15 +24,21 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.C4DiagramLayout
@@ -41,11 +47,13 @@ import dev.maradona.layout.DiagramPoint
 import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.model.C4BoundaryKind
 import dev.maradona.model.C4Diagram
 import dev.maradona.model.C4Element
 import dev.maradona.model.C4ElementKind
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -54,6 +62,15 @@ import kotlin.math.sin
 
 private class C4LayoutHolder {
     var layout: C4DiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var elementSizes: Map<String, DiagramSize> = emptyMap()
+    var boundaryHeaderSizes: Map<String, DiagramSize> = emptyMap()
+    var relLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 private data class C4CardColors(
@@ -138,11 +155,27 @@ fun MaradonaC4Layout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (C4DiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { C4LayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { C4LayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
     val isDark = theme.isDark
     val relDescriptions = remember(diagram) {
         val labelById = diagram.elements.associate { it.id to it.label }
@@ -158,6 +191,52 @@ fun MaradonaC4Layout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredC4Layout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.elementSizes = pre.elementSizes
+                holder.boundaryHeaderSizes = pre.boundaryHeaderSizes
+                holder.relLabelSizes = pre.relLabelSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedBoundaryById = remember(precomputedLayout) {
+        precomputedLayout.boundaries.associateBy { it.boundary.id }
+    }
+    val positionedElementById = remember(precomputedLayout) {
+        precomputedLayout.elements.associateBy { it.element.id }
+    }
+    val positionedRelByIndex = remember(precomputedLayout) {
+        precomputedLayout.relationships.associateBy { it.relationshipIndex }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
@@ -171,26 +250,56 @@ fun MaradonaC4Layout(
                 } else {
                     "C4 ${diagram.type.name.lowercase()} diagram. ${diagram.elements.size} elements, ${diagram.boundaries.size} boundaries, ${diagram.relationships.size} relationships."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (el in diagram.elements) {
+                            val pe = positionedElementById[el.id] ?: continue
+                            if (rectIntersectsViewport(pe.rect, vp, cullMargin)) continue
+                            if (!el.link.isNullOrBlank() || onNodeClick != null) {
+                                add(
+                                    MaradonaNodeClickEvent(
+                                        nodeId = el.id,
+                                        label = el.label,
+                                        url = el.link,
+                                        tooltip = el.description,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawC4Underlay(it, theme, isDark) }
+                holder.layout?.let { drawC4Underlay(it, theme, isDark, holder.visibleViewport) }
             },
         content = {
             if (!diagram.title.isNullOrBlank()) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
 
             for (b in diagram.boundaries) {
+                if (activeCullViewport != null) {
+                    val pb = positionedBoundaryById[b.id]
+                    if (pb != null && !rectIntersectsViewport(pb.rect, activeCullViewport, cullMargin)) continue
+                }
                 val hdrColor = parseCssColor(b.style?.fontColor) ?: theme.nodeText
                 Column(
                     modifier = Modifier
@@ -219,6 +328,10 @@ fun MaradonaC4Layout(
             }
 
             for ((elIdx, el) in diagram.elements.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pe = positionedElementById[el.id]
+                    if (pe != null && !rectIntersectsViewport(pe.rect, activeCullViewport, cullMargin)) continue
+                }
                 val colors = resolveC4ElementColors(el, theme)
                 val topPad = when {
                     el.kind.isPerson -> 26.dp
@@ -298,6 +411,10 @@ fun MaradonaC4Layout(
             for ((idx, rel) in diagram.relationships.withIndex()) {
                 val hasText = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
                 if (hasText) {
+                    if (activeCullViewport != null) {
+                        val lr = positionedRelByIndex[idx]?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, cullMargin)) continue
+                    }
                     val txtColor = parseCssColor(rel.style?.textColor) ?: theme.nodeText
                     val prefix = if (!rel.index.isNullOrBlank()) "(${rel.index}) " else ""
                     Column(
@@ -362,14 +479,39 @@ fun MaradonaC4Layout(
         val elPlaceables = elMeasurables.mapValues { (_, m) -> m.measure(unbounded) }
         val relLblPlaceables = relLblMeasurables.mapValues { (_, m) -> m.measure(unbounded) }
 
-        val elementSizes = elPlaceables.mapValues { (_, p) ->
+        val measuredElementSizes = elPlaceables.mapValues { (_, p) ->
             DiagramSize(p.width.toFloat(), p.height.toFloat())
         }
-        val boundaryHeaderSizes = bndHdrPlaceables.mapValues { (_, p) ->
+        val measuredBoundaryHeaderSizes = bndHdrPlaceables.mapValues { (_, p) ->
             DiagramSize(p.width.toFloat(), p.height.toFloat())
         }
-        val relLabelSizes = relLblPlaceables.mapValues { (_, p) ->
+        val measuredRelLabelSizes = relLblPlaceables.mapValues { (_, p) ->
             DiagramSize(p.width.toFloat(), p.height.toFloat())
+        }
+
+        val elementSizes = if (activeCullViewport == null) {
+            measuredElementSizes
+        } else {
+            holder.elementSizes + measuredElementSizes
+        }
+        val boundaryHeaderSizes = if (activeCullViewport == null) {
+            measuredBoundaryHeaderSizes
+        } else {
+            holder.boundaryHeaderSizes + measuredBoundaryHeaderSizes
+        }
+        val relLabelSizes = if (activeCullViewport == null) {
+            measuredRelLabelSizes
+        } else {
+            holder.relLabelSizes + measuredRelLabelSizes
+        }
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.elementSizes = elementSizes
+            holder.boundaryHeaderSizes = boundaryHeaderSizes
+            holder.relLabelSizes = relLabelSizes
         }
 
         val scaledOptions = with(layoutOptions) {
@@ -385,11 +527,35 @@ fun MaradonaC4Layout(
             elementSizes = elementSizes,
             boundaryHeaderSizes = boundaryHeaderSizes,
             relLabelSizes = relLabelSizes,
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
         onLayout(layout)
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.relationships.size
+        } else {
+            layout.relationships.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeMargin) }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            layout.boundaries.size
+        } else {
+            layout.boundaries.count { rectIntersectsViewport(it.rect, activeCullViewport) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = elPlaceables.size,
+                totalNodes = layout.elements.size,
+                composedEdgeLabels = relLblPlaceables.size,
+                totalEdgeLabels = layout.relationships.size,
+                drawnEdges = drawnEdges,
+                totalEdges = layout.relationships.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = layout.boundaries.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceIn(constraints.minWidth, constraints.maxWidth)
         val hPx = layout.height.roundToInt().coerceIn(constraints.minHeight, constraints.maxHeight)
@@ -425,10 +591,223 @@ fun MaradonaC4Layout(
     }
 }
 
+private data class PremeasuredC4Result(
+    val layout: C4DiagramLayout,
+    val titleSize: DiagramSize?,
+    val elementSizes: Map<String, DiagramSize>,
+    val boundaryHeaderSizes: Map<String, DiagramSize>,
+    val relLabelSizes: Map<Int, DiagramSize>,
+)
+
+private fun computePremeasuredC4Layout(
+    diagram: C4Diagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredC4Result {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.takeIf { it.isNotBlank() }?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val bndPadH = with(densityObj) { 10.dp.roundToPx() }
+    val bndPadV = with(densityObj) { 4.dp.roundToPx() }
+    val bndSpace = with(densityObj) { 1.dp.roundToPx() }
+    val boundaryHeaderSizes = HashMap<String, DiagramSize>(diagram.boundaries.size)
+    for (b in diagram.boundaries) {
+        val hdrColor = parseCssColor(b.style?.fontColor) ?: theme.nodeText
+        val lblSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(b.label),
+            style = TextStyle(
+                color = hdrColor,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.scaledSp(12.5f),
+                fontWeight = FontWeight.Bold,
+            ),
+        )
+        val typeSz = measurePlainTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = "[${b.type}]",
+            style = TextStyle(
+                color = hdrColor.copy(alpha = 0.78f),
+                fontFamily = theme.fontFamily,
+                fontSize = theme.scaledSp(10f),
+            ),
+        )
+        val w = max(lblSz.width.roundToInt(), typeSz.width.roundToInt()) + bndPadH * 2
+        val h = lblSz.height.roundToInt() + bndSpace + typeSz.height.roundToInt() + bndPadV * 2
+        boundaryHeaderSizes[b.id] = DiagramSize(w.toFloat(), h.toFloat())
+    }
+
+    val elMinOuterW = with(densityObj) { 172.dp.roundToPx() }
+    val elMaxOuterW = with(densityObj) { 240.dp.roundToPx() }
+    val elPadH = with(densityObj) { 14.dp.roundToPx() }
+    val elPadBottom = with(densityObj) { 12.dp.roundToPx() }
+    val elSpace = with(densityObj) { 4.dp.roundToPx() }
+    val elMaxInnerW = (elMaxOuterW - elPadH * 2).coerceAtLeast(1)
+    val elementSizes = HashMap<String, DiagramSize>(diagram.elements.size)
+    for (el in diagram.elements) {
+        val colors = resolveC4ElementColors(el, theme)
+        val topPadDp = when {
+            el.kind.isPerson -> 26.dp
+            el.kind.isDatabase -> 16.dp
+            else -> 12.dp
+        }
+        val elPadTop = with(densityObj) { topPadDp.roundToPx() }
+        val hdrSz = measurePlainTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = el.typeHeaderText,
+            style = TextStyle(
+                color = colors.text.copy(alpha = 0.88f),
+                fontFamily = theme.fontFamily,
+                fontSize = theme.scaledSp(10f),
+                fontStyle = FontStyle.Italic,
+                textAlign = TextAlign.Center,
+            ),
+            maxWidthPx = elMaxInnerW,
+        )
+        val elDisplayLabel = if (!el.sprite.isNullOrBlank()) {
+            "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
+        } else {
+            el.label
+        }
+        val lblSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(elDisplayLabel, theme.monospaceFontFamily),
+            style = TextStyle(
+                color = colors.text,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.scaledSp(13.5f),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            ),
+            maxWidthPx = elMaxInnerW,
+        )
+        val descSz = if (!el.description.isNullOrBlank()) {
+            measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(el.description),
+                style = TextStyle(
+                    color = colors.text.copy(alpha = 0.92f),
+                    fontFamily = theme.fontFamily,
+                    fontSize = theme.captionFontSize,
+                    textAlign = TextAlign.Center,
+                ),
+                maxWidthPx = elMaxInnerW,
+            )
+        } else {
+            null
+        }
+        val innerW = maxOf(hdrSz.width.roundToInt(), lblSz.width.roundToInt(), descSz?.width?.roundToInt() ?: 0)
+        val outerW = (innerW + elPadH * 2).coerceIn(elMinOuterW, elMaxOuterW)
+        val innerH = hdrSz.height.roundToInt() + elSpace + lblSz.height.roundToInt() +
+            (if (descSz != null) elSpace + descSz.height.roundToInt() else 0)
+        val outerH = innerH + elPadTop + elPadBottom
+        elementSizes[el.id] = DiagramSize(outerW.toFloat(), outerH.toFloat())
+    }
+
+    val relMaxOuterW = with(densityObj) { 200.dp.roundToPx() }
+    val relPadH = with(densityObj) { 6.dp.roundToPx() }
+    val relPadV = with(densityObj) { 2.dp.roundToPx() }
+    val relSpace = with(densityObj) { 1.dp.roundToPx() }
+    val relMaxInnerW = (relMaxOuterW - relPadH * 2).coerceAtLeast(1)
+    val relLabelSizes = HashMap<Int, DiagramSize>()
+    for ((idx, rel) in diagram.relationships.withIndex()) {
+        val hasText = rel.label.isNotBlank() || !rel.technology.isNullOrBlank() || !rel.index.isNullOrBlank()
+        if (hasText) {
+            val txtColor = parseCssColor(rel.style?.textColor) ?: theme.nodeText
+            val prefix = if (!rel.index.isNullOrBlank()) "(${rel.index}) " else ""
+            val mainSz = if (prefix.isNotEmpty() || rel.label.isNotBlank()) {
+                measureAnnotatedTextSize(
+                    textMeasurer = textMeasurer,
+                    densityObj = densityObj,
+                    text = annotatedLabel("$prefix${rel.label}".trim()),
+                    style = TextStyle(
+                        color = txtColor,
+                        fontFamily = theme.fontFamily,
+                        fontSize = theme.scaledSp(10.5f),
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                    ),
+                    maxWidthPx = relMaxInnerW,
+                )
+            } else {
+                null
+            }
+            val techSz = if (!rel.technology.isNullOrBlank()) {
+                measurePlainTextSize(
+                    textMeasurer = textMeasurer,
+                    densityObj = densityObj,
+                    text = "[${rel.technology}]",
+                    style = TextStyle(
+                        color = txtColor.copy(alpha = 0.8f),
+                        fontFamily = theme.fontFamily,
+                        fontSize = theme.scaledSp(9.5f),
+                        fontStyle = FontStyle.Italic,
+                        textAlign = TextAlign.Center,
+                    ),
+                    maxWidthPx = relMaxInnerW,
+                )
+            } else {
+                null
+            }
+            val innerW = max(mainSz?.width?.roundToInt() ?: 0, techSz?.width?.roundToInt() ?: 0)
+            val outerW = (innerW + relPadH * 2).coerceAtMost(relMaxOuterW)
+            val innerH = (mainSz?.height?.roundToInt() ?: 0) +
+                (if (mainSz != null && techSz != null) relSpace else 0) +
+                (techSz?.height?.roundToInt() ?: 0)
+            val outerH = innerH + relPadV * 2
+            relLabelSizes[idx] = DiagramSize(outerW.toFloat(), outerH.toFloat())
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = C4Layout.layout(
+        diagram = diagram,
+        elementSizes = elementSizes,
+        boundaryHeaderSizes = boundaryHeaderSizes,
+        relLabelSizes = relLabelSizes,
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredC4Result(
+        layout = layout,
+        titleSize = titleSize,
+        elementSizes = elementSizes,
+        boundaryHeaderSizes = boundaryHeaderSizes,
+        relLabelSizes = relLabelSizes,
+    )
+}
+
 private fun DrawScope.drawC4Underlay(
     layout: C4DiagramLayout,
     theme: MaradonaTheme,
     isDark: Boolean,
+    viewport: DiagramRect? = null,
 ) {
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(7f * density, 5f * density), 0f)
 
@@ -436,6 +815,7 @@ private fun DrawScope.drawC4Underlay(
     for (pb in layout.boundaries) {
         val b = pb.boundary
         val r = pb.rect
+        if (!rectIntersectsViewport(r, viewport, 8f * density)) continue
         val customBg = parseCssColor(b.style?.bgColor)
         val customBorder = parseCssColor(b.style?.borderColor)
         val borderColor = customBorder ?: theme.subgraphBorder
@@ -468,6 +848,7 @@ private fun DrawScope.drawC4Underlay(
     for (pe in layout.elements) {
         val el = pe.element
         val r = pe.rect
+        if (!rectIntersectsViewport(r, viewport, 8f * density)) continue
         val colors = resolveC4ElementColors(el, theme)
         when {
             el.kind.isPerson -> drawPersonElement(r, colors)
@@ -496,9 +877,11 @@ private fun DrawScope.drawC4Underlay(
     // 3. Relationships
     val defaultRelLineColor = theme.edge.copy(alpha = 0.75f)
     val relDash = PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density), 0f)
+    val edgeMargin = 20f * density
     for (pr in layout.relationships) {
         val pts = pr.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
         val lineColor = parseCssColor(pr.relationship.style?.lineColor) ?: defaultRelLineColor
         val path = Path().apply {
             moveTo(pts.first().x, pts.first().y)

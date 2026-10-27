@@ -107,12 +107,13 @@ enum class DiagramZoom {
  * is rendered through the standard Compose layout pipeline (preserving native
  * text measurement, `click` actions, and accessibility semantics without a
  * separate Canvas-only fast path). When [viewportCullingEnabled] is `true`
- * (the default), off-screen nodes, edge labels, subgraph headers, and underlay
- * edges/subgraphs outside the visible viewport (plus overscan) are lazily
- * skipped during composition and drawing while preserving edges that cross the
- * viewport between off-screen endpoints; however, when zoomed out so that
- * thousands of nodes are simultaneously visible inside the viewport, layout
- * and frame times may still be slow.
+ * (the default), off-screen nodes, labels, headers, and underlay
+ * edges/connectors/containers outside the visible viewport (plus overscan) are
+ * lazily skipped during composition and drawing across all 23 diagram families
+ * while preserving edges/connectors that cross the viewport between off-screen
+ * endpoints; however, when zoomed out so that thousands of nodes are
+ * simultaneously visible inside the viewport, layout and frame times may still
+ * be slow.
  */
 @Composable
 fun MaradonaDiagram(
@@ -121,7 +122,7 @@ fun MaradonaDiagram(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     autoDirection: Boolean = true,
     zoomEnabled: Boolean = true,
-    /** Whether to lazily skip composing/drawing off-screen flowchart items outside the visible viewport. */
+    /** Whether to lazily skip composing/drawing off-screen diagram items outside the visible viewport across all 23 families. */
     viewportCullingEnabled: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(),
     initialZoom: DiagramZoom = DiagramZoom.Fit,
@@ -576,6 +577,8 @@ fun MaradonaDiagram(
                         .wrapContentSize(Alignment.TopStart, unbounded = true)
                         .onSizeChanged(onContentSizeMeasured)
                         .alpha(if (error != null) 0.45f else 1f)
+                    val activeViewportResolver: ((Float, Float) -> dev.maradona.layout.DiagramRect?)? =
+                        viewportParams?.let { params -> { lw, lh -> params.resolve(lw, lh) } }
                     when (model) {
                         is MaradonaDiagramModel.FlowchartModel ->
                             MaradonaLayout(
@@ -589,9 +592,7 @@ fun MaradonaDiagram(
                                 // density-scaled values, so zooming in would spuriously
                                 // flip a horizontal chart to vertical.
                                 availableWidthPx = layoutWidthPx,
-                                viewportResolver = viewportParams?.let { params ->
-                                    { lw, lh -> params.resolve(lw, lh) }
-                                },
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
                                 onViewportStats = onViewportStats,
                                 onLayout = onLayout,
@@ -601,7 +602,9 @@ fun MaradonaDiagram(
                             MaradonaSequenceLayout(
                                 diagram = model.diagram,
                                 theme = theme,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onSequenceLayout,
                                 modifier = contentModifier,
                             )
@@ -612,7 +615,9 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onClassLayout,
                                 modifier = contentModifier,
                             )
@@ -623,7 +628,9 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onStateLayout,
                                 modifier = contentModifier,
                             )
@@ -634,7 +641,9 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onErLayout,
                                 modifier = contentModifier,
                             )
@@ -643,7 +652,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onMindmapLayout,
                                 modifier = contentModifier,
                             )
@@ -652,7 +663,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onGanttLayout,
                                 modifier = contentModifier,
                             )
@@ -661,7 +674,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onPieLayout,
                                 modifier = contentModifier,
                             )
@@ -670,7 +685,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onGitGraphLayout,
                                 modifier = contentModifier,
                             )
@@ -679,7 +696,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onTimelineLayout,
                                 modifier = contentModifier,
                             )
@@ -688,7 +707,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onJourneyLayout,
                                 modifier = contentModifier,
                             )
@@ -697,7 +718,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onQuadrantLayout,
                                 modifier = contentModifier,
                             )
@@ -706,7 +729,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onXyChartLayout,
                                 modifier = contentModifier,
                             )
@@ -715,7 +740,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onKanbanLayout,
                                 modifier = contentModifier,
                             )
@@ -724,7 +751,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onSankeyLayout,
                                 modifier = contentModifier,
                             )
@@ -735,7 +764,9 @@ fun MaradonaDiagram(
                                 autoDirection = autoDirection,
                                 layoutOptions = layoutOptions,
                                 availableWidthPx = layoutWidthPx,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onRequirementLayout,
                                 modifier = contentModifier,
                             )
@@ -744,7 +775,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onPacketLayout,
                                 modifier = contentModifier,
                             )
@@ -753,7 +786,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onRadarLayout,
                                 modifier = contentModifier,
                             )
@@ -762,7 +797,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onBlockLayout,
                                 modifier = contentModifier,
                             )
@@ -771,7 +808,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onArchitectureLayout,
                                 modifier = contentModifier,
                             )
@@ -780,7 +819,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onTreemapLayout,
                                 modifier = contentModifier,
                             )
@@ -789,7 +830,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onC4Layout,
                                 modifier = contentModifier,
                             )
@@ -798,7 +841,9 @@ fun MaradonaDiagram(
                                 diagram = model.diagram,
                                 theme = theme,
                                 layoutOptions = layoutOptions,
+                                viewportResolver = activeViewportResolver,
                                 onNodeClick = onNodeClick,
+                                onViewportStats = onViewportStats,
                                 onLayout = onZenUmlLayout,
                                 modifier = contentModifier,
                             )

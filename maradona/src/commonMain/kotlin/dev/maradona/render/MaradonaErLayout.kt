@@ -6,7 +6,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -20,29 +24,38 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassLayout
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.ErDiagramLayout
 import dev.maradona.layout.ErEntityMetrics
 import dev.maradona.layout.ErLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.model.Direction
 import dev.maradona.model.ErCardinality
 import dev.maradona.model.ErDiagram
 import dev.maradona.model.ErEntity
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -51,6 +64,19 @@ import kotlin.math.sin
 
 private class ErLayoutHolder {
     var layout: ErDiagramLayout? = null
+    var naturalLayout: ErDiagramLayout? = null
+    var adaptedTbLayout: ErDiagramLayout? = null
+    var hdrSizes: Map<String, DiagramSize> = emptyMap()
+    var cellSizes: Map<String, DiagramSize> = emptyMap()
+    var metricsById: Map<String, ErEntityMetrics> = emptyMap()
+    var relLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var sgLabelSizes: Map<String, DiagramSize> = emptyMap()
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -69,12 +95,117 @@ fun MaradonaErLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 52f, layerGap = 58f, subgraphPaddingX = 28f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (ErDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { ErLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { ErLayoutHolder() }
     val uriHandler = LocalUriHandler.current
     val relDescriptions = remember(diagram) { erRelationshipDescriptions(diagram) }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    var observedBoundedWidthPx by remember(diagram, theme, layoutOptions) { mutableIntStateOf(Int.MAX_VALUE) }
+    var boundedWidthObserved by remember(diagram, theme, layoutOptions) { mutableStateOf(false) }
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, observedBoundedWidthPx)
+
+    val naturalLayout = run {
+        val cachedNatural = holder.naturalLayout
+        if (
+            cachedNatural != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cachedNatural
+        } else {
+            computePremeasuredErLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.naturalLayout = pre.naturalLayout
+                holder.adaptedTbLayout = null
+                holder.hdrSizes = pre.hdrSizes
+                holder.cellSizes = pre.cellSizes
+                holder.metricsById = pre.metricsById
+                holder.relLabelSizes = pre.relLabelSizes
+                holder.sgLabelSizes = pre.sgLabelSizes
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.naturalLayout
+        }
+    }
+
+    fun resolveAdaptedTbLayout(): ErDiagramLayout {
+        holder.adaptedTbLayout?.let { return it }
+        val scaledOptions = with(layoutOptions) {
+            copy(
+                nodeGap = nodeGap * renderDensity,
+                layerGap = layerGap * renderDensity,
+                padding = padding * renderDensity,
+                subgraphPaddingX = subgraphPaddingX * renderDensity,
+                subgraphPaddingY = subgraphPaddingY * renderDensity,
+                density = renderDensity,
+                directionOverride = Direction.TB,
+            )
+        }
+        return ErLayout.layout(
+            diagram = diagram,
+            entityBoxSize = { holder.metricsById.getValue(it.id) },
+            relationshipLabelSize = { idx, _ -> holder.relLabelSizes[idx] },
+            subgraphLabelSize = { sg -> holder.sgLabelSizes[sg.id] ?: DiagramSize(0f, 0f) },
+            titleSize = holder.titleSize,
+            options = scaledOptions,
+        ).also { holder.adaptedTbLayout = it }
+    }
+
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    val wantVerticalInComposition = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        effectiveAvailableWidthPx in 1 until breakpointPx &&
+        naturalLayout.width > effectiveAvailableWidthPx
+    val precomputedLayout = if (wantVerticalInComposition) {
+        resolveAdaptedTbLayout()
+    } else {
+        naturalLayout
+    }
+    holder.layout = precomputedLayout
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val needsParentWidthProbe = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        availableWidthPx == Int.MAX_VALUE &&
+        !boundedWidthObserved
+    val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedEntityById = remember(precomputedLayout) {
+        precomputedLayout.entities.associateBy { it.entity.id }
+    }
+    val positionedSubgraphById = remember(precomputedLayout) {
+        precomputedLayout.subgraphs.associateBy { it.subgraph.id }
+    }
 
     Layout(
         modifier = modifier
@@ -89,9 +220,25 @@ fun MaradonaErLayout(
                 } else {
                     "Entity relationship diagram. ${diagram.entities.size} entities, ${diagram.relationships.size} relationships."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (e in diagram.entities) {
+                            val pe = positionedEntityById[e.id] ?: continue
+                            if (rectIntersectsViewport(pe.rect, vp, margin = 8f)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = e.id, label = e.label))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawErUnderlay(it, theme) }
+                holder.layout?.let { drawErUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
@@ -108,6 +255,12 @@ fun MaradonaErLayout(
                 )
             }
             for ((eIdx, e) in diagram.entities.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pe = positionedEntityById[e.id]
+                    if (pe != null && !rectIntersectsViewport(pe.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 val textColor = parseCssColor(e.style?.textColor) ?: theme.nodeText
                 val hasKeys = e.attributes.any { it.keys.isNotEmpty() }
                 val hasComments = e.attributes.any { !it.comment.isNullOrEmpty() }
@@ -183,6 +336,12 @@ fun MaradonaErLayout(
                 )
             }
             for (sg in diagram.subgraphs) {
+                if (activeCullViewport != null) {
+                    val psg = positionedSubgraphById[sg.id]
+                    if (psg != null && !rectIntersectsViewport(psg.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 val sgTextColor = parseCssColor(sg.style?.textColor) ?: theme.subgraphText
                 BasicText(
                     text = annotatedLabel(sg.label),
@@ -197,6 +356,12 @@ fun MaradonaErLayout(
             }
             for ((idx, rel) in diagram.relationships.withIndex()) {
                 if (!rel.label.isNullOrBlank()) {
+                    if (activeCullViewport != null) {
+                        val lr = precomputedLayout.relationships.getOrNull(idx)?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, margin = 8f)) {
+                            continue
+                        }
+                    }
                     BasicText(
                         text = annotatedLabel(rel.label),
                         modifier = Modifier
@@ -240,10 +405,25 @@ fun MaradonaErLayout(
         val hdrPadX = 14f * renderDensity
         val hdrPadY = 8f * renderDensity
 
+        val effectiveHdrSizes = HashMap<String, DiagramSize>(holder.hdrSizes).apply {
+            for ((k, pl) in hdrPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveCellSizes = HashMap<String, DiagramSize>(holder.cellSizes).apply {
+            for ((k, pl) in cellPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveRelLabelSizes = HashMap<Int, DiagramSize>(holder.relLabelSizes).apply {
+            for ((k, pl) in relLabelPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveSgLabelSizes = HashMap<String, DiagramSize>(holder.sgLabelSizes).apply {
+            for ((k, pl) in sgPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
         fun computeMetrics(e: ErEntity): ErEntityMetrics {
-            val hdr = hdrPlaceables[e.id]
-            val hdrW = (hdr?.width?.toFloat() ?: 0f) + hdrPadX * 2f
-            val hdrH = max(32f * renderDensity, (hdr?.height?.toFloat() ?: 0f) + hdrPadY * 2f)
+            val hdr = effectiveHdrSizes[e.id]
+            val hdrW = (hdr?.width ?: 0f) + hdrPadX * 2f
+            val hdrH = max(32f * renderDensity, (hdr?.height ?: 0f) + hdrPadY * 2f)
             if (e.attributes.isEmpty()) {
                 return ErEntityMetrics(
                     width = max(96f * renderDensity, hdrW),
@@ -259,9 +439,9 @@ fun MaradonaErLayout(
             for (rIdx in e.attributes.indices) {
                 var rH = 22f * renderDensity
                 for (cIdx in 0 until colCount) {
-                    val pl = cellPlaceables["${e.id}:$rIdx:$cIdx"]
-                    val w = (pl?.width?.toFloat() ?: 0f) + cellPadX * 2f
-                    val h = (pl?.height?.toFloat() ?: 0f) + cellPadY * 2f
+                    val sz = effectiveCellSizes["${e.id}:$rIdx:$cIdx"]
+                    val w = (sz?.width ?: 0f) + cellPadX * 2f
+                    val h = (sz?.height ?: 0f) + cellPadY * 2f
                     if (w > maxColW[cIdx]) maxColW[cIdx] = w
                     if (h > rH) rH = h
                 }
@@ -296,31 +476,47 @@ fun MaradonaErLayout(
         fun runLayout(opts: LayoutOptions): ErDiagramLayout = ErLayout.layout(
             diagram = diagram,
             entityBoxSize = { metricsById.getValue(it.id) },
-            relationshipLabelSize = { idx, _ ->
-                relLabelPlaceables[idx]?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
-            },
-            subgraphLabelSize = { sg ->
-                val pl = sgPlaceables[sg.id]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            relationshipLabelSize = { idx, _ -> effectiveRelLabelSizes[idx] },
+            subgraphLabelSize = { sg -> effectiveSgLabelSizes[sg.id] ?: DiagramSize(0f, 0f) },
+            titleSize = effectiveTitleSize,
             options = opts,
         )
 
-        var result = runLayout(scaledOptions)
+        val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        if (!boundedWidthObserved || observedBoundedWidthPx != boundedWidth) {
+            observedBoundedWidthPx = boundedWidth
+            boundedWidthObserved = true
+        }
+        val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
-        val effectiveMaxWidth = minOf(
-            if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE,
-            availableWidthPx,
-        )
-        if (
-            autoDirection &&
+        val measuredNatural = if (activeCullViewport == null) runLayout(scaledOptions) else naturalLayout
+        val wantVerticalAtMeasure = autoDirection &&
             (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
             layoutOptions.directionOverride == null &&
             effectiveMaxWidth in 1 until breakpoint &&
-            result.width > effectiveMaxWidth
-        ) {
-            result = runLayout(scaledOptions.copy(directionOverride = Direction.TB))
+            measuredNatural.width > effectiveMaxWidth
+
+        val result = if (activeCullViewport != null && wantVerticalAtMeasure != wantVerticalInComposition) {
+            precomputedLayout
+        } else if (wantVerticalAtMeasure) {
+            if (activeCullViewport == null) {
+                runLayout(scaledOptions.copy(directionOverride = Direction.TB)).also {
+                    holder.adaptedTbLayout = it
+                }
+            } else {
+                resolveAdaptedTbLayout()
+            }
+        } else {
+            measuredNatural
+        }
+        if (activeCullViewport == null) {
+            holder.hdrSizes = effectiveHdrSizes
+            holder.cellSizes = effectiveCellSizes
+            holder.metricsById = metricsById
+            holder.relLabelSizes = effectiveRelLabelSizes
+            holder.sgLabelSizes = effectiveSgLabelSizes
+            holder.titleSize = effectiveTitleSize
+            holder.naturalLayout = measuredNatural
         }
         holder.layout = result
         onLayout(result)
@@ -333,6 +529,32 @@ fun MaradonaErLayout(
                 )
             }
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            result.relationships.size
+        } else {
+            result.relationships.count { rel ->
+                polylineIntersectsViewport(rel.points, activeCullViewport, margin = edgeMargin)
+            }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            result.subgraphs.size
+        } else {
+            result.subgraphs.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = diagram.entities.size,
+                composedEdgeLabels = relLabelPlaceables.size,
+                totalEdgeLabels = diagram.relationships.count { !it.label.isNullOrBlank() },
+                drawnEdges = drawnEdges,
+                totalEdges = result.relationships.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = result.subgraphs.size,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
@@ -381,6 +603,199 @@ fun MaradonaErLayout(
     }
 }
 
+private data class PremeasuredErResult(
+    val naturalLayout: ErDiagramLayout,
+    val hdrSizes: Map<String, DiagramSize>,
+    val cellSizes: Map<String, DiagramSize>,
+    val metricsById: Map<String, ErEntityMetrics>,
+    val relLabelSizes: Map<Int, DiagramSize>,
+    val sgLabelSizes: Map<String, DiagramSize>,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredErLayout(
+    diagram: ErDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredErResult {
+    val renderDensity = densityObj.density
+    val cellPadX = 10f * renderDensity
+    val cellPadY = 5f * renderDensity
+    val hdrPadX = 14f * renderDensity
+    val hdrPadY = 8f * renderDensity
+
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val hdrSizes = HashMap<String, DiagramSize>(diagram.entities.size)
+    val cellSizes = HashMap<String, DiagramSize>()
+    val metricsById = HashMap<String, ErEntityMetrics>(diagram.entities.size)
+
+    for (e in diagram.entities) {
+        val textColor = parseCssColor(e.style?.textColor) ?: theme.nodeText
+        val hasKeys = e.attributes.any { it.keys.isNotEmpty() }
+        val hasComments = e.attributes.any { !it.comment.isNullOrEmpty() }
+        val hdrStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.nodeFontSize,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        val hdrSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(e.label),
+            style = hdrStyle,
+        )
+        hdrSizes[e.id] = hdrSz
+        val hdrW = hdrSz.width + hdrPadX * 2f
+        val hdrH = max(32f * renderDensity, hdrSz.height + hdrPadY * 2f)
+        if (e.attributes.isEmpty()) {
+            metricsById[e.id] = ErEntityMetrics(
+                width = max(96f * renderDensity, hdrW),
+                height = hdrH,
+                headerHeight = hdrH,
+            )
+            continue
+        }
+        val cellRegularStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.scaledSp(11.5f),
+        )
+        val cellKeyStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.captionFontSize,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val cellCommentStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.captionFontSize,
+            fontStyle = FontStyle.Italic,
+        )
+        val colCount = 2 + (if (hasKeys) 1 else 0) + (if (hasComments) 1 else 0)
+        val maxColW = FloatArray(colCount)
+        val rowHeights = FloatArray(e.attributes.size)
+        for ((rIdx, attr) in e.attributes.withIndex()) {
+            val sz0 = measurePlainTextSize(textMeasurer, densityObj, attr.type, cellRegularStyle)
+            val sz1 = measurePlainTextSize(textMeasurer, densityObj, attr.name, cellRegularStyle)
+            cellSizes["${e.id}:$rIdx:0"] = sz0
+            cellSizes["${e.id}:$rIdx:1"] = sz1
+            if (hasKeys) {
+                val sz2 = measurePlainTextSize(textMeasurer, densityObj, attr.keys.joinToString(", "), cellKeyStyle)
+                cellSizes["${e.id}:$rIdx:2"] = sz2
+            }
+            if (hasComments) {
+                val colIdx = if (hasKeys) 3 else 2
+                val szC = measureAnnotatedTextSize(textMeasurer, densityObj, annotatedLabel(attr.comment.orEmpty()), cellCommentStyle)
+                cellSizes["${e.id}:$rIdx:$colIdx"] = szC
+            }
+            var rH = 22f * renderDensity
+            for (cIdx in 0 until colCount) {
+                val sz = cellSizes["${e.id}:$rIdx:$cIdx"]
+                val w = (sz?.width ?: 0f) + cellPadX * 2f
+                val h = (sz?.height ?: 0f) + cellPadY * 2f
+                if (w > maxColW[cIdx]) maxColW[cIdx] = w
+                if (h > rH) rH = h
+            }
+            rowHeights[rIdx] = rH
+        }
+        val sumCols = maxColW.sum()
+        val totalW = maxOf(108f * renderDensity, hdrW, sumCols)
+        val extra = if (totalW > sumCols) (totalW - sumCols) / colCount else 0f
+        val finalCols = maxColW.map { it + extra }
+        val totalH = hdrH + rowHeights.sum()
+        metricsById[e.id] = ErEntityMetrics(
+            width = totalW,
+            height = totalH,
+            headerHeight = hdrH,
+            rowHeights = rowHeights.toList(),
+            colWidths = finalCols,
+        )
+    }
+
+    val sgLabelSizes = diagram.subgraphs.associate { sg ->
+        val sgTextColor = parseCssColor(sg.style?.textColor) ?: theme.subgraphText
+        sg.id to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(sg.label),
+            style = TextStyle(
+                color = sgTextColor,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.subgraphFontSize,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+    }
+
+    val relPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val relPadV = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val relStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val relLabelSizes = HashMap<Int, DiagramSize>()
+    for ((idx, rel) in diagram.relationships.withIndex()) {
+        if (!rel.label.isNullOrBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(rel.label),
+                style = relStyle,
+            )
+            relLabelSizes[idx] = DiagramSize(sz.width + relPadH, sz.height + relPadV)
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            padding = padding * renderDensity,
+            subgraphPaddingX = subgraphPaddingX * renderDensity,
+            subgraphPaddingY = subgraphPaddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val naturalLayout = ErLayout.layout(
+        diagram = diagram,
+        entityBoxSize = { metricsById.getValue(it.id) },
+        relationshipLabelSize = { idx, _ -> relLabelSizes[idx] },
+        subgraphLabelSize = { sg -> sgLabelSizes[sg.id] ?: DiagramSize(0f, 0f) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredErResult(
+        naturalLayout = naturalLayout,
+        hdrSizes = hdrSizes,
+        cellSizes = cellSizes,
+        metricsById = metricsById,
+        relLabelSizes = relLabelSizes,
+        sgLabelSizes = sgLabelSizes,
+        titleSize = titleSize,
+    )
+}
+
 private fun erRelationshipDescriptions(diagram: ErDiagram): Map<String, String> {
     val labelById = diagram.entities.associate { it.id to it.label }
     val out = HashMap<String, MutableList<String>>()
@@ -398,13 +813,16 @@ private fun erRelationshipDescriptions(diagram: ErDiagram): Map<String, String> 
 private fun DrawScope.drawErUnderlay(
     layout: ErDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
+    val cullMargin = 24f * unit
     val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
 
     // 1. Subgraph cluster boxes (parent-first).
     for (psg in layout.subgraphs) {
         val r = psg.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val fill = parseCssColor(psg.subgraph.style?.fill) ?: theme.subgraphFill
         val border = parseCssColor(psg.subgraph.style?.stroke) ?: theme.subgraphBorder
         val strokeW = (psg.subgraph.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 1f) * unit
@@ -425,6 +843,7 @@ private fun DrawScope.drawErUnderlay(
     for (pr in layout.relationships) {
         val pts = pr.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, margin = cullMargin)) continue
         val rel = pr.relationship
         val samples = ClassLayout.basisSplineSamples(pts)
         val splineHitsObstacle = (0 until samples.lastIndex).any { i ->
@@ -478,6 +897,7 @@ private fun DrawScope.drawErUnderlay(
     // 3. Entity boxes and attribute table grid lines.
     for (pe in layout.entities) {
         val r = pe.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val e = pe.entity
         val fill = parseCssColor(e.style?.fill) ?: theme.nodeFill
         val border = parseCssColor(e.style?.stroke) ?: theme.nodeBorder

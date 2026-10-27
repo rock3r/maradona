@@ -23,18 +23,27 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.layout.PositionedParticipant
 import dev.maradona.layout.PositionedSequenceMessage
 import dev.maradona.layout.SequenceDiagramLayout
@@ -47,6 +56,7 @@ import dev.maradona.model.SequenceDiagram
 import dev.maradona.model.SequenceHead
 import dev.maradona.model.SequenceParticipant
 import dev.maradona.model.SequenceStatement
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -54,6 +64,18 @@ import kotlin.math.sin
 
 private class SequenceLayoutHolder {
     var layout: SequenceDiagramLayout? = null
+    var participantLabelSizes: Map<String, DiagramSize> = emptyMap()
+    var messageLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var noteTextSizes: Map<Int, DiagramSize> = emptyMap()
+    var blockLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var blockDivSizes: Map<String, DiagramSize> = emptyMap()
+    var boxLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -70,10 +92,27 @@ fun MaradonaSequenceLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     options: SequenceLayoutOptions = SequenceLayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (SequenceDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { SequenceLayoutHolder() }
+    val holder = remember(diagram, theme, options) { SequenceLayoutHolder() }
+    val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
     val flatMessages = remember(diagram) { collectMessages(diagram.statements) }
     val flatNotes = remember(diagram) { collectNotes(diagram.statements) }
     val flatBlocks = remember(diagram) { collectBlocks(diagram.statements) }
@@ -87,15 +126,96 @@ fun MaradonaSequenceLayout(
         out.mapValues { it.value.joinToString("; ") }
     }
 
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredSequenceLayout(
+                diagram = diagram,
+                flatMessages = flatMessages,
+                flatNotes = flatNotes,
+                flatBlocks = flatBlocks,
+                theme = theme,
+                options = options,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.participantLabelSizes = pre.participantLabelSizes
+                holder.messageLabelSizes = pre.messageLabelSizes
+                holder.noteTextSizes = pre.noteTextSizes
+                holder.blockLabelSizes = pre.blockLabelSizes
+                holder.blockDivSizes = pre.blockDivSizes
+                holder.boxLabelSizes = pre.boxLabelSizes
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+
+    val positionedParticipantById = remember(precomputedLayout) {
+        precomputedLayout.participants.associateBy { it.participant.id }
+    }
+    val positionedBoxByIndex = remember(precomputedLayout) {
+        precomputedLayout.boxes.associateBy { it.index }
+    }
+
     Layout(
         modifier = modifier
             .semantics {
                 isTraversalGroup = true
                 contentDescription =
                     "Sequence diagram. ${diagram.participants.size} participants, ${flatMessages.size} messages."
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (p in diagram.participants) {
+                            val pp = positionedParticipantById[p.id] ?: continue
+                            val topVis = rectIntersectsViewport(pp.topRect, vp, margin = 8f)
+                            val botVis = diagram.mirrorActors &&
+                                pp.bottomRect != null &&
+                                rectIntersectsViewport(pp.bottomRect, vp, margin = 8f)
+                            if (topVis || botVis) continue
+                            val plainLabel = plainTextLabel(p.label)
+                            val firstLink = p.links.entries.firstOrNull()
+                            val clickEvent = when {
+                                firstLink != null -> MaradonaNodeClickEvent(
+                                    nodeId = p.id,
+                                    label = plainLabel,
+                                    url = firstLink.value,
+                                    tooltip = firstLink.key,
+                                    links = p.links,
+                                )
+                                onNodeClick != null -> MaradonaNodeClickEvent(
+                                    nodeId = p.id,
+                                    label = plainLabel,
+                                )
+                                else -> null
+                            }
+                            if (clickEvent != null) add(clickEvent)
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawSequenceUnderlay(it, theme) }
+                holder.layout?.let { drawSequenceUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
@@ -112,65 +232,95 @@ fun MaradonaSequenceLayout(
                 )
             }
             for ((pIdx, p) in diagram.participants.withIndex()) {
-                BasicText(
-                    text = annotatedLabel(p.label),
-                    modifier = Modifier.layoutId("plabel:${p.id}"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.nodeFontSize,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
-                SequenceParticipantBox(
-                    participant = p,
-                    theme = theme,
-                    modifier = Modifier.layoutId("ptop:${p.id}"),
-                    messageSummary = participantSummaries[p.id],
-                    traversalOrder = pIdx,
-                    onNodeClick = onNodeClick,
-                )
-                if (diagram.mirrorActors) {
+                val pp = positionedParticipantById[p.id]
+                val topVisible = activeCullViewport == null ||
+                    pp == null ||
+                    rectIntersectsViewport(pp.topRect, activeCullViewport, margin = 8f)
+                if (topVisible) {
+                    BasicText(
+                        text = annotatedLabel(p.label),
+                        modifier = Modifier.layoutId("plabel:${p.id}"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.nodeFontSize,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
                     SequenceParticipantBox(
                         participant = p,
                         theme = theme,
-                        modifier = Modifier.layoutId("pbot:${p.id}"),
+                        modifier = Modifier.layoutId("ptop:${p.id}"),
                         messageSummary = participantSummaries[p.id],
-                        traversalOrder = diagram.participants.size + flatMessages.size + pIdx,
+                        traversalOrder = pIdx,
                         onNodeClick = onNodeClick,
                     )
                 }
+                if (diagram.mirrorActors) {
+                    val botRect = pp?.bottomRect
+                    val botVisible = activeCullViewport == null ||
+                        botRect == null ||
+                        rectIntersectsViewport(botRect, activeCullViewport, margin = 8f)
+                    if (botVisible) {
+                        SequenceParticipantBox(
+                            participant = p,
+                            theme = theme,
+                            modifier = Modifier.layoutId("pbot:${p.id}"),
+                            messageSummary = participantSummaries[p.id],
+                            traversalOrder = diagram.participants.size + flatMessages.size + pIdx,
+                            onNodeClick = onNodeClick,
+                        )
+                    }
+                }
             }
             for ((index, msg) in flatMessages.withIndex()) {
-                BasicText(
-                    text = annotatedLabel(msg.text),
-                    modifier = Modifier
-                        .layoutId("msg:$index")
-                        .semantics {
-                            contentDescription = "Message from ${msg.from} to ${msg.to}: ${plainTextLabel(msg.text)}"
-                        },
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.nodeFontSize,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
-                if (diagram.autonumber) {
+                val pm = precomputedLayout.messages.getOrNull(index)
+                val labelVisible = activeCullViewport == null ||
+                    pm == null ||
+                    (if (pm.labelRect.width > 0f && pm.labelRect.height > 0f) {
+                        rectIntersectsViewport(pm.labelRect, activeCullViewport, margin = 8f)
+                    } else {
+                        segmentIntersectsViewport(pm.startX, pm.lineY, pm.stopX, pm.lineY, activeCullViewport, margin = 24f)
+                    })
+                if (labelVisible) {
                     BasicText(
-                        text = "${index + 1}",
-                        modifier = Modifier.layoutId("seqnum:$index"),
+                        text = annotatedLabel(msg.text),
+                        modifier = Modifier
+                            .layoutId("msg:$index")
+                            .semantics {
+                                contentDescription = "Message from ${msg.from} to ${msg.to}: ${plainTextLabel(msg.text)}"
+                            },
                         style = TextStyle(
-                            color = theme.background,
+                            color = theme.nodeText,
                             fontFamily = theme.fontFamily,
-                            fontSize = theme.scaledSp(10f),
-                            fontWeight = FontWeight.Bold,
+                            fontSize = theme.nodeFontSize,
                             textAlign = TextAlign.Center,
                         ),
                     )
                 }
+                if (diagram.autonumber) {
+                    val seqVisible = labelVisible ||
+                        segmentIntersectsViewport(pm.startX, pm.lineY, pm.stopX, pm.lineY, activeCullViewport, margin = 24f)
+                    if (seqVisible) {
+                        BasicText(
+                            text = "${index + 1}",
+                            modifier = Modifier.layoutId("seqnum:$index"),
+                            style = TextStyle(
+                                color = theme.background,
+                                fontFamily = theme.fontFamily,
+                                fontSize = theme.scaledSp(10f),
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                            ),
+                        )
+                    }
+                }
             }
             for ((index, note) in flatNotes.withIndex()) {
+                val pn = precomputedLayout.notes.getOrNull(index)
+                if (activeCullViewport != null && pn != null && !rectIntersectsViewport(pn.rect, activeCullViewport, margin = 8f)) {
+                    continue
+                }
                 BasicText(
                     text = annotatedLabel(note.text),
                     modifier = Modifier
@@ -188,6 +338,10 @@ fun MaradonaSequenceLayout(
             }
             for ((index, box) in diagram.boxes.withIndex()) {
                 if (!box.label.isNullOrBlank()) {
+                    val pb = positionedBoxByIndex[index]
+                    if (activeCullViewport != null && pb != null && !rectIntersectsViewport(pb.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
                     BasicText(
                         text = annotatedLabel(box.label),
                         modifier = Modifier.layoutId("boxlabel:$index"),
@@ -203,6 +357,10 @@ fun MaradonaSequenceLayout(
             }
             for ((index, block) in flatBlocks.withIndex()) {
                 if (block.kind != SequenceBlockKind.Rect) {
+                    val pblk = precomputedLayout.blocks.getOrNull(index)
+                    if (activeCullViewport != null && pblk != null && !rectIntersectsViewport(pblk.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
                     BasicText(
                         text = block.kind.name.lowercase(),
                         modifier = Modifier.layoutId("btag:$index"),
@@ -294,31 +452,69 @@ fun MaradonaSequenceLayout(
             )
         }
 
+        val effectiveParticipantLabelSizes = diagram.participants.associate { p ->
+            val pl = labelMeasurables[p.id]
+            p.id to (pl?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+                ?: holder.participantLabelSizes[p.id]
+                ?: DiagramSize(0f, 0f))
+        }
+        val effectiveMessageLabelSizes = flatMessages.indices.associateWith { idx ->
+            val pl = msgPlaceables[idx]
+            pl?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+                ?: holder.messageLabelSizes[idx]
+                ?: DiagramSize(0f, 0f)
+        }
+        val effectiveNoteTextSizes = flatNotes.indices.associateWith { idx ->
+            val pl = notePlaceables[idx]
+            pl?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+                ?: holder.noteTextSizes[idx]
+                ?: DiagramSize(0f, 0f)
+        }
+        val effectiveBlockLabelSizes = flatBlocks.indices.associateWith { idx ->
+            val pl = blockLabelPlaceables[idx]
+            pl?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+                ?: holder.blockLabelSizes[idx]
+                ?: DiagramSize(0f, 0f)
+        }
+        val effectiveBlockDivSizes = HashMap<String, DiagramSize>(holder.blockDivSizes).apply {
+            for ((k, pl) in blockDivPlaceables) {
+                this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+            }
+        }
+        val effectiveBoxLabelSizes = diagram.boxes.indices.associateWith { idx ->
+            val pl = boxLabelPlaceables[idx]
+            pl?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+                ?: holder.boxLabelSizes[idx]
+                ?: DiagramSize(0f, 0f)
+        }
+        val effectiveTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
         val result = SequenceLayout.layout(
             diagram = diagram,
-            participantLabelSize = { p ->
-                val pl = labelMeasurables[p.id]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            messageLabelSize = { idx, _ ->
-                val pl = msgPlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            noteTextSize = { idx, _ ->
-                val pl = notePlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
+            participantLabelSize = { p -> effectiveParticipantLabelSizes[p.id] ?: DiagramSize(0f, 0f) },
+            messageLabelSize = { idx, _ -> effectiveMessageLabelSizes[idx] ?: DiagramSize(0f, 0f) },
+            noteTextSize = { idx, _ -> effectiveNoteTextSizes[idx] ?: DiagramSize(0f, 0f) },
             blockLabelSize = { idx, secIdx, _ ->
-                val pl = if (secIdx == 0) blockLabelPlaceables[idx] else blockDivPlaceables["$idx:$secIdx"]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
+                if (secIdx == 0) {
+                    effectiveBlockLabelSizes[idx] ?: DiagramSize(0f, 0f)
+                } else {
+                    effectiveBlockDivSizes["$idx:$secIdx"] ?: DiagramSize(0f, 0f)
+                }
             },
-            boxLabelSize = { idx, _ ->
-                val pl = boxLabelPlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            boxLabelSize = { idx, _ -> effectiveBoxLabelSizes[idx] ?: DiagramSize(0f, 0f) },
+            titleSize = effectiveTitleSize,
             options = scaledOptions,
         )
+        if (activeCullViewport == null) {
+            holder.participantLabelSizes = effectiveParticipantLabelSizes
+            holder.messageLabelSizes = effectiveMessageLabelSizes
+            holder.noteTextSizes = effectiveNoteTextSizes
+            holder.blockLabelSizes = effectiveBlockLabelSizes
+            holder.blockDivSizes = effectiveBlockDivSizes
+            holder.boxLabelSizes = effectiveBoxLabelSizes
+            holder.titleSize = effectiveTitleSize
+        }
         holder.layout = result
         onLayout(result)
 
@@ -337,6 +533,37 @@ fun MaradonaSequenceLayout(
                 }
             }
         }
+
+        val composedNodes = topBoxPlaceables.size + (if (diagram.mirrorActors) botBoxPlaceables.size else 0)
+        val totalNodes = diagram.participants.size * (if (diagram.mirrorActors) 2 else 1)
+        val edgeMargin = 30f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            result.messages.size
+        } else {
+            result.messages.count { msg ->
+                val endX = if (msg.isSelf) msg.startX + 42f * renderDensity else msg.stopX
+                val endY = if (msg.isSelf) msg.lineY + 22f * renderDensity else msg.lineY
+                segmentIntersectsViewport(msg.startX, msg.lineY, endX, endY, activeCullViewport, margin = edgeMargin)
+            }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            result.blocks.size + result.boxes.size
+        } else {
+            result.blocks.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) } +
+                result.boxes.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = composedNodes,
+                totalNodes = totalNodes,
+                composedEdgeLabels = msgPlaceables.size,
+                totalEdgeLabels = flatMessages.size,
+                drawnEdges = drawnEdges,
+                totalEdges = result.messages.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = result.blocks.size + result.boxes.size,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
@@ -397,6 +624,170 @@ fun MaradonaSequenceLayout(
             }
         }
     }
+}
+
+private data class PremeasuredSequenceResult(
+    val layout: SequenceDiagramLayout,
+    val participantLabelSizes: Map<String, DiagramSize>,
+    val messageLabelSizes: Map<Int, DiagramSize>,
+    val noteTextSizes: Map<Int, DiagramSize>,
+    val blockLabelSizes: Map<Int, DiagramSize>,
+    val blockDivSizes: Map<String, DiagramSize>,
+    val boxLabelSizes: Map<Int, DiagramSize>,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredSequenceLayout(
+    diagram: SequenceDiagram,
+    flatMessages: List<SequenceStatement.Message>,
+    flatNotes: List<SequenceStatement.Note>,
+    flatBlocks: List<SequenceStatement.Block>,
+    theme: MaradonaTheme,
+    options: SequenceLayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredSequenceResult {
+    val renderDensity = densityObj.density
+    val nodeStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.nodeFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val noteStyle = TextStyle(
+        color = theme.noteText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.nodeFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val boxLabelStyle = TextStyle(
+        color = theme.subgraphText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.subgraphFontSize,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center,
+    )
+    val blockLabelStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+    val participantLabelSizes = diagram.participants.associate { p ->
+        p.id to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(p.label),
+            style = nodeStyle,
+        )
+    }
+    val messageLabelSizes = flatMessages.mapIndexed { idx, msg ->
+        idx to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(msg.text),
+            style = nodeStyle,
+        )
+    }.toMap()
+    val noteTextSizes = flatNotes.mapIndexed { idx, note ->
+        idx to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(note.text),
+            style = noteStyle,
+        )
+    }.toMap()
+    val blockLabelSizes = HashMap<Int, DiagramSize>()
+    val blockDivSizes = HashMap<String, DiagramSize>()
+    for ((index, block) in flatBlocks.withIndex()) {
+        if (block.kind == SequenceBlockKind.Rect) continue
+        if (!block.label.isNullOrBlank()) {
+            blockLabelSizes[index] = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel("[${block.label}]"),
+                style = blockLabelStyle,
+            )
+        }
+        for ((secIdx, sec) in block.sections.withIndex()) {
+            if (secIdx > 0 && !sec.label.isNullOrBlank()) {
+                blockDivSizes["$index:$secIdx"] = measureAnnotatedTextSize(
+                    textMeasurer = textMeasurer,
+                    densityObj = densityObj,
+                    text = annotatedLabel("[${sec.label}]"),
+                    style = blockLabelStyle,
+                )
+            }
+        }
+    }
+    val boxLabelSizes = HashMap<Int, DiagramSize>()
+    for ((index, box) in diagram.boxes.withIndex()) {
+        if (!box.label.isNullOrBlank()) {
+            boxLabelSizes[index] = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(box.label),
+                style = boxLabelStyle,
+            )
+        }
+    }
+    val scaledOptions = with(options) {
+        copy(
+            actorWidth = actorWidth * renderDensity,
+            actorHeight = actorHeight * renderDensity,
+            actorMargin = actorMargin * renderDensity,
+            activationWidth = activationWidth * renderDensity,
+            boxMargin = boxMargin * renderDensity,
+            boxTextMargin = boxTextMargin * renderDensity,
+            noteMargin = noteMargin * renderDensity,
+            wrapPadding = wrapPadding * renderDensity,
+            labelBoxWidth = labelBoxWidth * renderDensity,
+            labelBoxHeight = labelBoxHeight * renderDensity,
+            paddingX = paddingX * renderDensity,
+            paddingY = paddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = SequenceLayout.layout(
+        diagram = diagram,
+        participantLabelSize = { p -> participantLabelSizes[p.id] ?: DiagramSize(0f, 0f) },
+        messageLabelSize = { idx, _ -> messageLabelSizes[idx] ?: DiagramSize(0f, 0f) },
+        noteTextSize = { idx, _ -> noteTextSizes[idx] ?: DiagramSize(0f, 0f) },
+        blockLabelSize = { idx, secIdx, _ ->
+            if (secIdx == 0) {
+                blockLabelSizes[idx] ?: DiagramSize(0f, 0f)
+            } else {
+                blockDivSizes["$idx:$secIdx"] ?: DiagramSize(0f, 0f)
+            }
+        },
+        boxLabelSize = { idx, _ -> boxLabelSizes[idx] ?: DiagramSize(0f, 0f) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredSequenceResult(
+        layout = layout,
+        participantLabelSizes = participantLabelSizes,
+        messageLabelSizes = messageLabelSizes,
+        noteTextSizes = noteTextSizes,
+        blockLabelSizes = blockLabelSizes,
+        blockDivSizes = blockDivSizes,
+        boxLabelSizes = boxLabelSizes,
+        titleSize = titleSize,
+    )
 }
 
 @Composable
@@ -480,11 +871,17 @@ private fun SequenceParticipantBox(
     }
 }
 
-private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme: MaradonaTheme) {
+private fun DrawScope.drawSequenceUnderlay(
+    layout: SequenceDiagramLayout,
+    theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
+) {
     val unit = density
+    val cullMargin = 24f * unit
 
     // 0. Participant `box` groupings behind everything else (transparent when uncolored).
     for (b in layout.boxes) {
+        if (!rectIntersectsViewport(b.rect, viewport, margin = cullMargin)) continue
         val fill = b.box.color?.let(::parseCssColor) ?: Color.Transparent
         if (fill != Color.Transparent) {
             drawRect(
@@ -504,6 +901,7 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
     // 1. Background `rect` blocks.
     for (block in layout.blocks) {
         if (block.kind == SequenceBlockKind.Rect) {
+            if (!rectIntersectsViewport(block.rect, viewport, margin = cullMargin)) continue
             val fill = parseCssColor(block.label) ?: theme.subgraphFill.copy(alpha = 0.55f)
             drawRect(
                 color = fill,
@@ -515,6 +913,9 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
 
     // 2. Lifelines behind activations, notes, and messages.
     for (pp in layout.participants) {
+        if (!segmentIntersectsViewport(pp.lifelineX, pp.lifelineTopY, pp.lifelineX, pp.lifelineBottomY, viewport, margin = cullMargin)) {
+            continue
+        }
         drawLine(
             color = theme.nodeBorder,
             start = Offset(pp.lifelineX, pp.lifelineTopY),
@@ -526,6 +927,7 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
     // 3. Activation bars (drawn above lifelines and behind control-flow frame tabs).
     for (act in layout.activations) {
         val r = act.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = theme.subgraphFill,
             topLeft = Offset(r.x, r.y),
@@ -544,6 +946,7 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
     for (block in layout.blocks) {
         if (block.kind == SequenceBlockKind.Rect) continue
         val r = block.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = theme.nodeBorder,
             topLeft = Offset(r.x, r.y),
@@ -580,6 +983,7 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
     val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = noteFill,
             topLeft = Offset(r.x, r.y),
@@ -595,6 +999,11 @@ private fun DrawScope.drawSequenceUnderlay(layout: SequenceDiagramLayout, theme:
 
     // 6. Messages and arrowheads.
     for (msg in layout.messages) {
+        val endX = if (msg.isSelf) msg.startX + 42f * unit else msg.stopX
+        val endY = if (msg.isSelf) msg.lineY + 22f * unit else msg.lineY
+        if (!segmentIntersectsViewport(msg.startX, msg.lineY, endX, endY, viewport, margin = 30f * unit)) {
+            continue
+        }
         val arrow = msg.statement.arrow
         val strokeEffect = if (arrow.dashed) {
             PathEffect.dashPathEffect(floatArrayOf(3f * unit, 3f * unit), 0f)

@@ -21,26 +21,68 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.GitGraphDiagramLayout
 import dev.maradona.layout.GitGraphLayout
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.PositionedGitCommit
 import dev.maradona.model.GitCommitType
 import dev.maradona.model.GitGraphDiagram
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private class GitGraphLayoutHolder {
     var layout: GitGraphDiagramLayout? = null
+    var titleSize: DiagramSize? = null
+    var branchSizes: Map<String, DiagramSize> = emptyMap()
+    var commitLabelSizes: Map<String, DiagramSize> = emptyMap()
+    var tagSizes: Map<String, DiagramSize> = emptyMap()
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
+}
+
+private fun gitCommitBounds(pc: PositionedGitCommit): DiagramRect {
+    var minX = pc.nodeRect.x
+    var minY = pc.nodeRect.y
+    var maxX = pc.nodeRect.right
+    var maxY = pc.nodeRect.bottom
+    pc.commitLabelRect?.let { r ->
+        minX = min(minX, r.x)
+        minY = min(minY, r.y)
+        maxX = max(maxX, r.right)
+        maxY = max(maxY, r.bottom)
+    }
+    pc.tagRect?.let { r ->
+        minX = min(minX, r.x)
+        minY = min(minY, r.y)
+        maxX = max(maxX, r.right)
+        maxY = max(maxY, r.bottom)
+    }
+    return DiagramRect(minX, minY, maxX - minX, maxY - minY)
 }
 
 /**
@@ -56,13 +98,74 @@ fun MaradonaGitGraphLayout(
     theme: MaradonaTheme = LocalMaradonaTheme.current,
     modifier: Modifier = Modifier,
     layoutOptions: LayoutOptions = LayoutOptions(),
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (GitGraphDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { GitGraphLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { GitGraphLayoutHolder() }
     val uriHandler = LocalUriHandler.current
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Medium).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
     val allBranchNames = remember(diagram) {
         (diagram.branches.map { it.name } + diagram.commits.map { it.branch }).distinct()
+    }
+
+    val precomputedLayout = run {
+        val cached = holder.layout
+        if (
+            cached != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cached
+        } else {
+            computePremeasuredGitGraphLayout(
+                diagram = diagram,
+                allBranchNames = allBranchNames,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.layout = pre.layout
+                holder.titleSize = pre.titleSize
+                holder.branchSizes = pre.branchSizes
+                holder.commitLabelSizes = pre.commitLabelSizes
+                holder.tagSizes = pre.tagSizes
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.layout
+        }
+    }
+
+    val activeCullViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    holder.visibleViewport = activeCullViewport
+    val cullMargin = 8f * renderDensity
+
+    val positionedBranchByName = remember(precomputedLayout) {
+        precomputedLayout.branches.associateBy { it.branch.name }
+    }
+    val positionedCommitById = remember(precomputedLayout) {
+        precomputedLayout.commits.associateBy { it.commit.id }
     }
 
     Layout(
@@ -78,26 +181,49 @@ fun MaradonaGitGraphLayout(
                 } else {
                     "Git graph. ${allBranchNames.size} branches, ${diagram.commits.size} commits."
                 }
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (c in diagram.commits) {
+                            val pc = positionedCommitById[c.id] ?: continue
+                            if (rectIntersectsViewport(gitCommitBounds(pc), vp, cullMargin)) continue
+                            if (onNodeClick != null) {
+                                add(MaradonaNodeClickEvent(nodeId = c.id, label = c.id))
+                            }
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawGitGraphUnderlay(it, theme) }
+                holder.layout?.let { drawGitGraphUnderlay(it, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
-                BasicText(
-                    text = annotatedLabel(diagram.title),
-                    modifier = Modifier.layoutId("title"),
-                    style = TextStyle(
-                        color = theme.nodeText,
-                        fontFamily = theme.fontFamily,
-                        fontSize = theme.titleFontSize,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    ),
-                )
+                val tr = precomputedLayout.titleRect
+                if (activeCullViewport == null || tr == null || rectIntersectsViewport(tr, activeCullViewport, cullMargin)) {
+                    BasicText(
+                        text = annotatedLabel(diagram.title),
+                        modifier = Modifier.layoutId("title"),
+                        style = TextStyle(
+                            color = theme.nodeText,
+                            fontFamily = theme.fontFamily,
+                            fontSize = theme.titleFontSize,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                        ),
+                    )
+                }
             }
             if (diagram.showBranches) {
                 for (bName in allBranchNames) {
+                    if (activeCullViewport != null) {
+                        val lr = positionedBranchByName[bName]?.labelRect
+                        if (lr != null && !rectIntersectsViewport(lr, activeCullViewport, cullMargin)) continue
+                    }
                     BasicText(
                         text = bName,
                         modifier = Modifier.layoutId("branch:$bName"),
@@ -111,6 +237,10 @@ fun MaradonaGitGraphLayout(
                 }
             }
             for ((cIdx, c) in diagram.commits.withIndex()) {
+                val pc = positionedCommitById[c.id]
+                if (activeCullViewport != null && pc != null) {
+                    if (!rectIntersectsViewport(gitCommitBounds(pc), activeCullViewport, cullMargin)) continue
+                }
                 if (GitGraphLayout.shouldShowCommitLabel(diagram, c)) {
                     BasicText(
                         text = c.id,
@@ -171,6 +301,41 @@ fun MaradonaGitGraphLayout(
             }
         }
 
+        val resolvedTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+        val resolvedBranchSizes = HashMap<String, DiagramSize>(allBranchNames.size)
+        for (bName in allBranchNames) {
+            val pl = branchPlaceables[bName]
+            if (pl != null) {
+                resolvedBranchSizes[bName] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+            } else {
+                holder.branchSizes[bName]?.let { resolvedBranchSizes[bName] = it }
+            }
+        }
+        val resolvedCommitLblSizes = HashMap<String, DiagramSize>(diagram.commits.size)
+        val resolvedTagSizes = HashMap<String, DiagramSize>(diagram.commits.size)
+        for (c in diagram.commits) {
+            val cPl = commitLblPlaceables[c.id]
+            if (cPl != null) {
+                resolvedCommitLblSizes[c.id] = DiagramSize(cPl.width.toFloat(), cPl.height.toFloat())
+            } else {
+                holder.commitLabelSizes[c.id]?.let { resolvedCommitLblSizes[c.id] = it }
+            }
+            val tPl = tagPlaceables[c.id]
+            if (tPl != null) {
+                resolvedTagSizes[c.id] = DiagramSize(tPl.width.toFloat(), tPl.height.toFloat())
+            } else {
+                holder.tagSizes[c.id]?.let { resolvedTagSizes[c.id] = it }
+            }
+        }
+
+        if (activeCullViewport == null) {
+            holder.titleSize = resolvedTitleSize
+            holder.branchSizes = resolvedBranchSizes
+            holder.commitLabelSizes = resolvedCommitLblSizes
+            holder.tagSizes = resolvedTagSizes
+        }
+
         val scaledOptions = with(layoutOptions) {
             copy(
                 nodeGap = nodeGap * renderDensity,
@@ -182,21 +347,15 @@ fun MaradonaGitGraphLayout(
         val layout = GitGraphLayout.layout(
             diagram = diagram,
             branchLabelSize = { bName ->
-                val pl = branchPlaceables[bName]
-                if (pl != null) DiagramSize(pl.width.toFloat(), pl.height.toFloat())
-                else GitGraphLayout.defaultBadgeSize(bName, renderDensity)
+                resolvedBranchSizes[bName] ?: GitGraphLayout.defaultBadgeSize(bName, renderDensity)
             },
             commitLabelSize = { c ->
-                val pl = commitLblPlaceables[c.id]
-                if (pl != null) DiagramSize(pl.width.toFloat(), pl.height.toFloat())
-                else GitGraphLayout.defaultCommitLabelSize(c.id, renderDensity)
+                resolvedCommitLblSizes[c.id] ?: GitGraphLayout.defaultCommitLabelSize(c.id, renderDensity)
             },
             tagLabelSize = { c ->
-                val pl = tagPlaceables[c.id]
-                if (pl != null) DiagramSize(pl.width.toFloat(), pl.height.toFloat())
-                else GitGraphLayout.defaultBadgeSize(c.tag.orEmpty(), renderDensity)
+                resolvedTagSizes[c.id] ?: GitGraphLayout.defaultBadgeSize(c.tag.orEmpty(), renderDensity)
             },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            titleSize = resolvedTitleSize,
             options = scaledOptions,
         )
         holder.layout = layout
@@ -209,6 +368,41 @@ fun MaradonaGitGraphLayout(
             val h = pc.nodeRect.height.roundToInt().coerceAtLeast(1)
             commitBoxPlaceables[pc.commit.id] = m.measure(Constraints.fixed(w, h))
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            layout.edges.size
+        } else {
+            layout.edges.count { polylineIntersectsViewport(it.points, activeCullViewport, edgeMargin) }
+        }
+        val drawnBranches = if (activeCullViewport == null) {
+            layout.branches.size
+        } else {
+            layout.branches.count { pb ->
+                segmentIntersectsViewport(
+                    pb.lineStart.x,
+                    pb.lineStart.y,
+                    pb.lineEnd.x,
+                    pb.lineEnd.y,
+                    activeCullViewport,
+                    edgeMargin,
+                ) || (pb.labelRect != null && rectIntersectsViewport(pb.labelRect, activeCullViewport, cullMargin))
+            }
+        }
+        val totalLabels = layout.commits.count { it.commitLabelRect != null } +
+            layout.commits.count { it.tagRect != null }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = commitBoxPlaceables.size,
+                totalNodes = layout.commits.size,
+                composedEdgeLabels = commitLblPlaceables.size + tagPlaceables.size,
+                totalEdgeLabels = totalLabels,
+                drawnEdges = drawnEdges,
+                totalEdges = layout.edges.size,
+                drawnSubgraphs = drawnBranches,
+                totalSubgraphs = layout.branches.size,
+            ),
+        )
 
         val wPx = layout.width.roundToInt().coerceAtLeast(constraints.minWidth)
         val hPx = layout.height.roundToInt().coerceAtLeast(constraints.minHeight)
@@ -257,11 +451,122 @@ fun MaradonaGitGraphLayout(
     }
 }
 
+private data class PremeasuredGitGraphResult(
+    val layout: GitGraphDiagramLayout,
+    val titleSize: DiagramSize?,
+    val branchSizes: Map<String, DiagramSize>,
+    val commitLabelSizes: Map<String, DiagramSize>,
+    val tagSizes: Map<String, DiagramSize>,
+)
+
+private fun computePremeasuredGitGraphLayout(
+    diagram: GitGraphDiagram,
+    allBranchNames: List<String>,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredGitGraphResult {
+    val renderDensity = densityObj.density
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val branchStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        fontWeight = FontWeight.SemiBold,
+    )
+    val branchSizes = HashMap<String, DiagramSize>(allBranchNames.size)
+    if (diagram.showBranches) {
+        for (bName in allBranchNames) {
+            branchSizes[bName] = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = bName,
+                style = branchStyle,
+            )
+        }
+    }
+
+    val commitLblStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(10.5f),
+        fontWeight = FontWeight.Medium,
+    )
+    val tagStyle = TextStyle(
+        color = theme.nodeText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.scaledSp(10.5f),
+        fontWeight = FontWeight.SemiBold,
+    )
+    val commitLabelSizes = HashMap<String, DiagramSize>(diagram.commits.size)
+    val tagSizes = HashMap<String, DiagramSize>(diagram.commits.size)
+    for (c in diagram.commits) {
+        if (GitGraphLayout.shouldShowCommitLabel(diagram, c)) {
+            commitLabelSizes[c.id] = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = c.id,
+                style = commitLblStyle,
+            )
+        }
+        val tag = c.tag
+        if (!tag.isNullOrBlank()) {
+            tagSizes[c.id] = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = tag,
+                style = tagStyle,
+            )
+        }
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val layout = GitGraphLayout.layout(
+        diagram = diagram,
+        branchLabelSize = { bName -> branchSizes[bName] ?: GitGraphLayout.defaultBadgeSize(bName, renderDensity) },
+        commitLabelSize = { c -> commitLabelSizes[c.id] ?: GitGraphLayout.defaultCommitLabelSize(c.id, renderDensity) },
+        tagLabelSize = { c -> tagSizes[c.id] ?: GitGraphLayout.defaultBadgeSize(c.tag.orEmpty(), renderDensity) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredGitGraphResult(
+        layout = layout,
+        titleSize = titleSize,
+        branchSizes = branchSizes,
+        commitLabelSizes = commitLabelSizes,
+        tagSizes = tagSizes,
+    )
+}
+
 private fun DrawScope.drawGitGraphUnderlay(
     layout: GitGraphDiagramLayout,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
+    val edgeMargin = 20f * unit
+    val nodeMargin = 8f * unit
     val guideDash = PathEffect.dashPathEffect(floatArrayOf(5f * unit, 4f * unit), 0f)
     val cherryDash = PathEffect.dashPathEffect(floatArrayOf(6f * unit, 4f * unit), 0f)
 
@@ -269,15 +574,17 @@ private fun DrawScope.drawGitGraphUnderlay(
     for (pb in layout.branches) {
         val fill = theme.seriesFill(pb.laneIndex)
         val stroke = theme.seriesColor(pb.laneIndex)
-        drawLine(
-            color = stroke.copy(alpha = 0.28f),
-            start = Offset(pb.lineStart.x, pb.lineStart.y),
-            end = Offset(pb.lineEnd.x, pb.lineEnd.y),
-            strokeWidth = 1.4f * unit,
-            pathEffect = guideDash,
-        )
+        if (segmentIntersectsViewport(pb.lineStart.x, pb.lineStart.y, pb.lineEnd.x, pb.lineEnd.y, viewport, edgeMargin)) {
+            drawLine(
+                color = stroke.copy(alpha = 0.28f),
+                start = Offset(pb.lineStart.x, pb.lineStart.y),
+                end = Offset(pb.lineEnd.x, pb.lineEnd.y),
+                strokeWidth = 1.4f * unit,
+                pathEffect = guideDash,
+            )
+        }
         val r = pb.labelRect
-        if (r != null) {
+        if (r != null && rectIntersectsViewport(r, viewport, nodeMargin)) {
             val cr = CornerRadius(6f * unit, 6f * unit)
             drawRoundRect(
                 color = fill,
@@ -300,6 +607,7 @@ private fun DrawScope.drawGitGraphUnderlay(
         val stroke = theme.seriesColor(edge.branchLaneIndex)
         val pts = edge.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, edgeMargin)) continue
         val path = Path().apply {
             moveTo(pts.first().x, pts.first().y)
             if (pts.size == 4) {
@@ -327,6 +635,7 @@ private fun DrawScope.drawGitGraphUnderlay(
     val lblFill = theme.nodeFill
 
     for (pc in layout.commits) {
+        if (!rectIntersectsViewport(gitCommitBounds(pc), viewport, nodeMargin)) continue
         val branchFill = theme.seriesFill(pc.laneIndex)
         val branchStroke = theme.seriesColor(pc.laneIndex)
         val nr = pc.nodeRect

@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -23,25 +27,33 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.maradona.layout.ClassBoxMetrics
 import dev.maradona.layout.ClassDiagramLayout
 import dev.maradona.layout.ClassLayout
 import dev.maradona.layout.DiagramPoint
+import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
+import dev.maradona.layout.MaradonaViewportStats
 import dev.maradona.model.ClassClassifier
 import dev.maradona.model.ClassDiagram
 import dev.maradona.model.ClassMember
@@ -49,6 +61,7 @@ import dev.maradona.model.ClassNode
 import dev.maradona.model.ClassRelationEnd
 import dev.maradona.model.Direction
 import dev.maradona.model.MaradonaNodeClickEvent
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -57,6 +70,23 @@ import kotlin.math.sin
 
 private class ClassLayoutHolder {
     var layout: ClassDiagramLayout? = null
+    var naturalLayout: ClassDiagramLayout? = null
+    var adaptedTbLayout: ClassDiagramLayout? = null
+    var hdrSizes: Map<String, DiagramSize> = emptyMap()
+    var attrSizes: Map<String, DiagramSize> = emptyMap()
+    var methSizes: Map<String, DiagramSize> = emptyMap()
+    var metricsById: Map<String, ClassBoxMetrics> = emptyMap()
+    var relLabelSizes: Map<Int, DiagramSize> = emptyMap()
+    var relFromSizes: Map<Int, DiagramSize> = emptyMap()
+    var relToSizes: Map<Int, DiagramSize> = emptyMap()
+    var noteSizes: Map<Int, DiagramSize> = emptyMap()
+    var nsLabelSizes: Map<String, DiagramSize> = emptyMap()
+    var titleSize: DiagramSize? = null
+    var lastDensity: Float = Float.NaN
+    var lastFontScale: Float = Float.NaN
+    var lastFontResolutionToken: Any? = null
+    var lastMonospaceFontResolutionToken: Any? = null
+    var visibleViewport: DiagramRect? = null
 }
 
 /**
@@ -76,12 +106,125 @@ fun MaradonaClassLayout(
     autoDirection: Boolean = true,
     layoutOptions: LayoutOptions = LayoutOptions(nodeGap = 48f, layerGap = 54f),
     availableWidthPx: Int = Int.MAX_VALUE,
+    visibleViewport: DiagramRect? = null,
+    viewportResolver: ((layoutWidth: Float, layoutHeight: Float) -> DiagramRect?)? = null,
     onNodeClick: ((MaradonaNodeClickEvent) -> Unit)? = null,
+    onViewportStats: (MaradonaViewportStats) -> Unit = {},
     onLayout: (ClassDiagramLayout) -> Unit = {},
 ) {
-    val holder = remember { ClassLayoutHolder() }
+    val holder = remember(diagram, theme, layoutOptions) { ClassLayoutHolder() }
     val uriHandler = LocalUriHandler.current
     val relationDescriptions = remember(diagram) { classRelationDescriptions(diagram) }
+    val textMeasurer = rememberTextMeasurer()
+    val densityObj = LocalDensity.current
+    val renderDensity = densityObj.density
+    val renderFontScale = densityObj.fontScale
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val fontResolutionToken = listOf(
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.SemiBold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontWeight = FontWeight.Bold).value,
+        fontFamilyResolver.resolve(fontFamily = theme.fontFamily, fontStyle = FontStyle.Italic).value,
+    )
+    val monoFontResolutionToken = fontFamilyResolver.resolve(fontFamily = theme.monospaceFontFamily).value
+
+    var observedBoundedWidthPx by remember(diagram, theme, layoutOptions) { mutableIntStateOf(Int.MAX_VALUE) }
+    var boundedWidthObserved by remember(diagram, theme, layoutOptions) { mutableStateOf(false) }
+    val effectiveAvailableWidthPx = minOf(availableWidthPx, observedBoundedWidthPx)
+
+    val naturalLayout = run {
+        val cachedNatural = holder.naturalLayout
+        if (
+            cachedNatural != null &&
+            abs(holder.lastDensity - renderDensity) < 1e-4f &&
+            abs(holder.lastFontScale - renderFontScale) < 1e-4f &&
+            holder.lastFontResolutionToken == fontResolutionToken &&
+            holder.lastMonospaceFontResolutionToken == monoFontResolutionToken
+        ) {
+            cachedNatural
+        } else {
+            computePremeasuredClassLayout(
+                diagram = diagram,
+                theme = theme,
+                layoutOptions = layoutOptions,
+                densityObj = densityObj,
+                textMeasurer = textMeasurer,
+            ).also { pre ->
+                holder.naturalLayout = pre.naturalLayout
+                holder.adaptedTbLayout = null
+                holder.hdrSizes = pre.hdrSizes
+                holder.attrSizes = pre.attrSizes
+                holder.methSizes = pre.methSizes
+                holder.metricsById = pre.metricsById
+                holder.relLabelSizes = pre.relLabelSizes
+                holder.relFromSizes = pre.relFromSizes
+                holder.relToSizes = pre.relToSizes
+                holder.noteSizes = pre.noteSizes
+                holder.nsLabelSizes = pre.nsLabelSizes
+                holder.titleSize = pre.titleSize
+                holder.lastDensity = renderDensity
+                holder.lastFontScale = renderFontScale
+                holder.lastFontResolutionToken = fontResolutionToken
+                holder.lastMonospaceFontResolutionToken = monoFontResolutionToken
+            }.naturalLayout
+        }
+    }
+
+    fun resolveAdaptedTbLayout(): ClassDiagramLayout {
+        holder.adaptedTbLayout?.let { return it }
+        val scaledOptions = with(layoutOptions) {
+            copy(
+                nodeGap = nodeGap * renderDensity,
+                layerGap = layerGap * renderDensity,
+                padding = padding * renderDensity,
+                subgraphPaddingX = subgraphPaddingX * renderDensity,
+                subgraphPaddingY = subgraphPaddingY * renderDensity,
+                density = renderDensity,
+                directionOverride = Direction.TB,
+            )
+        }
+        return ClassLayout.layout(
+            diagram = diagram,
+            classBoxSize = { holder.metricsById.getValue(it.id) },
+            relationLabelSize = { idx, _ -> holder.relLabelSizes[idx] },
+            cardinalitySize = { idx, isFrom, _ ->
+                (if (isFrom) holder.relFromSizes[idx] else holder.relToSizes[idx]) ?: DiagramSize(0f, 0f)
+            },
+            noteBoxSize = { idx, _ -> holder.noteSizes[idx] ?: DiagramSize(0f, 0f) },
+            namespaceLabelSize = { ns -> holder.nsLabelSizes[ns.id] ?: DiagramSize(0f, 0f) },
+            titleSize = holder.titleSize,
+            options = scaledOptions,
+        ).also { holder.adaptedTbLayout = it }
+    }
+
+    val breakpointPx = with(densityObj) { 640.dp.roundToPx() }
+    val wantVerticalInComposition = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        effectiveAvailableWidthPx in 1 until breakpointPx &&
+        naturalLayout.width > effectiveAvailableWidthPx
+    val precomputedLayout = if (wantVerticalInComposition) {
+        resolveAdaptedTbLayout()
+    } else {
+        naturalLayout
+    }
+    holder.layout = precomputedLayout
+    val effectiveViewport = visibleViewport
+        ?: viewportResolver?.invoke(precomputedLayout.width, precomputedLayout.height)
+    val needsParentWidthProbe = autoDirection &&
+        (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
+        layoutOptions.directionOverride == null &&
+        availableWidthPx == Int.MAX_VALUE &&
+        !boundedWidthObserved
+    val activeCullViewport = if (needsParentWidthProbe) null else effectiveViewport
+    holder.visibleViewport = activeCullViewport
+
+    val positionedClassById = remember(precomputedLayout) {
+        precomputedLayout.classes.associateBy { it.node.id }
+    }
+    val positionedNamespaceById = remember(precomputedLayout) {
+        precomputedLayout.namespaces.associateBy { it.namespace.id }
+    }
 
     Layout(
         modifier = modifier
@@ -89,9 +232,26 @@ fun MaradonaClassLayout(
                 isTraversalGroup = true
                 contentDescription =
                     "Class diagram. ${diagram.classes.size} classes, ${diagram.relations.size} relations."
+                val vp = holder.visibleViewport
+                if (vp != null) {
+                    val offscreenEvents = buildList {
+                        for (c in diagram.classes) {
+                            val pc = positionedClassById[c.id] ?: continue
+                            if (rectIntersectsViewport(pc.rect, vp, margin = 8f)) continue
+                            val plainClassTitle = plainTextLabel(c.displayTitle)
+                            val clickEvent = c.action?.toClickEvent(c.id, plainClassTitle)
+                                ?: if (onNodeClick != null) MaradonaNodeClickEvent(nodeId = c.id, label = plainClassTitle) else null
+                            if (clickEvent != null) add(clickEvent)
+                        }
+                    }
+                    val actions = buildOffscreenCustomActions(offscreenEvents, onNodeClick, uriHandler)
+                    if (actions.isNotEmpty()) {
+                        customActions = actions
+                    }
+                }
             }
             .drawBehind {
-                holder.layout?.let { drawClassUnderlay(it, diagram, theme) }
+                holder.layout?.let { drawClassUnderlay(it, diagram, theme, holder.visibleViewport) }
             },
         content = {
             if (diagram.title != null) {
@@ -108,6 +268,12 @@ fun MaradonaClassLayout(
                 )
             }
             for ((cIdx, c) in diagram.classes.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pc = positionedClassById[c.id]
+                    if (pc != null && !rectIntersectsViewport(pc.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 val textColor = parseCssColor(c.style?.textColor) ?: theme.nodeText
                 Column(
                     modifier = Modifier.layoutId("chdr:${c.id}"),
@@ -185,6 +351,12 @@ fun MaradonaClassLayout(
                 )
             }
             for ((idx, note) in diagram.notes.withIndex()) {
+                if (activeCullViewport != null) {
+                    val pn = precomputedLayout.notes.getOrNull(idx)
+                    if (pn != null && !rectIntersectsViewport(pn.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .layoutId("note:$idx")
@@ -205,49 +377,74 @@ fun MaradonaClassLayout(
                 }
             }
             for ((idx, rel) in diagram.relations.withIndex()) {
+                val prel = precomputedLayout.relations.getOrNull(idx)
                 if (!rel.label.isNullOrBlank()) {
-                    BasicText(
-                        text = annotatedLabel(rel.label),
-                        modifier = Modifier
-                            .layoutId("rellabel:$idx")
-                            .background(theme.edgeLabelBackground.copy(alpha = 0.75f))
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        style = TextStyle(
-                            color = theme.edgeLabelText,
-                            fontFamily = theme.fontFamily,
-                            fontSize = theme.edgeLabelFontSize,
-                            textAlign = TextAlign.Center,
-                        ),
-                    )
+                    val lr = prel?.labelRect
+                    val lblVis = activeCullViewport == null ||
+                        lr == null ||
+                        rectIntersectsViewport(lr, activeCullViewport, margin = 8f)
+                    if (lblVis) {
+                        BasicText(
+                            text = annotatedLabel(rel.label),
+                            modifier = Modifier
+                                .layoutId("rellabel:$idx")
+                                .background(theme.edgeLabelBackground.copy(alpha = 0.75f))
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            style = TextStyle(
+                                color = theme.edgeLabelText,
+                                fontFamily = theme.fontFamily,
+                                fontSize = theme.edgeLabelFontSize,
+                                textAlign = TextAlign.Center,
+                            ),
+                        )
+                    }
                 }
                 if (!rel.fromCardinality.isNullOrBlank()) {
-                    BasicText(
-                        text = rel.fromCardinality,
-                        modifier = Modifier
-                            .layoutId("relfrom:$idx")
-                            .padding(horizontal = 2.dp),
-                        style = TextStyle(
-                            color = theme.edgeLabelText,
-                            fontFamily = theme.fontFamily,
-                            fontSize = theme.captionFontSize,
-                        ),
-                    )
+                    val fcr = prel?.fromCardinalityRect
+                    val fVis = activeCullViewport == null ||
+                        fcr == null ||
+                        rectIntersectsViewport(fcr, activeCullViewport, margin = 8f)
+                    if (fVis) {
+                        BasicText(
+                            text = rel.fromCardinality,
+                            modifier = Modifier
+                                .layoutId("relfrom:$idx")
+                                .padding(horizontal = 2.dp),
+                            style = TextStyle(
+                                color = theme.edgeLabelText,
+                                fontFamily = theme.fontFamily,
+                                fontSize = theme.captionFontSize,
+                            ),
+                        )
+                    }
                 }
                 if (!rel.toCardinality.isNullOrBlank()) {
-                    BasicText(
-                        text = rel.toCardinality,
-                        modifier = Modifier
-                            .layoutId("relto:$idx")
-                            .padding(horizontal = 2.dp),
-                        style = TextStyle(
-                            color = theme.edgeLabelText,
-                            fontFamily = theme.fontFamily,
-                            fontSize = theme.captionFontSize,
-                        ),
-                    )
+                    val tcr = prel?.toCardinalityRect
+                    val tVis = activeCullViewport == null ||
+                        tcr == null ||
+                        rectIntersectsViewport(tcr, activeCullViewport, margin = 8f)
+                    if (tVis) {
+                        BasicText(
+                            text = rel.toCardinality,
+                            modifier = Modifier
+                                .layoutId("relto:$idx")
+                                .padding(horizontal = 2.dp),
+                            style = TextStyle(
+                                color = theme.edgeLabelText,
+                                fontFamily = theme.fontFamily,
+                                fontSize = theme.captionFontSize,
+                            ),
+                        )
+                    }
                 }
             }
             for (ns in diagram.namespaces) {
+                if (activeCullViewport != null) {
+                    val pns = positionedNamespaceById[ns.id]
+                    if (pns != null && !rectIntersectsViewport(pns.rect, activeCullViewport, margin = 8f)) {
+                        continue
+                    }
+                }
                 BasicText(
                     text = annotatedLabel(ns.label),
                     modifier = Modifier.layoutId("ns:${ns.id}"),
@@ -294,16 +491,43 @@ fun MaradonaClassLayout(
         val padY = 8f * renderDensity
         val emptyCompartmentH = 8f * renderDensity
 
+        val effectiveHdrSizes = HashMap<String, DiagramSize>(holder.hdrSizes).apply {
+            for ((k, pl) in hdrPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveAttrSizes = HashMap<String, DiagramSize>(holder.attrSizes).apply {
+            for ((k, pl) in attrPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveMethSizes = HashMap<String, DiagramSize>(holder.methSizes).apply {
+            for ((k, pl) in methPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveRelLabelSizes = HashMap<Int, DiagramSize>(holder.relLabelSizes).apply {
+            for ((k, pl) in relLabelPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveRelFromSizes = HashMap<Int, DiagramSize>(holder.relFromSizes).apply {
+            for ((k, pl) in relFromPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveRelToSizes = HashMap<Int, DiagramSize>(holder.relToSizes).apply {
+            for ((k, pl) in relToPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveNoteSizes = HashMap<Int, DiagramSize>(holder.noteSizes).apply {
+            for ((k, pl) in notePlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveNsLabelSizes = HashMap<String, DiagramSize>(holder.nsLabelSizes).apply {
+            for ((k, pl) in nsPlaceables) this[k] = DiagramSize(pl.width.toFloat(), pl.height.toFloat())
+        }
+        val effectiveTitleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
+            ?: holder.titleSize
+
         fun computeMetrics(c: ClassNode): ClassBoxMetrics {
-            val hdr = hdrPlaceables[c.id]
-            val attr = attrPlaceables[c.id]
-            val meth = methPlaceables[c.id]
-            val hdrW = hdr?.width?.toFloat() ?: 0f
-            val hdrH = hdr?.height?.toFloat() ?: 0f
-            val attrW = attr?.width?.toFloat() ?: 0f
-            val attrH = attr?.height?.toFloat() ?: 0f
-            val methW = meth?.width?.toFloat() ?: 0f
-            val methH = meth?.height?.toFloat() ?: 0f
+            val hdr = effectiveHdrSizes[c.id]
+            val attr = effectiveAttrSizes[c.id]
+            val meth = effectiveMethSizes[c.id]
+            val hdrW = hdr?.width ?: 0f
+            val hdrH = hdr?.height ?: 0f
+            val attrW = attr?.width ?: 0f
+            val attrH = attr?.height ?: 0f
+            val methW = meth?.width ?: 0f
+            val methH = meth?.height ?: 0f
             val contentW = maxOf(hdrW, attrW, methW)
             val width = max(96f * renderDensity, contentW + padX * 2f)
             val headerHeight = hdrH + padY * 2f
@@ -347,39 +571,55 @@ fun MaradonaClassLayout(
         fun runLayout(opts: LayoutOptions): ClassDiagramLayout = ClassLayout.layout(
             diagram = diagram,
             classBoxSize = { metricsById.getValue(it.id) },
-            relationLabelSize = { idx, _ ->
-                relLabelPlaceables[idx]?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) }
-            },
+            relationLabelSize = { idx, _ -> effectiveRelLabelSizes[idx] },
             cardinalitySize = { idx, isFrom, _ ->
-                val pl = if (isFrom) relFromPlaceables[idx] else relToPlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
+                (if (isFrom) effectiveRelFromSizes[idx] else effectiveRelToSizes[idx]) ?: DiagramSize(0f, 0f)
             },
-            noteBoxSize = { idx, _ ->
-                val pl = notePlaceables[idx]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            namespaceLabelSize = { ns ->
-                val pl = nsPlaceables[ns.id]
-                DiagramSize(pl?.width?.toFloat() ?: 0f, pl?.height?.toFloat() ?: 0f)
-            },
-            titleSize = titlePlaceable?.let { DiagramSize(it.width.toFloat(), it.height.toFloat()) },
+            noteBoxSize = { idx, _ -> effectiveNoteSizes[idx] ?: DiagramSize(0f, 0f) },
+            namespaceLabelSize = { ns -> effectiveNsLabelSizes[ns.id] ?: DiagramSize(0f, 0f) },
+            titleSize = effectiveTitleSize,
             options = opts,
         )
 
-        var result = runLayout(scaledOptions)
+        val boundedWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        if (!boundedWidthObserved || observedBoundedWidthPx != boundedWidth) {
+            observedBoundedWidthPx = boundedWidth
+            boundedWidthObserved = true
+        }
+        val effectiveMaxWidth = minOf(boundedWidth, availableWidthPx)
         val breakpoint = 640.dp.roundToPx()
-        val effectiveMaxWidth = minOf(
-            if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE,
-            availableWidthPx,
-        )
-        if (
-            autoDirection &&
+        val measuredNatural = if (activeCullViewport == null) runLayout(scaledOptions) else naturalLayout
+        val wantVerticalAtMeasure = autoDirection &&
             (diagram.direction == Direction.LR || diagram.direction == Direction.RL) &&
             layoutOptions.directionOverride == null &&
             effectiveMaxWidth in 1 until breakpoint &&
-            result.width > effectiveMaxWidth
-        ) {
-            result = runLayout(scaledOptions.copy(directionOverride = Direction.TB))
+            measuredNatural.width > effectiveMaxWidth
+
+        val result = if (activeCullViewport != null && wantVerticalAtMeasure != wantVerticalInComposition) {
+            precomputedLayout
+        } else if (wantVerticalAtMeasure) {
+            if (activeCullViewport == null) {
+                runLayout(scaledOptions.copy(directionOverride = Direction.TB)).also {
+                    holder.adaptedTbLayout = it
+                }
+            } else {
+                resolveAdaptedTbLayout()
+            }
+        } else {
+            measuredNatural
+        }
+        if (activeCullViewport == null) {
+            holder.hdrSizes = effectiveHdrSizes
+            holder.attrSizes = effectiveAttrSizes
+            holder.methSizes = effectiveMethSizes
+            holder.metricsById = metricsById
+            holder.relLabelSizes = effectiveRelLabelSizes
+            holder.relFromSizes = effectiveRelFromSizes
+            holder.relToSizes = effectiveRelToSizes
+            holder.noteSizes = effectiveNoteSizes
+            holder.nsLabelSizes = effectiveNsLabelSizes
+            holder.titleSize = effectiveTitleSize
+            holder.naturalLayout = measuredNatural
         }
         holder.layout = result
         onLayout(result)
@@ -392,6 +632,32 @@ fun MaradonaClassLayout(
                 )
             }
         }
+
+        val edgeMargin = 20f * renderDensity
+        val drawnEdges = if (activeCullViewport == null) {
+            result.relations.size
+        } else {
+            result.relations.count { rel ->
+                polylineIntersectsViewport(rel.points, activeCullViewport, margin = edgeMargin)
+            }
+        }
+        val drawnSubgraphs = if (activeCullViewport == null) {
+            result.namespaces.size
+        } else {
+            result.namespaces.count { rectIntersectsViewport(it.rect, activeCullViewport, margin = 8f) }
+        }
+        onViewportStats(
+            MaradonaViewportStats(
+                composedNodes = boxPlaceables.size,
+                totalNodes = diagram.classes.size,
+                composedEdgeLabels = relLabelPlaceables.size,
+                totalEdgeLabels = diagram.relations.count { !it.label.isNullOrBlank() },
+                drawnEdges = drawnEdges,
+                totalEdges = result.relations.size,
+                drawnSubgraphs = drawnSubgraphs,
+                totalSubgraphs = result.namespaces.size,
+            ),
+        )
 
         layout(result.width.roundToInt(), result.height.roundToInt()) {
             result.titleRect?.let { r ->
@@ -448,6 +714,271 @@ fun MaradonaClassLayout(
     }
 }
 
+private data class PremeasuredClassResult(
+    val naturalLayout: ClassDiagramLayout,
+    val hdrSizes: Map<String, DiagramSize>,
+    val attrSizes: Map<String, DiagramSize>,
+    val methSizes: Map<String, DiagramSize>,
+    val metricsById: Map<String, ClassBoxMetrics>,
+    val relLabelSizes: Map<Int, DiagramSize>,
+    val relFromSizes: Map<Int, DiagramSize>,
+    val relToSizes: Map<Int, DiagramSize>,
+    val noteSizes: Map<Int, DiagramSize>,
+    val nsLabelSizes: Map<String, DiagramSize>,
+    val titleSize: DiagramSize?,
+)
+
+private fun computePremeasuredClassLayout(
+    diagram: ClassDiagram,
+    theme: MaradonaTheme,
+    layoutOptions: LayoutOptions,
+    densityObj: Density,
+    textMeasurer: TextMeasurer,
+): PremeasuredClassResult {
+    val renderDensity = densityObj.density
+    val padX = 12f * renderDensity
+    val padY = 8f * renderDensity
+    val emptyCompartmentH = 8f * renderDensity
+    val hdrGap = with(densityObj) { 2.dp.roundToPx().toFloat() }
+    val memberGap = with(densityObj) { 3.dp.roundToPx().toFloat() }
+
+    val titleSize = diagram.title?.let { title ->
+        measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(title),
+            style = TextStyle(
+                color = theme.nodeText,
+                fontFamily = theme.fontFamily,
+                fontSize = theme.titleFontSize,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            ),
+        )
+    }
+
+    val hdrSizes = HashMap<String, DiagramSize>(diagram.classes.size)
+    val attrSizes = HashMap<String, DiagramSize>(diagram.classes.size)
+    val methSizes = HashMap<String, DiagramSize>(diagram.classes.size)
+    val metricsById = HashMap<String, ClassBoxMetrics>(diagram.classes.size)
+
+    fun measureMembers(members: List<ClassMember>, textColor: Color): DiagramSize {
+        var maxW = 0f
+        var sumH = 0f
+        for ((i, member) in members.withIndex()) {
+            val sz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = member.displayText,
+                style = TextStyle(
+                    color = textColor,
+                    fontFamily = theme.fontFamily,
+                    fontSize = theme.edgeLabelFontSize,
+                    fontStyle = if (member.classifier == ClassClassifier.Abstract) FontStyle.Italic else FontStyle.Normal,
+                    textDecoration = if (member.classifier == ClassClassifier.Static) TextDecoration.Underline else TextDecoration.None,
+                ),
+            )
+            if (sz.width > maxW) maxW = sz.width
+            sumH += sz.height
+            if (i > 0) sumH += memberGap
+        }
+        return DiagramSize(maxW, sumH)
+    }
+
+    for (c in diagram.classes) {
+        val textColor = parseCssColor(c.style?.textColor) ?: theme.nodeText
+        val annStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.captionFontSize,
+            fontStyle = FontStyle.Italic,
+            textAlign = TextAlign.Center,
+        )
+        val titleStyle = TextStyle(
+            color = textColor,
+            fontFamily = theme.fontFamily,
+            fontSize = theme.nodeFontSize,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        val titleText = if (c.genericType.isNullOrBlank()) {
+            annotatedLabel(c.label, theme.monospaceFontFamily)
+        } else {
+            annotatedLabel(c.label, theme.monospaceFontFamily) + AnnotatedString("<${c.genericType}>")
+        }
+        val titleSz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = titleText,
+            style = titleStyle,
+        )
+        var hdrW = titleSz.width
+        var hdrH = titleSz.height
+        for (ann in c.annotations) {
+            val annSz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = "«$ann»",
+                style = annStyle,
+            )
+            if (annSz.width > hdrW) hdrW = annSz.width
+            hdrH += annSz.height + hdrGap
+        }
+        val hdrSz = DiagramSize(hdrW, hdrH)
+        hdrSizes[c.id] = hdrSz
+
+        val attrSz = if (c.attributes.isNotEmpty()) {
+            measureMembers(c.attributes, textColor).also { attrSizes[c.id] = it }
+        } else null
+        val methSz = if (c.methods.isNotEmpty()) {
+            measureMembers(c.methods, textColor).also { methSizes[c.id] = it }
+        } else null
+
+        val contentW = maxOf(hdrSz.width, attrSz?.width ?: 0f, methSz?.width ?: 0f)
+        val width = max(96f * renderDensity, contentW + padX * 2f)
+        val headerHeight = hdrSz.height + padY * 2f
+        val showCompartments = !diagram.hideEmptyMembersBox || c.attributes.isNotEmpty() || c.methods.isNotEmpty()
+        val attributesHeight = if (!showCompartments) {
+            0f
+        } else if (c.attributes.isEmpty()) {
+            emptyCompartmentH
+        } else {
+            (attrSz?.height ?: 0f) + padY * 1.5f
+        }
+        val methodsHeight = if (!showCompartments) {
+            0f
+        } else if (c.methods.isEmpty()) {
+            emptyCompartmentH
+        } else {
+            (methSz?.height ?: 0f) + padY * 1.5f
+        }
+        val height = headerHeight + attributesHeight + methodsHeight
+        metricsById[c.id] = ClassBoxMetrics(
+            width = width,
+            height = height,
+            headerHeight = headerHeight,
+            attributesHeight = attributesHeight,
+            methodsHeight = methodsHeight,
+        )
+    }
+
+    val notePadH = with(densityObj) { 10.dp.roundToPx() * 2 }
+    val notePadV = with(densityObj) { 6.dp.roundToPx() * 2 }
+    val noteStyle = TextStyle(
+        color = theme.noteText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Start,
+    )
+    val noteSizes = diagram.notes.mapIndexed { idx, note ->
+        val sz = measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(note.text),
+            style = noteStyle,
+        )
+        idx to DiagramSize(sz.width + notePadH, sz.height + notePadV)
+    }.toMap()
+
+    val relPadH = with(densityObj) { 4.dp.roundToPx() * 2 }
+    val relPadV = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val cardPadH = with(densityObj) { 2.dp.roundToPx() * 2 }
+    val relLabelStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.edgeLabelFontSize,
+        textAlign = TextAlign.Center,
+    )
+    val cardStyle = TextStyle(
+        color = theme.edgeLabelText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.captionFontSize,
+    )
+    val relLabelSizes = HashMap<Int, DiagramSize>()
+    val relFromSizes = HashMap<Int, DiagramSize>()
+    val relToSizes = HashMap<Int, DiagramSize>()
+    for ((idx, rel) in diagram.relations.withIndex()) {
+        if (!rel.label.isNullOrBlank()) {
+            val sz = measureAnnotatedTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = annotatedLabel(rel.label),
+                style = relLabelStyle,
+            )
+            relLabelSizes[idx] = DiagramSize(sz.width + relPadH, sz.height + relPadV)
+        }
+        if (!rel.fromCardinality.isNullOrBlank()) {
+            val sz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = rel.fromCardinality,
+                style = cardStyle,
+            )
+            relFromSizes[idx] = DiagramSize(sz.width + cardPadH, sz.height)
+        }
+        if (!rel.toCardinality.isNullOrBlank()) {
+            val sz = measurePlainTextSize(
+                textMeasurer = textMeasurer,
+                densityObj = densityObj,
+                text = rel.toCardinality,
+                style = cardStyle,
+            )
+            relToSizes[idx] = DiagramSize(sz.width + cardPadH, sz.height)
+        }
+    }
+
+    val nsStyle = TextStyle(
+        color = theme.subgraphText,
+        fontFamily = theme.fontFamily,
+        fontSize = theme.subgraphFontSize,
+        fontWeight = FontWeight.SemiBold,
+    )
+    val nsLabelSizes = diagram.namespaces.associate { ns ->
+        ns.id to measureAnnotatedTextSize(
+            textMeasurer = textMeasurer,
+            densityObj = densityObj,
+            text = annotatedLabel(ns.label),
+            style = nsStyle,
+        )
+    }
+
+    val scaledOptions = with(layoutOptions) {
+        copy(
+            nodeGap = nodeGap * renderDensity,
+            layerGap = layerGap * renderDensity,
+            padding = padding * renderDensity,
+            subgraphPaddingX = subgraphPaddingX * renderDensity,
+            subgraphPaddingY = subgraphPaddingY * renderDensity,
+            density = renderDensity,
+        )
+    }
+    val naturalLayout = ClassLayout.layout(
+        diagram = diagram,
+        classBoxSize = { metricsById.getValue(it.id) },
+        relationLabelSize = { idx, _ -> relLabelSizes[idx] },
+        cardinalitySize = { idx, isFrom, _ ->
+            (if (isFrom) relFromSizes[idx] else relToSizes[idx]) ?: DiagramSize(0f, 0f)
+        },
+        noteBoxSize = { idx, _ -> noteSizes[idx] ?: DiagramSize(0f, 0f) },
+        namespaceLabelSize = { ns -> nsLabelSizes[ns.id] ?: DiagramSize(0f, 0f) },
+        titleSize = titleSize,
+        options = scaledOptions,
+    )
+    return PremeasuredClassResult(
+        naturalLayout = naturalLayout,
+        hdrSizes = hdrSizes,
+        attrSizes = attrSizes,
+        methSizes = methSizes,
+        metricsById = metricsById,
+        relLabelSizes = relLabelSizes,
+        relFromSizes = relFromSizes,
+        relToSizes = relToSizes,
+        noteSizes = noteSizes,
+        nsLabelSizes = nsLabelSizes,
+        titleSize = titleSize,
+    )
+}
+
 @Composable
 private fun MemberLine(
     member: ClassMember,
@@ -481,12 +1012,15 @@ private fun DrawScope.drawClassUnderlay(
     layout: ClassDiagramLayout,
     diagram: ClassDiagram,
     theme: MaradonaTheme,
+    viewport: DiagramRect? = null,
 ) {
     val unit = density
+    val cullMargin = 24f * unit
 
     // 1. Namespace cluster boxes (sorted parent-first in layout.namespaces).
     for (ns in layout.namespaces) {
         val r = ns.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = theme.subgraphFill,
             topLeft = Offset(r.x, r.y),
@@ -505,6 +1039,7 @@ private fun DrawScope.drawClassUnderlay(
     for (note in layout.notes) {
         val nPts = note.connectorPoints
         if (nPts.size >= 2) {
+            if (!polylineIntersectsViewport(nPts, viewport, margin = cullMargin)) continue
             val samples = ClassLayout.basisSplineSamples(nPts)
             val splineHitsObstacle = (0 until samples.lastIndex).any { i ->
                 val a = samples[i]
@@ -540,6 +1075,7 @@ private fun DrawScope.drawClassUnderlay(
     for (rel in layout.relations) {
         val pts = rel.points
         if (pts.size < 2) continue
+        if (!polylineIntersectsViewport(pts, viewport, margin = cullMargin)) continue
         val r = rel.relation
         val startTrim = classEndTrim(r.startEnd, unit)
         val endTrim = classEndTrim(r.endEnd, unit)
@@ -600,6 +1136,7 @@ private fun DrawScope.drawClassUnderlay(
     for (pc in layout.classes) {
         val c = pc.node
         val r = pc.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         val fill = parseCssColor(c.style?.fill) ?: theme.nodeFill
         val border = parseCssColor(c.style?.stroke) ?: theme.nodeBorder
         val strokeW = (c.style?.strokeWidth?.removeSuffix("px")?.trim()?.toFloatOrNull() ?: 1f) * unit
@@ -638,6 +1175,7 @@ private fun DrawScope.drawClassUnderlay(
     val noteBorder = theme.noteBorder
     for (note in layout.notes) {
         val r = note.rect
+        if (!rectIntersectsViewport(r, viewport, margin = cullMargin)) continue
         drawRect(
             color = noteFill,
             topLeft = Offset(r.x, r.y),
