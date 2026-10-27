@@ -488,18 +488,18 @@ object MaradonaSvgExporter {
             is MaradonaDiagramModel.C4Model -> {
                 val d = model.diagram
                 val dens = options.density.coerceAtLeast(0.01f)
-                val fontSize = theme.nodeFontSize.value
                 val elementSizes = d.elements.associate { el ->
                     val defaultSz = C4Layout.defaultElementSize(el, dens)
-                    val initialLines = c4WrappedCardSpanLines(el, fontSize, c4WrapWidth(defaultSz.width, dens))
-                    val maxLineCols = initialLines.maxOfOrNull { line ->
-                        line.sumOf { span -> span.inlineImage?.let { 4 } ?: span.text.length }
-                    }?.coerceAtLeast(1) ?: 1
-                    val neededW = max(defaultSz.width, (maxLineCols * fontSize * 0.62f + 28f * dens).coerceAtMost(280f * dens))
-                    val wrappedLines = c4WrappedCardSpanLines(el, fontSize, c4WrapWidth(neededW, dens))
+                    val initialLines = c4WrappedCardSpanLines(el, c4WrapWidth(defaultSz.width, dens), theme)
+                    val maxLineW = initialLines.maxOfOrNull { (lineFont, line) ->
+                        line.sumOf { span -> span.inlineImage?.let { 4 } ?: span.text.length } * lineFont * 0.62f
+                    }?.coerceAtLeast(1f) ?: 1f
+                    val neededW = max(defaultSz.width, (maxLineW + 28f * dens).coerceAtMost(280f * dens))
+                    val wrappedLines = c4WrappedCardSpanLines(el, c4WrapWidth(neededW, dens), theme)
                     val personExtra = if (el.kind.isPerson) 22f * dens else 0f
                     val dbExtra = if (el.kind.isDatabase) 12f * dens else 0f
-                    val neededH = max(defaultSz.height, wrappedLines.size * fontSize * 1.38f + 28f * dens + personExtra + dbExtra)
+                    val totalTextH = wrappedLines.sumOf { (lineFont, _) -> (lineFont * 1.38f).toDouble() }.toFloat()
+                    val neededH = max(defaultSz.height, totalTextH + 28f * dens + personExtra + dbExtra)
                     el.id to DiagramSize(neededW, neededH)
                 }
                 val boundaryHeaderSizes = d.boundaries.associate { b ->
@@ -1621,10 +1621,25 @@ object MaradonaSvgExporter {
                 }
             }
 
-            val fontSize = theme.nodeFontSize.value
             val wrapW = c4WrapWidth(r.width, dens)
-            val cardSpanLines = c4WrappedCardSpanLines(el, fontSize, wrapW, theme, textMeasurer, densityObj)
-            appendRichSpanLines(sb, "    ", r.centerX, r.centerY, cardSpanLines, textHex, fontSize)
+            val cardSpanLines = c4WrappedCardSpanLines(el, wrapW, theme, textMeasurer, densityObj)
+            val totalCardTextH = cardSpanLines.sumOf { (lf, _) -> (lf * 1.35f).toDouble() }.toFloat()
+            var curCardY = r.centerY - totalCardTextH / 2f
+            for ((lineFont, spanLine) in cardSpanLines) {
+                val lh = lineFont * 1.35f
+                val lineCenterY = curCardY + lh / 2f
+                appendFormattedLineWithImages(
+                    sb = sb,
+                    indent = "    ",
+                    centerX = r.centerX,
+                    lineCenterY = lineCenterY,
+                    baselineY = lineCenterY + lineFont * 0.35f,
+                    spanLine = spanLine,
+                    colorHex = textHex,
+                    fontSize = lineFont,
+                )
+                curCardY += lh
+            }
             sb.append("""  </g>""").append('\n')
             if (url != null) sb.append("""  </a>""").append('\n')
         }
@@ -2854,23 +2869,33 @@ object MaradonaSvgExporter {
 
     private fun c4WrappedCardSpanLines(
         el: dev.maradona.model.C4Element,
-        fontSize: Float,
         maxWidth: Float,
         theme: MaradonaTheme = MaradonaTheme.light(),
         textMeasurer: TextMeasurer? = null,
         densityObj: Density = Density(1f),
-    ): List<List<FormattedTextSpan>> {
+    ): List<Pair<Float, List<FormattedTextSpan>>> {
         val displayLabel = if (!el.sprite.isNullOrBlank()) {
             "${resolveMermaidIconGlyph(el.sprite)} ${el.label}"
         } else {
             el.label
         }
-        val style = exportTextStyle(theme, fontSize, densityObj, textMeasurer)
+        val hdrFont = theme.scaledSp(10f).value
+        val lblFont = theme.scaledSp(13.5f).value
+        val descFont = theme.captionFontSize.value
+        val hdrStyle = exportTextStyle(theme, hdrFont, densityObj, textMeasurer)
+        val lblStyle = exportTextStyle(theme, lblFont, densityObj, textMeasurer)
+        val descStyle = exportTextStyle(theme, descFont, densityObj, textMeasurer)
         return buildList {
-            addAll(wrapSvgLines(el.typeHeaderText, fontSize, maxWidth).map { listOf(FormattedTextSpan(it)) })
-            addAll(wrapFormattedLabelLines(displayLabel, fontSize, maxWidth, textMeasurer, style, densityObj))
+            for (line in wrapFormattedLabelLines(el.typeHeaderText, hdrFont, maxWidth, textMeasurer, hdrStyle, densityObj)) {
+                add(hdrFont to line)
+            }
+            for (line in wrapFormattedLabelLines(displayLabel, lblFont, maxWidth, textMeasurer, lblStyle, densityObj)) {
+                add(lblFont to line)
+            }
             if (!el.description.isNullOrBlank()) {
-                addAll(wrapFormattedLabelLines(el.description, fontSize, maxWidth, textMeasurer, style, densityObj))
+                for (line in wrapFormattedLabelLines(el.description, descFont, maxWidth, textMeasurer, descStyle, densityObj)) {
+                    add(descFont to line)
+                }
             }
         }
     }

@@ -851,11 +851,12 @@ fun wrapFormattedLabelLines(
     fun measureSpansWidthPx(spans: List<FormattedTextSpan>): Float {
         if (spans.isEmpty()) return 0f
         if (textMeasurer != null && textStyle != null) {
+            val imgScale = (density.density * density.fontScale).coerceAtLeast(0.01f)
             var widthPx = 0f
             val textOnly = buildString {
                 for (sp in spans) {
                     if (sp.inlineImage != null) {
-                        widthPx += sp.inlineImage.widthPx * density.density + 4f * density.density
+                        widthPx += sp.inlineImage.widthPx * imgScale + 4f * density.density
                     } else {
                         append(sp.text)
                     }
