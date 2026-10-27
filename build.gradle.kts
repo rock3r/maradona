@@ -37,10 +37,15 @@ subprojects {
         }
 
         extensions.configure<MavenPublishBaseExtension> {
-            // Sonatype Central Portal endpoint with manual promotion (`automaticRelease = false`)
-            // so staged deployments can be verified via `scripts/central_portal_check.py validate`
-            // before publishing.
-            publishToMavenCentral(automaticRelease = false)
+            // Sonatype Central Portal endpoint. Defaults to automatic promotion when
+            // `-PcentralAutomaticRelease=true` is passed (used by the GitHub Release ->
+            // Maven Central workflow), or manual promotion (`false`) when staging for
+            // inspection via `scripts/central_portal_check.py`.
+            val autoRelease =
+                providers.gradleProperty("centralAutomaticRelease")
+                    .map { it.equals("true", ignoreCase = true) }
+                    .getOrElse(false)
+            publishToMavenCentral(automaticRelease = autoRelease)
 
             configure(
                 KotlinMultiplatform(

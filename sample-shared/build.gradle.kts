@@ -13,6 +13,7 @@ kotlin {
         namespace = "dev.maradona.sample.shared"
         compileSdk = libs.versions.android.compile.sdk.get().toInt()
         minSdk = libs.versions.android.min.sdk.get().toInt()
+        withHostTest {}
     }
 
     listOf(
@@ -33,6 +34,9 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }

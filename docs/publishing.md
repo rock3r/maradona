@@ -14,18 +14,21 @@ The sample modules (`:sample-shared`, `:sample-desktop`, `:sample-android`, and 
 
 Shared coordinates and POM metadata (`GROUP`, `VERSION_NAME`, `POM_URL`, `POM_LICENSE_*`, `POM_SCM_*`, `POM_DEVELOPER_*`) live in the root [`gradle.properties`](../gradle.properties). Per-module `POM_ARTIFACT_ID`, `POM_NAME`, and `POM_DESCRIPTION` live in each library module's own `gradle.properties`. Every published JAR, `-sources.jar`, and `-javadoc.jar` bundles [`LICENSE`](../LICENSE) and [`NOTICE`](../NOTICE) under `META-INF/`.
 
-## Tag-Driven Release Pipeline (`.github/workflows/release.yml`)
+## GitHub Release → Maven Central Pipeline (`.github/workflows/release.yml`)
 
-Pushing a SemVer tag matching `v*` (for example `v0.1.0`) triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml):
+Publishing a GitHub Release with a SemVer tag matching `v*` (for example `v0.1.0`) triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml) (`on: release: types: [published]`). The workflow also supports `workflow_dispatch` with `dry_run: true` (default) so the full Linux + macOS 12-component release build and verification pipeline can be tested in GitHub Actions without publishing to Maven Central or requiring secrets:
 
 1. **`release-gate` (`ubuntu-latest`):**
-   - Validates that the tag matches `v<major>.<minor>.<patch>` (with optional SemVer pre-release/build metadata) via [`.github/scripts/derive-release-version.sh`](../.github/scripts/derive-release-version.sh) and strips the leading `v` to derive `RELEASE_VERSION`.
-   - Runs `./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest`.
+   - Validates that the release tag matches `v<major>.<minor>.<patch>` (with optional SemVer pre-release/build metadata) via [`.github/scripts/derive-release-version.sh`](../.github/scripts/derive-release-version.sh) and strips the leading `v` to derive `RELEASE_VERSION`.
+   - Runs `./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest :maradona:testAndroidHostTest :maradona-material3:testAndroidHostTest :sample-android:assembleDebug`.
 2. **`publish` (`macos-latest`, depends on `release-gate`):**
-   - Runs on `macos-latest` (with Temurin JDK 25, Xcode, and the Android SDK) so all four KMP targets (`desktop`, `android`, `iosArm64`, `iosSimulatorArm64`) are compiled and uploaded together in a single atomic Sonatype Central Portal deployment.
-   - Runs `./gradlew verifyMavenLocalPublication -PVERSION_NAME="$RELEASE_VERSION"` first to verify all 12 KMP coordinate directories, POM metadata, Gradle Module Metadata, `META-INF/LICENSE` + `META-INF/NOTICE`, and the absence of Jewel dependencies in `:maradona` and `:maradona-material3`.
-   - Publishes signed artifacts to Sonatype Central Portal in manual-promotion mode (`automaticRelease = false`) via `./gradlew :maradona:publishToMavenCentral :maradona-material3:publishToMavenCentral :maradona-jewel:publishToMavenCentral -PVERSION_NAME="$RELEASE_VERSION"`.
-   - Creates a draft GitHub release (`--draft`) listing the Maven Central coordinates and linking to [`CHANGELOG.md`](../CHANGELOG.md).
+   - Runs on `macos-latest` (with Temurin JDK 25, Xcode, and the Android SDK) so all four KMP targets (`desktop`, `android`, `iosArm64`, `iosSimulatorArm64`) are compiled, tested, and packaged together in a single atomic Sonatype Central Portal deployment.
+   - Runs `./gradlew :maradona:iosSimulatorArm64Test :maradona-material3:iosSimulatorArm64Test :sample-shared:iosSimulatorArm64Test` on the iOS Simulator.
+   - Runs `./gradlew verifyMavenLocalPublication -PVERSION_NAME="$RELEASE_VERSION"` to verify all 12 KMP coordinate directories, POM metadata, Gradle Module Metadata, `META-INF/LICENSE` + `META-INF/NOTICE`, Java 25 classfile major version `69`, `android:minSdkVersion="24"`, and the absence of Jewel dependencies in `:maradona` and `:maradona-material3`.
+   - Uploads the verified 12-component Maven repository layout as a workflow artifact (`maradona-maven-bundle-<version>`).
+   - When `dry_run` is `false` (all `release: published` runs, or `workflow_dispatch` with `dry_run: false`), signs with in-memory PGP and publishes to Sonatype Central Portal via `./gradlew :maradona:publishToMavenCentral :maradona-material3:publishToMavenCentral :maradona-jewel:publishToMavenCentral -PVERSION_NAME="$RELEASE_VERSION" -PcentralAutomaticRelease="$AUTOMATIC_RELEASE"`.
+
+> **Note on `-javadoc.jar`:** Each KMP coordinate currently publishes `-sources.jar` (containing full source + KDoc for IDE quick-documentation) alongside an empty `-javadoc.jar` (`JavadocJar.Empty()`) to satisfy Sonatype Central Portal's required artifact set, matching Spectre's setup. `-javadoc.jar` is a Central Portal packaging placeholder, not generated Dokka HTML reference documentation.
 
 ## Required GitHub Actions Secrets
 

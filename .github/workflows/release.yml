@@ -1,36 +1,95 @@
 name: Release
 
-# Tag-driven Maven Central publishing pipeline (modeled on Spectre's release.yml).
+# GitHub Release -> Maven Central publishing pipeline (with dry-run verification support).
 #
-# Trigger: pushing a tag matching `v*` (e.g. `v0.1.0`).
-#   1. `release-gate` (ubuntu-latest): validates SemVer tag via
-#      `.github/scripts/derive-release-version.sh`, runs the full desktop & unit test
-#      suite, and outputs the stripped SemVer version.
-#   2. `publish` (macos-latest): builds all Kotlin Multiplatform targets (Desktop JVM,
-#      Android AAR, iosArm64 klib, and iosSimulatorArm64 klib) on a single macOS runner
-#      so all 12 KMP coordinate publications land in a single atomic Sonatype Central
-#      Portal deployment. Runs `verifyMavenLocalPublication` first, then signs and
-#      uploads via `publishToMavenCentral` (`automaticRelease = false` for validation
-#      via `scripts/central_portal_check.py`), and creates a draft GitHub release.
+# Triggers:
+#   1. `release: types: [published]` — Publishing a GitHub Release with a `v<semver>` tag
+#      (for example `v0.1.0`) automatically validates, builds all 12 KMP components on
+#      macOS, signs with in-memory PGP, and publishes to Maven Central via Sonatype
+#      Central Portal.
+#   2. `workflow_dispatch` — Manual execution supporting `dry_run: true` (default) to test
+#      the full `release-gate` (Linux) + `publish` (macOS 12-component KMP build, iOS
+#      Simulator test gate, and `:verifyMavenLocalPublication`) on GitHub Actions without
+#      publishing to Maven Central or requiring Portal/PGP secrets.
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "SemVer release tag to validate/build (e.g. v0.1.0)"
+        required: false
+        default: "v0.1.0"
+        type: string
+      dry_run:
+        description: "Dry-run mode: build and verify all 12 KMP artifacts on macOS without uploading to Sonatype Central Portal"
+        required: false
+        default: true
+        type: boolean
+      automatic_release:
+        description: "Automatically promote the validated deployment on Sonatype Central Portal (when dry_run is false)"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   release-gate:
-    name: Validate release tag & run test suite
+    name: Validate release tag & run Linux + Android host test suite
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      checkout_ref: ${{ steps.version.outputs.checkout_ref }}
+      dry_run: ${{ steps.version.outputs.dry_run }}
+      automatic_release: ${{ steps.version.outputs.automatic_release }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and check out release tag or dry-run commit
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_AUTO_RELEASE: ${{ inputs.automatic_release }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            raw_tag="$RELEASE_TAG"
+            dry_run="false"
+            auto_release="true"
+          else
+            raw_tag="${INPUT_TAG:-v0.1.0}"
+            dry_run="${INPUT_DRY_RUN:-true}"
+            auto_release="${INPUT_AUTO_RELEASE:-true}"
+          fi
+          version="$(bash .github/scripts/derive-release-version.sh "$raw_tag")"
+          if git rev-parse -q --verify "refs/tags/$raw_tag" >/dev/null; then
+            checkout_ref="refs/tags/$raw_tag"
+            git checkout --detach "$checkout_ref"
+          elif [ "$dry_run" = "true" ]; then
+            checkout_ref="$CURRENT_SHA"
+            echo "Tag $raw_tag does not exist yet; dry_run=true is testing current commit $checkout_ref"
+          else
+            echo "::error::Tag $raw_tag does not exist in the repository; refusing non-dry-run release."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$raw_tag" >> "$GITHUB_OUTPUT"
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "automatic_release=$auto_release" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$raw_tag -> version=$version (checkout_ref=$checkout_ref, dry_run=$dry_run, automatic_release=$auto_release)"
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -42,28 +101,36 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
-      - name: Derive release version from SemVer tag
-        id: version
+      - name: Run desktop, Android host & APK build checks
         run: |
-          version="$(bash .github/scripts/derive-release-version.sh "$GITHUB_REF_NAME")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Run desktop & unit tests
-        run: ./gradlew :maradona:desktopTest :maradona-material3:desktopTest :maradona-jewel:desktopTest :sample-desktop:desktopTest --console=plain --no-scan
+          ./gradlew \
+            :maradona:desktopTest \
+            :maradona-material3:desktopTest \
+            :maradona-jewel:desktopTest \
+            :sample-desktop:desktopTest \
+            :maradona:testAndroidHostTest \
+            :maradona-material3:testAndroidHostTest \
+            :sample-android:assembleDebug \
+            --console=plain --no-scan
 
   publish:
-    name: Publish to Maven Central + draft GitHub release
+    name: Build, verify & publish 12 KMP components on macOS
     runs-on: macos-latest
     needs:
       - release-gate
-    permissions:
-      contents: write
+    timeout-minutes: 35
     env:
       RELEASE_VERSION: ${{ needs.release-gate.outputs.version }}
+      RELEASE_TAG: ${{ needs.release-gate.outputs.tag }}
+      CHECKOUT_REF: ${{ needs.release-gate.outputs.checkout_ref }}
+      DRY_RUN: ${{ needs.release-gate.outputs.dry_run }}
+      AUTOMATIC_RELEASE: ${{ needs.release-gate.outputs.automatic_release }}
 
     steps:
-      - name: Check out repository
+      - name: Check out release ref
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-gate.outputs.checkout_ref }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -75,13 +142,35 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
-      - name: Verify publication shape against mavenLocal
+      - name: Run iOS Simulator runtime & screenshot verification
+        run: |
+          ./gradlew \
+            :maradona:iosSimulatorArm64Test \
+            :maradona-material3:iosSimulatorArm64Test \
+            :sample-shared:iosSimulatorArm64Test \
+            --console=plain --no-scan
+
+      - name: Verify all 12 KMP publications against mavenLocal
         run: |
           ./gradlew verifyMavenLocalPublication \
             -PVERSION_NAME="$RELEASE_VERSION" \
             --console=plain --no-scan
 
+      - name: Upload verified 12-component Maven local bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maradona-maven-bundle-${{ needs.release-gate.outputs.version }}
+          path: ~/.m2/repository/dev/sebastiano/maradona/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Dry-run summary (when dry_run == true)
+        if: env.DRY_RUN == 'true'
+        run: |
+          echo "Dry-run completed: all 12 KMP Maven Central components for Maradona $RELEASE_VERSION built and verified on macOS."
+
       - name: Publish signed artifacts to Sonatype Central Portal
+        if: env.DRY_RUN != 'true'
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
@@ -97,16 +186,5 @@ jobs:
             :maradona-material3:publishToMavenCentral \
             :maradona-jewel:publishToMavenCentral \
             -PVERSION_NAME="$RELEASE_VERSION" \
+            -PcentralAutomaticRelease="$AUTOMATIC_RELEASE" \
             --console=plain --no-scan
-
-      - name: Create or update draft GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          notes="Maven Central coordinates for Maradona \`$RELEASE_VERSION\`:\n\n"
-          notes+="- \`dev.sebastiano.maradona:maradona:$RELEASE_VERSION\` (Desktop JVM, Android, iosArm64, iosSimulatorArm64)\n"
-          notes+="- \`dev.sebastiano.maradona:maradona-material3:$RELEASE_VERSION\` (Desktop JVM, Android, iosArm64, iosSimulatorArm64)\n"
-          notes+="- \`dev.sebastiano.maradona:maradona-jewel:$RELEASE_VERSION\` (Desktop JVM / JDK 25+)\n\n"
-          notes+="See [CHANGELOG.md](https://github.com/rock3r/maradona/blob/$GITHUB_REF_NAME/CHANGELOG.md) for release notes."
-          gh release view "$GITHUB_REF_NAME" \
-            || printf "%b" "$notes" | gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes-file -
