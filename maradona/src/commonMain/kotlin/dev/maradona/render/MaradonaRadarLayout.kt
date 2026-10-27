@@ -41,6 +41,7 @@ import dev.maradona.layout.DiagramRect
 import dev.maradona.layout.DiagramSize
 import dev.maradona.layout.LayoutOptions
 import dev.maradona.layout.MaradonaViewportStats
+import dev.maradona.layout.PositionedRadarCurve
 import dev.maradona.layout.PositionedRadarLegendItem
 import dev.maradona.layout.RadarDiagramLayout
 import dev.maradona.layout.RadarLayout
