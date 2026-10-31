@@ -79,6 +79,51 @@ IntUiTheme(isDark = true) {
 }
 ```
 
+### JetBrains Jewel Markdown Extension (`dev.maradona.markdown.jewel`, Desktop JVM Only)
+
+In addition to `ProvideJewelMaradonaTheme`, `:maradona-jewel` includes a native extension for `org.jetbrains.jewel:jewel-markdown-core` under `dev.maradona.markdown.jewel`:
+
+- **`MermaidMarkdownProcessorExtension`** (and **`MaradonaMermaidMarkdownExtension`**): a Jewel `MarkdownProcessorExtension` that converts ```` ```mermaid ```` and ```` ```mmd ```` fenced code blocks into `MermaidMarkdownBlock` custom blocks while preserving CommonMark source spans (supporting `MarkdownMode.EditorPreview` incremental updates) and leaving all other fenced/indented code blocks untouched.
+- **`MermaidMarkdownRendererExtension`** / **`MermaidMarkdownBlockRenderer`**: a Jewel `MarkdownRendererExtension` / `MarkdownBlockRendererExtension` that renders `MermaidMarkdownBlock` instances via `MaradonaDiagram`, deriving colors and typography live from the active `JewelTheme`, sizing the diagram card to its natural aspect ratio within `[minHeight, maxHeight]`, routing clickable node URLs to Jewel Markdown's `onUrlClick` callback, and preserving the last valid diagram (or a raw source fallback) during streaming or mid-edit syntax errors.
+- **`MaradonaMarkdownBlockRenderer`**: a `DefaultMarkdownBlockRenderer` subclass that automatically registers `MermaidMarkdownRendererExtension` and also intercepts standard `FencedCodeBlock`s with `mermaid`/`mmd` language tags when used with a default `MarkdownProcessor()`.
+- **`rememberMaradonaMarkdownProcessor(...)`** & **`rememberMaradonaMarkdownBlockRenderer(...)`**: composable helpers for wiring `ProvideMarkdownStyling`, `Markdown`, and `LazyMarkdown`.
+
+![Jewel Markdown with embedded Maradona Mermaid diagrams in Dark and Light themes](images/jewel-markdown-demo.png)
+
+```kotlin
+import dev.maradona.markdown.jewel.MermaidMarkdownStyling
+import dev.maradona.markdown.jewel.rememberMaradonaMarkdownBlockRenderer
+import dev.maradona.markdown.jewel.rememberMaradonaMarkdownProcessor
+import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
+import org.jetbrains.jewel.intui.markdown.standalone.styling.dark
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
+import org.jetbrains.jewel.markdown.Markdown
+import org.jetbrains.jewel.markdown.extensions.github.tables.GitHubTableProcessorExtension
+import org.jetbrains.jewel.markdown.rendering.MarkdownStyling
+
+IntUiTheme(isDark = true) {
+    val markdownStyling = MarkdownStyling.dark()
+    val processor = rememberMaradonaMarkdownProcessor(
+        extensions = listOf(GitHubTableProcessorExtension),
+    )
+    val blockRenderer = rememberMaradonaMarkdownBlockRenderer(
+        rootStyling = markdownStyling,
+        mermaidStyling = MermaidMarkdownStyling(useToolwindowBackground = true),
+    )
+    ProvideMarkdownStyling(
+        isDark = true,
+        markdownStyling = markdownStyling,
+        markdownProcessor = processor,
+        markdownBlockRenderer = blockRenderer,
+    ) {
+        Markdown(
+            markdown = markdownWithMermaidFences,
+            onUrlClick = { url -> println("Opened $url") },
+        )
+    }
+}
+```
+
 ### Deriving a Theme from Any Host Design System (`MaradonaTheme.fromHost`)
 
 `MaradonaTheme.fromHost(...)` builds a complete `MaradonaTheme` (including derived note callouts, activation bars, semantic warning/error fills, categorical series palettes, and `MaradonaC4Palette`) from a host application's core surface, border, text, and accent tokens:

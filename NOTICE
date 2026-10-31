@@ -29,4 +29,5 @@ Third-Party Notices and Attributions
    - JetBrains Compose Multiplatform (org.jetbrains.compose.*) - Apache License 2.0
    - JetBrains Kotlin Standard Library (org.jetbrains.kotlin.*) - Apache License 2.0
    - AndroidX Tracing (androidx.tracing:tracing, Android & Desktop targets) - Apache License 2.0
-   - JetBrains Jewel Foundation (org.jetbrains.jewel:jewel-foundation, :maradona-jewel only) - Apache License 2.0
+   - JetBrains Jewel Foundation & Markdown Core (org.jetbrains.jewel:jewel-foundation, org.jetbrains.jewel:jewel-markdown-core, :maradona-jewel only) - Apache License 2.0
+   - CommonMark Java (org.commonmark:commonmark, transitive via jewel-markdown-core in :maradona-jewel only) - BSD 2-Clause License
