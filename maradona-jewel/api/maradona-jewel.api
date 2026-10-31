@@ -1,3 +1,140 @@
+public final class dev/maradona/markdown/jewel/MaradonaJewelMarkdownExtensionKt {
+	public static final field MERMAID_MARKDOWN_BLOCK_TEST_TAG Ljava/lang/String;
+	public static final fun rememberMaradonaMarkdownBlockRenderer (Lorg/jetbrains/jewel/markdown/rendering/MarkdownStyling;Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ljava/util/List;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;II)Lorg/jetbrains/jewel/markdown/rendering/MarkdownBlockRenderer;
+	public static final fun rememberMaradonaMarkdownProcessor (Lorg/jetbrains/jewel/markdown/MarkdownMode;Ljava/util/List;ZLandroidx/compose/runtime/Composer;II)Lorg/jetbrains/jewel/markdown/processing/MarkdownProcessor;
+}
+
+public class dev/maradona/markdown/jewel/MaradonaMarkdownBlockRenderer : org/jetbrains/jewel/markdown/rendering/DefaultMarkdownBlockRenderer {
+	public static final field $stable I
+	public fun <init> (Lorg/jetbrains/jewel/markdown/rendering/MarkdownStyling;Ljava/util/List;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lorg/jetbrains/jewel/markdown/rendering/MarkdownStyling;Ljava/util/List;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun RenderBlock (Lorg/jetbrains/jewel/markdown/MarkdownBlock;ZLkotlin/jvm/functions/Function1;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;I)V
+	public fun RenderFencedCodeBlock (Lorg/jetbrains/jewel/markdown/MarkdownBlock$CodeBlock$FencedCodeBlock;Lorg/jetbrains/jewel/markdown/rendering/MarkdownStyling$Code$Fenced;ZLandroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;I)V
+	public fun createCopy (Lorg/jetbrains/jewel/markdown/rendering/MarkdownStyling;Ljava/util/List;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;)Lorg/jetbrains/jewel/markdown/rendering/MarkdownBlockRenderer;
+	public final fun getMermaidStyling ()Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public final fun getOnNodeClick ()Lkotlin/jvm/functions/Function1;
+	public final fun getTheme ()Ldev/maradona/render/MaradonaTheme;
+	public fun plus (Lorg/jetbrains/jewel/markdown/extensions/MarkdownRendererExtension;)Lorg/jetbrains/jewel/markdown/rendering/MarkdownBlockRenderer;
+}
+
+public final class dev/maradona/markdown/jewel/MaradonaMermaidMarkdownExtension : org/jetbrains/jewel/markdown/extensions/MarkdownProcessorExtension, org/jetbrains/jewel/markdown/extensions/MarkdownRendererExtension {
+	public static final field $stable I
+	public static final field Companion Ldev/maradona/markdown/jewel/MaradonaMermaidMarkdownExtension$Companion;
+	public fun <init> ()V
+	public fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getBlockProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownBlockProcessorExtension;
+	public fun getBlockRenderer ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownBlockRendererExtension;
+	public fun getDelimitedInlineProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownDelimitedInlineProcessorExtension;
+	public fun getDelimitedInlineRenderer ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownDelimitedInlineRendererExtension;
+	public fun getHtmlConverterExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownHtmlConverterExtension;
+	public fun getImageRendererExtension ()Lorg/jetbrains/jewel/markdown/extensions/ImageRendererExtension;
+	public final fun getOnNodeClick ()Lkotlin/jvm/functions/Function1;
+	public fun getParserExtension ()Lorg/commonmark/parser/Parser$ParserExtension;
+	public final fun getStyling ()Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public fun getTextRendererExtension ()Lorg/commonmark/renderer/text/TextContentRenderer$TextContentRendererExtension;
+	public final fun getTheme ()Ldev/maradona/render/MaradonaTheme;
+}
+
+public final class dev/maradona/markdown/jewel/MaradonaMermaidMarkdownExtension$Companion : org/jetbrains/jewel/markdown/extensions/MarkdownProcessorExtension {
+	public fun getBlockProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownBlockProcessorExtension;
+	public fun getDelimitedInlineProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownDelimitedInlineProcessorExtension;
+	public fun getHtmlConverterExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownHtmlConverterExtension;
+	public fun getParserExtension ()Lorg/commonmark/parser/Parser$ParserExtension;
+	public fun getTextRendererExtension ()Lorg/commonmark/renderer/text/TextContentRenderer$TextContentRendererExtension;
+}
+
+public final class dev/maradona/markdown/jewel/MermaidMarkdownBlock : org/jetbrains/jewel/markdown/MarkdownBlock$CustomBlock, org/jetbrains/jewel/markdown/WithTextContent {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/maradona/markdown/jewel/MermaidMarkdownBlock;
+	public static synthetic fun copy$default (Ldev/maradona/markdown/jewel/MermaidMarkdownBlock;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/maradona/markdown/jewel/MermaidMarkdownBlock;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getContent ()Ljava/lang/String;
+	public final fun getInfo ()Ljava/lang/String;
+	public final fun getSource ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/maradona/markdown/jewel/MermaidMarkdownBlockRenderer : org/jetbrains/jewel/markdown/extensions/MarkdownBlockRendererExtension {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun RenderCustomBlock (Lorg/jetbrains/jewel/markdown/MarkdownBlock$CustomBlock;Lorg/jetbrains/jewel/markdown/rendering/MarkdownBlockRenderer;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;ZLandroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
+	public fun canRender (Lorg/jetbrains/jewel/markdown/MarkdownBlock$CustomBlock;)Z
+	public final fun getOnNodeClick ()Lkotlin/jvm/functions/Function1;
+	public final fun getStyling ()Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public final fun getTheme ()Ldev/maradona/render/MaradonaTheme;
+	public fun render (Lorg/jetbrains/jewel/markdown/MarkdownBlock$CustomBlock;Lorg/jetbrains/jewel/markdown/rendering/MarkdownBlockRenderer;Lorg/jetbrains/jewel/markdown/rendering/InlineMarkdownRenderer;ZLandroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/maradona/markdown/jewel/MermaidMarkdownProcessorExtension : org/jetbrains/jewel/markdown/extensions/MarkdownProcessorExtension {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/maradona/markdown/jewel/MermaidMarkdownProcessorExtension;
+	public fun getBlockProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownBlockProcessorExtension;
+	public fun getDelimitedInlineProcessorExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownDelimitedInlineProcessorExtension;
+	public fun getHtmlConverterExtension ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownHtmlConverterExtension;
+	public fun getParserExtension ()Lorg/commonmark/parser/Parser$ParserExtension;
+	public fun getTextRendererExtension ()Lorg/commonmark/renderer/text/TextContentRenderer$TextContentRendererExtension;
+	public final fun isMermaidFenceInfo (Ljava/lang/String;)Z
+}
+
+public final class dev/maradona/markdown/jewel/MermaidMarkdownRendererExtension : org/jetbrains/jewel/markdown/extensions/MarkdownRendererExtension {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;Ldev/maradona/render/MaradonaTheme;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getBlockRenderer ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownBlockRendererExtension;
+	public fun getDelimitedInlineRenderer ()Lorg/jetbrains/jewel/markdown/extensions/MarkdownDelimitedInlineRendererExtension;
+	public fun getImageRendererExtension ()Lorg/jetbrains/jewel/markdown/extensions/ImageRendererExtension;
+	public final fun getOnNodeClick ()Lkotlin/jvm/functions/Function1;
+	public final fun getStyling ()Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public final fun getTheme ()Ldev/maradona/render/MaradonaTheme;
+}
+
+public final class dev/maradona/markdown/jewel/MermaidMarkdownStyling {
+	public static final field $stable I
+	public fun <init> ()V
+	public synthetic fun <init> (FFFLandroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/ui/graphics/Shape;FJJZZZZLkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (FFFLandroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/ui/graphics/Shape;FJJZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-D9Ej5fM ()F
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()Z
+	public final fun component13 ()Lkotlin/jvm/functions/Function1;
+	public final fun component2-D9Ej5fM ()F
+	public final fun component3-D9Ej5fM ()F
+	public final fun component4 ()Landroidx/compose/foundation/layout/PaddingValues;
+	public final fun component5 ()Landroidx/compose/ui/graphics/Shape;
+	public final fun component6-D9Ej5fM ()F
+	public final fun component7-0d7_KjU ()J
+	public final fun component8-0d7_KjU ()J
+	public final fun component9 ()Z
+	public final fun copy-uq-pwB8 (FFFLandroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/ui/graphics/Shape;FJJZZZZLkotlin/jvm/functions/Function1;)Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public static synthetic fun copy-uq-pwB8$default (Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;FFFLandroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/ui/graphics/Shape;FJJZZZZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/maradona/markdown/jewel/MermaidMarkdownStyling;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAutoDirection ()Z
+	public final fun getBackground-0d7_KjU ()J
+	public final fun getBorderColor-0d7_KjU ()J
+	public final fun getBorderWidth-D9Ej5fM ()F
+	public final fun getCustomizeTheme ()Lkotlin/jvm/functions/Function1;
+	public final fun getDefaultHeight-D9Ej5fM ()F
+	public final fun getMaxHeight-D9Ej5fM ()F
+	public final fun getMinHeight-D9Ej5fM ()F
+	public final fun getPadding ()Landroidx/compose/foundation/layout/PaddingValues;
+	public final fun getShape ()Landroidx/compose/ui/graphics/Shape;
+	public final fun getShowErrorSourceFallback ()Z
+	public final fun getUseToolwindowBackground ()Z
+	public final fun getZoomEnabled ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class dev/maradona/theme/jewel/JewelMaradonaThemeKt {
 	public static final fun ProvideJewelMaradonaTheme-IP6qZXQ (ZLandroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Ljava/util/List;Ljava/util/List;Ldev/maradona/render/MaradonaC4Palette;Landroidx/compose/ui/text/font/FontFamily;Landroidx/compose/ui/text/font/FontFamily;Landroidx/compose/ui/unit/TextUnit;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;IIII)V
 	public static final fun fromJewel-e0zqvpE (Ldev/maradona/render/MaradonaTheme$Companion;Lorg/jetbrains/jewel/foundation/GlobalColors;Landroidx/compose/ui/text/TextStyle;Landroidx/compose/ui/text/TextStyle;ZJZLandroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Landroidx/compose/ui/graphics/Color;Ljava/util/List;Ljava/util/List;Ldev/maradona/render/MaradonaC4Palette;Landroidx/compose/ui/text/font/FontFamily;Landroidx/compose/ui/text/font/FontFamily;Landroidx/compose/ui/unit/TextUnit;Lkotlin/jvm/functions/Function1;)Ldev/maradona/render/MaradonaTheme;

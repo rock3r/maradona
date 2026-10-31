@@ -14,8 +14,13 @@ kotlin {
     sourceSets {
         getByName("desktopMain").dependencies {
             implementation(project(":sample-shared"))
+            implementation(project(":maradona"))
             implementation(project(":maradona-jewel"))
             implementation(libs.jewel.int.ui.standalone)
+            implementation(libs.jewel.markdown.core)
+            implementation(libs.jewel.markdown.int.ui.standalone.styling)
+            implementation(libs.jewel.markdown.extensions.gfm.tables)
+            implementation(libs.jewel.markdown.extensions.autolink)
             implementation(compose.desktop.currentOs)
         }
         getByName("desktopTest").dependencies {
@@ -25,6 +30,10 @@ kotlin {
             implementation(project(":maradona-material3"))
             implementation(project(":maradona-jewel"))
             implementation(libs.jewel.int.ui.standalone)
+            implementation(libs.jewel.markdown.core)
+            implementation(libs.jewel.markdown.int.ui.standalone.styling)
+            implementation(libs.jewel.markdown.extensions.gfm.tables)
+            implementation(libs.jewel.markdown.extensions.autolink)
         }
     }
 }

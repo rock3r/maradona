@@ -178,9 +178,9 @@ val verifyApiDesign = tasks.register("verifyApiDesign") {
             val f = projectRoot.resolve(relPath)
             if (!f.isFile) continue
             val content = f.readText()
-            for (forbidden in listOf("org/jetbrains/jewel", "org.jetbrains.jewel", "java/awt/", "javax/swing/")) {
+            for (forbidden in listOf("org/jetbrains/jewel", "org.jetbrains.jewel", "org/commonmark/", "org.commonmark", "java/awt/", "javax/swing/")) {
                 if (content.contains(forbidden)) {
-                    errors += "$relPath: must not expose desktop/Jewel type '$forbidden'"
+                    errors += "$relPath: must not expose desktop/Jewel/CommonMark type '$forbidden'"
                 }
             }
             if (relPath.startsWith("maradona/api/") &&
@@ -192,9 +192,9 @@ val verifyApiDesign = tasks.register("verifyApiDesign") {
 
         // Verify package namespace boundaries in JVM ABI dumps
         val packageRules = listOf(
-            "maradona/api/desktop/maradona.api" to Regex("""^public .* class dev/maradona/(export|layout|model|parse|render)/"""),
-            "maradona-material3/api/desktop/maradona-material3.api" to Regex("""^public .* class dev/maradona/theme/material3/"""),
-            "maradona-jewel/api/maradona-jewel.api" to Regex("""^public .* class dev/maradona/theme/jewel/"""),
+            "maradona/api/desktop/maradona.api" to Regex("""^public (?:[a-z]+ )*class dev/maradona/(export|layout|model|parse|render)/"""),
+            "maradona-material3/api/desktop/maradona-material3.api" to Regex("""^public (?:[a-z]+ )*class dev/maradona/theme/material3/"""),
+            "maradona-jewel/api/maradona-jewel.api" to Regex("""^public (?:[a-z]+ )*class dev/maradona/(theme|markdown)/jewel/"""),
         )
         for ((relPath, allowedClassRegex) in packageRules) {
             val f = projectRoot.resolve(relPath)
@@ -224,9 +224,20 @@ val verifyApiDesign = tasks.register("verifyApiDesign") {
                 "fun rememberJewelMaradonaTheme(",
                 "fun ProvideJewelMaradonaTheme(",
             ),
+            "maradona-jewel/src/desktopMain/kotlin/dev/maradona/markdown/jewel/MaradonaJewelMarkdownExtension.kt" to listOf(
+                "class MermaidMarkdownBlock(",
+                "class MermaidMarkdownStyling(",
+                "object MermaidMarkdownProcessorExtension",
+                "class MermaidMarkdownBlockRenderer(",
+                "class MermaidMarkdownRendererExtension(",
+                "class MaradonaMermaidMarkdownExtension(",
+                "class MaradonaMarkdownBlockRenderer(",
+                "fun rememberMaradonaMarkdownProcessor(",
+                "fun rememberMaradonaMarkdownBlockRenderer(",
+            ),
         )
         val attachedKdocRegex = Regex(
-            """/\*\*(?:(?!\*/).)*\*/\s*(?:@[A-Za-z0-9_.]+\s*(?:\([^)]*\)\s*)?)*(?:(?:public|data|value|inline|sealed|suspend)\s+)*$""",
+            """/\*\*(?:(?!\*/).)*\*/\s*(?:@[A-Za-z0-9_.]+\s*(?:\([^)]*\)\s*)?)*(?:(?:public|open|data|value|inline|sealed|suspend)\s+)*$""",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
         for ((relPath, declarations) in publicEntryPointSources) {
@@ -425,8 +436,14 @@ tasks.register("verifyMavenLocalPublication") {
                 ) {
                     errors += "$artifactId: POM missing <developers>/<developer> id or name"
                 }
-                if (spec.forbidJewelDependency && pomFile.readText().contains("org.jetbrains.jewel")) {
-                    errors += "$artifactId: POM must not depend on org.jetbrains.jewel"
+                if (spec.forbidJewelDependency) {
+                    val pomText = pomFile.readText()
+                    if (pomText.contains("org.jetbrains.jewel")) {
+                        errors += "$artifactId: POM must not depend on org.jetbrains.jewel"
+                    }
+                    if (pomText.contains("org.commonmark")) {
+                        errors += "$artifactId: POM must not depend on org.commonmark"
+                    }
                 }
             }
         }

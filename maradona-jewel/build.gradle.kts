@@ -22,11 +22,15 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.ui)
             api(libs.jewel.foundation)
+            api(libs.jewel.markdown.core)
         }
         getByName("desktopTest").dependencies {
             implementation(kotlin("test"))
             implementation(compose.desktop.currentOs)
             implementation(libs.jewel.int.ui.standalone)
+            implementation(libs.jewel.markdown.int.ui.standalone.styling)
+            implementation(libs.jewel.markdown.extensions.gfm.tables)
+            implementation(libs.jewel.markdown.extensions.autolink)
         }
     }
 }

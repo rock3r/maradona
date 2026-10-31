@@ -9,7 +9,7 @@ Maradona renders [Mermaid](https://mermaid.js.org) diagrams as native **Compose 
 - **All 23 Mermaid diagram families** parsed and laid out in pure Kotlin (`commonMain`), from Flowcharts, Sequence, Class, State, and ER diagrams to C4, Architecture, ZenUML, Gantt, Mindmap, Sankey, XY Chart, Radar, Packet, Kanban, and Treemap.
 - **Interactive Compose UI:** pan, pinch/Ctrl+scroll zoom anchored at the pointer, double-tap to reset, `click` / `link` callbacks via `onNodeClick`, and per-node screen-reader accessibility traversal.
 - **Live-editing resilience:** when the input text is mid-edit and temporarily fails to parse, Maradona keeps the last valid diagram visible (dimmed) and displays a compact error banner at the bottom.
-- **Host-customizable theming & live connectors:** built-in `light()`, `dark()`, `jewelLight()`, and `jewelDark()` presets, `MaradonaTheme.fromHost(...)`, and dedicated theme connectors for **Material 3** (`:maradona-material3` across Desktop, Android, and iOS) and **JetBrains Jewel** (`:maradona-jewel` on Desktop JVM).
+- **Host-customizable theming, live connectors & Jewel Markdown extension:** built-in `light()`, `dark()`, `jewelLight()`, and `jewelDark()` presets, `MaradonaTheme.fromHost(...)`, dedicated theme connectors for **Material 3** (`:maradona-material3` across Desktop, Android, and iOS) and **JetBrains Jewel** (`:maradona-jewel` on Desktop JVM), plus a **Jewel Markdown extension** (`dev.maradona.markdown.jewel`) that renders ```` ```mermaid ```` / ```` ```mmd ```` fenced code blocks natively inside Jewel's `Markdown` and `LazyMarkdown` composables.
 - **Standalone SVG export:** `MaradonaSvgExporter.exportToSvg(source, theme)` produces standalone SVG strings across all 23 families without needing a Compose window.
 
 ---
@@ -19,9 +19,10 @@ Maradona renders [Mermaid](https://mermaid.js.org) diagrams as native **Compose 
 Clone the repository and launch the interactive desktop editor (which includes live examples for all 23 diagram families and theme switching):
 
 ```sh
-./gradlew :sample-desktop:run          # Desktop live editor & diagram preview
-./gradlew :sample-android:installDebug # Android sample app (requires ANDROID_HOME)
-open iosApp/iosApp.xcodeproj           # iOS sample app (Apple Silicon simulator or device)
+./gradlew :sample-desktop:run                      # Desktop live editor & diagram preview
+./gradlew :sample-desktop:run --args="--markdown"  # Desktop Jewel Markdown + Mermaid demo
+./gradlew :sample-android:installDebug             # Android sample app (requires ANDROID_HOME)
+open iosApp/iosApp.xcodeproj                       # iOS sample app (Apple Silicon simulator or device)
 ```
 
 ### Adding Maradona to Your Build
@@ -152,6 +153,45 @@ val svgString: String = MaradonaSvgExporter.exportToSvg(
 )
 ```
 
+### 5. Render Mermaid Fenced Code Blocks in JetBrains Jewel Markdown (`:maradona-jewel`)
+
+`:maradona-jewel` also provides a Jewel Markdown extension (`dev.maradona.markdown.jewel`) that turns ```` ```mermaid ```` and ```` ```mmd ```` fenced code blocks into interactive `MaradonaDiagram` composables inside Jewel's `Markdown` and `LazyMarkdown` while leaving standard code fences (`kotlin`, `sql`, `json`, etc.) to Jewel's syntax highlighter:
+
+![Jewel Markdown with embedded Maradona Mermaid diagrams in Dark and Light themes](docs/images/jewel-markdown-demo.png)
+
+```kotlin
+import dev.maradona.markdown.jewel.rememberMaradonaMarkdownBlockRenderer
+import dev.maradona.markdown.jewel.rememberMaradonaMarkdownProcessor
+import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
+import org.jetbrains.jewel.intui.markdown.standalone.styling.dark
+import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
+import org.jetbrains.jewel.markdown.Markdown
+import org.jetbrains.jewel.markdown.rendering.MarkdownStyling
+
+IntUiTheme(isDark = true) {
+    val styling = MarkdownStyling.dark()
+    val processor = rememberMaradonaMarkdownProcessor()
+    val blockRenderer = rememberMaradonaMarkdownBlockRenderer(rootStyling = styling)
+    ProvideMarkdownStyling(
+        isDark = true,
+        markdownStyling = styling,
+        markdownProcessor = processor,
+        markdownBlockRenderer = blockRenderer,
+    ) {
+        Markdown(
+            markdown = """
+                # Architecture Overview
+
+                ```mermaid
+                flowchart LR
+                  MD[Markdown] --> Mara([MaradonaDiagram])
+                ```
+            """.trimIndent(),
+        )
+    }
+}
+```
+
 ---
 
 ## Supported Diagram Families (All 23)
@@ -192,7 +232,7 @@ See [`docs/diagram-syntax.md`](docs/diagram-syntax.md) for the complete syntax a
 | --- | --- | --- |
 | **`:maradona`** | `jvm("desktop")` (JDK 25+), `android` (`minSdk 24`, JDK 25+), `iosArm64()`, `iosSimulatorArm64()` | Core parser, 23 layout engines, `MaradonaDiagram`, `MaradonaTheme`, `MaradonaSvgExporter` (`compose-runtime`, `compose-foundation`, `compose-ui` only) |
 | **`:maradona-material3`** | `jvm("desktop")` (JDK 25+), `android` (`minSdk 24`, JDK 25+), `iosArm64()`, `iosSimulatorArm64()` | Live `MaterialTheme` connector (`ProvideMaterial3MaradonaTheme`, `rememberMaterial3MaradonaTheme`, `MaradonaTheme.fromMaterial3`) |
-| **`:maradona-jewel`** | `jvm("desktop")` (*Desktop JVM / JDK 25+ only*) | Live JetBrains `JewelTheme` connector (`ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, `MaradonaTheme.fromJewel`) |
+| **`:maradona-jewel`** | `jvm("desktop")` (*Desktop JVM / JDK 25+ only*) | Live JetBrains `JewelTheme` connector (`ProvideJewelMaradonaTheme`, `rememberJewelMaradonaTheme`, `MaradonaTheme.fromJewel`) and Jewel Markdown Mermaid extension (`MermaidMarkdownProcessorExtension`, `MermaidMarkdownRendererExtension`, `MaradonaMarkdownBlockRenderer`) |
 
 All library code lives in `commonMain` across three layers:
 
