@@ -2,6 +2,7 @@ package dev.maradona.markdown.jewel
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +15,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.Density
 import dev.maradona.model.MaradonaNodeClickEvent
 import java.io.ByteArrayInputStream
@@ -129,7 +132,8 @@ class MaradonaJewelMarkdownExtensionTest {
 
     @Test
     fun disabledMarkdownSuppressesMermaidNodeClickCallbacks() {
-        val clickedEvents = mutableListOf<MaradonaNodeClickEvent>()
+        val clickedUrls = mutableListOf<String>()
+        val openedViaUriHandler = mutableListOf<String>()
         var mermaidBlockBounds: Rect? = null
         val doc = """
             ```mermaid
@@ -140,41 +144,49 @@ class MaradonaJewelMarkdownExtensionTest {
         """.trimIndent()
         val processor = MarkdownProcessor(extensions = listOf(MermaidMarkdownProcessorExtension))
         val blocks = processor.processMarkdownDocument(doc)
+        val testUriHandler = object : UriHandler {
+            override fun openUri(uri: String) {
+                openedViaUriHandler += uri
+            }
+        }
 
         val scene = ImageComposeScene(width = 640, height = 320, density = Density(1f)) {
-            IntUiTheme(isDark = true) {
-                val styling = remember { MarkdownStyling.dark() }
-                val renderer = rememberMaradonaMarkdownBlockRenderer(
-                    rootStyling = styling,
-                    onNodeClick = { clickedEvents += it },
-                )
-                ProvideMarkdownStyling(
-                    isDark = true,
-                    markdownStyling = styling,
-                    markdownProcessor = processor,
-                    markdownBlockRenderer = renderer,
-                ) {
-                    Markdown(
-                        markdownBlocks = blocks,
-                        markdown = doc,
-                        enabled = false,
-                        blockRenderer = object : MarkdownBlockRenderer by renderer {
-                            @androidx.compose.runtime.Composable
-                            override fun RenderBlock(
-                                block: MarkdownBlock,
-                                enabled: Boolean,
-                                onUrlClick: (String) -> Unit,
-                                modifier: Modifier,
-                            ) {
-                                val tracked = if (block is MermaidMarkdownBlock) {
-                                    modifier.onGloballyPositioned { mermaidBlockBounds = it.boundsInRoot() }
-                                } else {
-                                    modifier
-                                }
-                                renderer.RenderBlock(block, enabled, onUrlClick, tracked)
-                            }
-                        },
+            CompositionLocalProvider(LocalUriHandler provides testUriHandler) {
+                IntUiTheme(isDark = true) {
+                    val styling = remember { MarkdownStyling.dark() }
+                    val renderer = rememberMaradonaMarkdownBlockRenderer(
+                        rootStyling = styling,
+                        onNodeClick = null,
                     )
+                    ProvideMarkdownStyling(
+                        isDark = true,
+                        markdownStyling = styling,
+                        markdownProcessor = processor,
+                        markdownBlockRenderer = renderer,
+                    ) {
+                        Markdown(
+                            markdownBlocks = blocks,
+                            markdown = doc,
+                            enabled = false,
+                            onUrlClick = { clickedUrls += it },
+                            blockRenderer = object : MarkdownBlockRenderer by renderer {
+                                @androidx.compose.runtime.Composable
+                                override fun RenderBlock(
+                                    block: MarkdownBlock,
+                                    enabled: Boolean,
+                                    onUrlClick: (String) -> Unit,
+                                    modifier: Modifier,
+                                ) {
+                                    val tracked = if (block is MermaidMarkdownBlock) {
+                                        modifier.onGloballyPositioned { mermaidBlockBounds = it.boundsInRoot() }
+                                    } else {
+                                        modifier
+                                    }
+                                    renderer.RenderBlock(block, enabled, onUrlClick, tracked)
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -184,7 +196,8 @@ class MaradonaJewelMarkdownExtensionTest {
             scene.sendPointerEvent(PointerEventType.Press, bounds.center)
             scene.sendPointerEvent(PointerEventType.Release, bounds.center)
             scene.render(100_000_000L)
-            assertTrue(clickedEvents.isEmpty(), "Expected disabled Markdown block to ignore node clicks")
+            assertTrue(clickedUrls.isEmpty(), "Expected disabled Markdown block not to invoke onUrlClick")
+            assertTrue(openedViaUriHandler.isEmpty(), "Expected disabled Markdown block not to open URI via LocalUriHandler")
         } finally {
             scene.close()
         }

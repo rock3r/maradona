@@ -307,8 +307,8 @@ public class MermaidMarkdownBlockRenderer(
         val cardBackground = if (styling.background.isSpecified) styling.background else activeTheme.background
         val cardBorder = if (styling.borderColor.isSpecified) styling.borderColor else activeTheme.subgraphBorder
 
-        val clickHandler: ((MaradonaNodeClickEvent) -> Unit)? = if (!enabled) {
-            null
+        val clickHandler: (MaradonaNodeClickEvent) -> Unit = if (!enabled) {
+            {}
         } else {
             { event ->
                 val url = event.url
